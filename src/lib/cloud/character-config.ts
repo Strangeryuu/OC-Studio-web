@@ -18,7 +18,7 @@ export interface CloudCharacterConfig {
 const supported = new Set<string>(CLOUD_CHARACTER_COMPONENTS)
 const reserved = new Set(['__proto__', 'constructor', 'prototype'])
 const characterBuiltins = new Map(BUILTIN_FIELDS.character.map(field => [field.id, field]))
-const defaultComponentOrder = builtinTemplate('character').components
+const defaultComponentOrder: string[] = builtinTemplate('character').components
   .map(component => component.id).filter(id => supported.has(id))
 const legacyComponentIds = ['avatar', 'info', 'summary', 'body'] as const
 
