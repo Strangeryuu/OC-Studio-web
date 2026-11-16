@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { currentCloudUser, authorizedWorkspace } from '@/lib/cloud/server/authorization'
 import { pool } from '@/lib/cloud/server/db'
 import { isEntityKind, readEntityDocument } from '@/lib/cloud/entity-input'
+import { characterMediaAllowed } from '@/lib/cloud/server/character-media'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -42,6 +43,10 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
+    if (!await characterMediaAllowed(client, workspaceId, body.kind as string, doc.data)) {
+      await client.query('ROLLBACK')
+      return NextResponse.json({ error: 'INVALID_CHARACTER_MEDIA' }, { status: 400 })
+    }
     const result = await client.query<{ id: string; version: number }>(
       `INSERT INTO entities(workspace_id,kind,title,content,created_by,updated_by)
        VALUES($1,$2,$3,$4::jsonb,$5,$5) RETURNING id,version`,

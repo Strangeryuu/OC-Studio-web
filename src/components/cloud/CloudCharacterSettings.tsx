@@ -11,8 +11,12 @@ import {
 } from '@/lib/cloud/character-config'
 
 const COMPONENT_LABELS: Record<CloudCharacterComponentId, string> = {
-  avatar: '角色头像与立绘',
+  cover: '角色封面',
+  avatar: '角色头像',
   info: '基本信息',
+  portrait: '独立立绘集',
+  tags: '角色标签',
+  gallery: '相册',
   summary: '人物简介',
   body: '正文编辑器（始终显示）',
 }
@@ -114,7 +118,7 @@ export function CloudCharacterSettings({ workspaceId, editable, initialConfig, i
     {error && <p role="alert" className="rounded-md border border-[var(--oc-line)] p-3 text-sm">{error}</p>}
     <section className="rounded-lg border border-[var(--oc-line)] p-5">
       <h2 className="mb-4 font-semibold">角色版面组件</h2>
-      <p className="mb-3 text-xs opacity-70">支持更改组件顺序和显示状态。正文编辑器始终保留。</p>
+      <p className="mb-3 text-xs opacity-70">已接入封面、头像、基本信息、立绘、标签、相册、简介和正文。支持更改顺序与显示状态；正文编辑器始终保留。</p>
       <div className="flex flex-col gap-2">{config.components.map((component, index) =>
         <div key={component.id} className="flex items-center gap-2 rounded border border-[var(--oc-line)] p-2">
           <input type="checkbox" aria-label={'显示' + COMPONENT_LABELS[component.id]}

@@ -7,7 +7,7 @@ import { BUILTIN_FIELDS } from '@/lib/fields/defaults'
 import { builtinTemplate } from '@/lib/templates/defaults'
 import type { FieldDef } from '@/lib/fields/types'
 
-export const CLOUD_CHARACTER_COMPONENTS = ['avatar', 'info', 'summary', 'body'] as const
+export const CLOUD_CHARACTER_COMPONENTS = ['cover', 'avatar', 'info', 'portrait', 'tags', 'gallery', 'summary', 'body'] as const
 export type CloudCharacterComponentId = typeof CLOUD_CHARACTER_COMPONENTS[number]
 export type CloudCharacterComponent = { id: CloudCharacterComponentId; enabled: boolean }
 export interface CloudCharacterConfig {
@@ -18,6 +18,31 @@ export interface CloudCharacterConfig {
 const supported = new Set<string>(CLOUD_CHARACTER_COMPONENTS)
 const reserved = new Set(['__proto__', 'constructor', 'prototype'])
 const characterBuiltins = new Map(BUILTIN_FIELDS.character.map(field => [field.id, field]))
+const defaultComponentOrder = builtinTemplate('character').components
+  .map(component => component.id).filter(id => supported.has(id))
+const legacyComponentIds = ['avatar', 'info', 'summary', 'body'] as const
+
+/** Existing four-block workspace settings retain their relative order and
+ * visibility. New blocks start hidden until a workspace admin opts in. */
+function upgradeComponents(raw: unknown[]): unknown[] {
+  const existingIds = raw.map(item =>
+    item && typeof item === 'object' && !Array.isArray(item)
+      ? (item as Record<string, unknown>).id : null,
+  )
+  const isLegacy = raw.length === legacyComponentIds.length &&
+    legacyComponentIds.every(id => existingIds.includes(id))
+  if (!isLegacy) return raw
+  const result = [...raw]
+  const orderIndex = (id: unknown): number => defaultComponentOrder.indexOf(String(id))
+  for (const id of defaultComponentOrder) {
+    if (existingIds.includes(id)) continue
+    const before = result.findIndex(item =>
+      item && typeof item === 'object' && orderIndex((item as Record<string, unknown>).id) > orderIndex(id),
+    )
+    result.splice(before < 0 ? result.length : before, 0, { id, enabled: false })
+  }
+  return result
+}
 
 export function defaultCloudCharacterConfig(): CloudCharacterConfig {
   return {
@@ -45,7 +70,7 @@ export function parseCloudCharacterConfig(input: unknown): CloudCharacterConfig 
   if (!input || typeof input !== 'object' || Array.isArray(input)) return null
   const record = input as Record<string, unknown>
   if (!Array.isArray(record.fields) || !Array.isArray(record.components) ||
-    record.fields.length > 60 || record.components.length !== CLOUD_CHARACTER_COMPONENTS.length) return null
+    record.fields.length > 60) return null
 
   const fields: FieldDef[] = []
   const seenIds = new Set<string>()
@@ -71,7 +96,7 @@ export function parseCloudCharacterConfig(input: unknown): CloudCharacterConfig 
 
   const seenComponents = new Set<string>()
   const components: CloudCharacterComponent[] = []
-  for (const item of record.components) {
+  for (const item of upgradeComponents(record.components)) {
     if (!item || typeof item !== 'object' || Array.isArray(item)) return null
     const component = item as Record<string, unknown>
     if (typeof component.id !== 'string' || !supported.has(component.id) ||

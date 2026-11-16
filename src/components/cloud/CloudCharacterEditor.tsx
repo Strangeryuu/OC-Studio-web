@@ -1,16 +1,18 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
 import Placeholder from '@tiptap/extension-placeholder'
-import { ArrowLeft, Check, CloudUpload, History, ImagePlus, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Check, CloudUpload, History, RefreshCw } from 'lucide-react'
 import { cloudCharacterFields, mergeCloudCharacter, type CloudCharacterFields } from '@/lib/cloud/character-document'
 import type { CloudEntityRow, CloudRevision } from '@/lib/cloud/client-types'
 import type { WorkspaceRole } from '@/lib/cloud/permissions'
 import { CloudSnapshotBody } from '@/components/cloud/CloudSnapshotBody'
 import { CloudCharacterInfoFields } from '@/components/cloud/CloudCharacterInfoFields'
+import { CloudMediaPanel } from '@/components/cloud/CloudMediaPanel'
+import { CloudCharacterTags } from '@/components/cloud/CloudCharacterTags'
 import type { CloudCharacterConfig } from '@/lib/cloud/character-config'
 import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
@@ -39,6 +41,7 @@ export function CloudCharacterEditor({ workspaceId, role, initial, config }: {
   const [error, setError] = useState<string | null>(null)
   const [conflict, setConflict] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const uploadingRef = useRef(false)
   const [showHistory, setShowHistory] = useState(false)
   const [revisions, setRevisions] = useState<CloudRevision[]>([])
   const [selectedRevision, setSelectedRevision] = useState<number | null>(null)
@@ -126,22 +129,32 @@ export function CloudCharacterEditor({ workspaceId, role, initial, config }: {
     return () => window.removeEventListener('beforeunload', handler)
   }, [dirty, saving])
 
-  async function uploadAvatar(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file || !editable) return
+  async function uploadAsset(file: File): Promise<string | null> {
+    if (!editable || uploadingRef.current) return null
+    if (file.size === 0 || file.size > 8 * 1024 * 1024 ||
+      !['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) {
+      setError('请选择 JPEG、PNG、WebP 或 GIF 图片，单张不超过 8 MB。')
+      return null
+    }
+    uploadingRef.current = true
     setUploading(true)
     setError(null)
     try {
       const form = new FormData()
       form.set('file', file)
-      const response = await fetch('/api/workspaces/' + workspaceId + '/media', { method: 'POST', body: form })
+      const response = await fetch('/api/workspaces/' + workspaceId + '/media', {
+        method: 'POST', body: form,
+      })
       if (!response.ok) throw new Error('图片上传失败（HTTP ' + response.status + '）')
       const body: { asset: { id: string } } = await response.json()
-      updateFields({ avatarMediaId: body.asset.id })
+      return body.asset.id
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '图片上传失败')
-    } finally { setUploading(false) }
+      return null
+    } finally {
+      uploadingRef.current = false
+      setUploading(false)
+    }
   }
 
   const loadHistory = useCallback(async () => {
@@ -193,7 +206,7 @@ export function CloudCharacterEditor({ workspaceId, role, initial, config }: {
 
   const avatarUrl = fields.avatarMediaId ? '/api/media/' + encodeURIComponent(fields.avatarMediaId) : null
   const historyFields = revisionDoc ? cloudCharacterFields(revisionDoc.data, revisionDoc.title) : null
-  const compareKeys: (keyof CloudCharacterFields)[] = ['name', 'bio', 'race', 'occupation', 'faction', 'element', 'height', 'birthday', 'country', 'isMajor', 'aliases', 'custom']
+  const compareKeys: (keyof CloudCharacterFields)[] = ['name', 'bio', 'race', 'occupation', 'faction', 'element', 'height', 'birthday', 'country', 'isMajor', 'aliases', 'custom', 'headerMediaId', 'portraitMediaIds', 'galleryMediaIds', 'cloudTags']
 
   return <div className="flex flex-col gap-6">
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -220,21 +233,33 @@ export function CloudCharacterEditor({ workspaceId, role, initial, config }: {
     </div>}
     <div className="flex flex-col gap-5">
       {config.components.filter(component => component.enabled).map(component => {
+        if (component.id === 'cover') {
+          return <CloudMediaPanel key="cover" title="角色封面" mode="cover"
+            imageIds={fields.headerMediaId ? [fields.headerMediaId] : []}
+            editable={editable} uploading={uploading} onUpload={uploadAsset}
+            onChange={ids => updateFields({ headerMediaId: ids[0] ?? null })} />
+        }
         if (component.id === 'avatar') {
-          return <section key="avatar" className="rounded-lg border border-[var(--oc-line)] p-5">
-            <h2 className="mb-4 text-lg font-semibold">角色头像与立绘</h2>
-            <div className="flex flex-wrap items-start gap-4">
-              <div className="flex h-48 w-36 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[var(--oc-line)]">
-                {avatarUrl ? <img src={avatarUrl} alt={fields.name + '的立绘'} className="h-full w-full object-cover" /> :
-                  <ImagePlus className="opacity-40" size={48} aria-hidden="true" />}
-              </div>
-              {editable && <label className="cursor-pointer rounded-md border border-[var(--oc-line)] px-3 py-2 text-sm">
-                {uploading ? '上传中…' : '上传头像或立绘'}
-                <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" disabled={uploading}
-                  className="sr-only" onChange={event => void uploadAvatar(event)} />
-              </label>}
-            </div>
-          </section>
+          return <CloudMediaPanel key="avatar" title="角色头像" mode="avatar"
+            imageIds={fields.avatarMediaId ? [fields.avatarMediaId] : []}
+            editable={editable} uploading={uploading} onUpload={uploadAsset}
+            onChange={ids => updateFields({ avatarMediaId: ids[0] ?? null })} />
+        }
+        if (component.id === 'portrait') {
+          return <CloudMediaPanel key="portrait" title="独立立绘集" mode="portrait"
+            imageIds={fields.portraitMediaIds}
+            editable={editable} uploading={uploading} onUpload={uploadAsset}
+            onChange={ids => updateFields({ portraitMediaIds: ids })} />
+        }
+        if (component.id === 'tags') {
+          return <CloudCharacterTags key="tags" tags={fields.cloudTags}
+            editable={editable} onChange={tags => updateFields({ cloudTags: tags })} />
+        }
+        if (component.id === 'gallery') {
+          return <CloudMediaPanel key="gallery" title="角色相册" mode="gallery"
+            imageIds={fields.galleryMediaIds}
+            editable={editable} uploading={uploading} onUpload={uploadAsset}
+            onChange={ids => updateFields({ galleryMediaIds: ids })} />
         }
         if (component.id === 'info') {
           return <CloudCharacterInfoFields key="info" fields={config.fields}

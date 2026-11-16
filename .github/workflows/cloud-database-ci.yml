@@ -34,6 +34,7 @@ jobs:
       BETTER_AUTH_URL: http://localhost:3000
       DATABASE_URL: postgresql://ocstudio:ci_password_only@localhost:5432/ocstudio
       NEXT_TELEMETRY_DISABLED: '1'
+      MEDIA_ROOT: /tmp/ocstudio-cloud-ci-media
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

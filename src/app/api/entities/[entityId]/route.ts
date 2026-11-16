@@ -4,6 +4,7 @@ import { entityAccess } from '@/lib/cloud/server/entity-access'
 import { pool } from '@/lib/cloud/server/db'
 import { readEntityDocument, readExpectedVersion } from '@/lib/cloud/entity-input'
 import { planEntityUpdate, type JsonValue } from '@/lib/cloud/versioning'
+import { characterMediaAllowed } from '@/lib/cloud/server/character-media'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -40,8 +41,8 @@ export async function PATCH(request: Request, context: Context) {
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
-    const found = await client.query<{ version: number; title: string; content: JsonValue }>(
-      `SELECT version,title,content FROM entities
+    const found = await client.query<{ version: number; title: string; content: JsonValue; kind: string }>(
+      `SELECT kind,version,title,content FROM entities
        WHERE id=$1 AND workspace_id=$2 AND deleted_at IS NULL FOR UPDATE`,
       [entityId, access.workspaceId],
     )
@@ -49,6 +50,10 @@ export async function PATCH(request: Request, context: Context) {
     if (!existing) {
       await client.query('ROLLBACK')
       return NextResponse.json({ error: 'NOT_FOUND' }, { status: 404 })
+    }
+    if (!await characterMediaAllowed(client, access.workspaceId, existing.kind, document.data)) {
+      await client.query('ROLLBACK')
+      return NextResponse.json({ error: 'INVALID_CHARACTER_MEDIA' }, { status: 400 })
     }
     const original = { title: existing.title, data: existing.content }
     const plan = planEntityUpdate({

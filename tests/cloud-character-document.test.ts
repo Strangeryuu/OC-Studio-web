@@ -36,6 +36,46 @@ describe('cloud character data mapping', () => {
     expect(result.isMajor).toBe(true)
   })
 
+
+  it('persists distinct cover, portrait, gallery and text tag fields without rewriting legacy tags', () => {
+    const avatarId = '00000000-0000-4000-8000-000000000001'
+    const original = {
+      name: '羽',
+      tags: [42],
+      avatars: [{ url: 'local/portrait.png' }],
+      headerUrl: 'legacy/header.jpg',
+      gallery: ['legacy/gallery.png'],
+      custom: { 旧设定: '保留' },
+    }
+    const parsed = cloudCharacterFields(original, '羽')
+    const saved = mergeCloudCharacter(original, {
+      ...parsed,
+      headerMediaId: avatarId,
+      portraitMediaIds: [avatarId],
+      galleryMediaIds: [avatarId],
+      cloudTags: ['主角', '战斗'],
+    })
+    expect(saved.headerMediaId).toBe(avatarId)
+    expect(saved.portraitMediaIds).toEqual([avatarId])
+    expect(saved.galleryMediaIds).toEqual([avatarId])
+    expect(saved.cloudTags).toEqual(['主角', '战斗'])
+    expect(saved.tags).toEqual([42])
+    expect(saved.headerUrl).toBe('legacy/header.jpg')
+    expect(saved.avatars).toEqual([{ url: 'local/portrait.png' }])
+    expect(saved.gallery).toEqual(['legacy/gallery.png'])
+  })
+
+  it('deduplicates text tags and caps media arrays when reading', () => {
+    const parsed = cloudCharacterFields({
+      cloudTags: ['  主角  ', '主角', '', '战斗'],
+      portraitMediaIds: ['asset-a', 'asset-a'],
+      galleryMediaIds: ['asset-b'],
+    }, '角色')
+    expect(parsed.cloudTags).toEqual(['主角', '战斗'])
+    expect(parsed.portraitMediaIds).toEqual(['asset-a'])
+    expect(parsed.galleryMediaIds).toEqual(['asset-b'])
+  })
+
   it('normalizes empty or malformed richtext safely', () => {
     const fields = cloudCharacterFields({ name: '角色', document: 'invalid', aliases: ['一', 4] }, '角色')
     expect(fields.document.type).toBe('doc')

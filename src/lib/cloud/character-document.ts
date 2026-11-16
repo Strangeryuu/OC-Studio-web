@@ -15,6 +15,11 @@ export interface CloudCharacterFields {
   isMajor: boolean
   custom: Record<string, string>
   avatarMediaId: string | null
+  headerMediaId: string | null
+  portraitMediaIds: string[]
+  galleryMediaIds: string[]
+  /** Text tags for the cloud bridge; original numeric tag ids stay untouched. */
+  cloudTags: string[]
   document: JSONContent
 }
 
@@ -26,6 +31,28 @@ const EMPTY_DOCUMENT: JSONContent = {
 function safeString(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
+export function cloudMediaList(value: unknown, max: number): string[] {
+  if (!Array.isArray(value)) return []
+  return [...new Set(value.filter((item): item is string =>
+    typeof item === 'string' && item.length > 0 && item.length <= 128))].slice(0, max)
+}
+
+export function cloudTagList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  const tags: string[] = []
+  const seen = new Set<string>()
+  for (const valueItem of value) {
+    if (typeof valueItem !== 'string') continue
+    const trimmed = valueItem.trim()
+    const normalized = trimmed.toLocaleLowerCase('zh-CN')
+    if (!trimmed || trimmed.length > 40 || seen.has(normalized)) continue
+    seen.add(normalized)
+    tags.push(trimmed)
+    if (tags.length >= 30) break
+  }
+  return tags
+}
+
 function validDocument(value: unknown): value is JSONContent {
   return value !== null && typeof value === 'object' && !Array.isArray(value) &&
     (value as Record<string, unknown>).type === 'doc' &&
@@ -50,6 +77,10 @@ export function cloudCharacterFields(content: Record<string, unknown>, title: st
         ? content.custom as Record<string, unknown> : {},
     ).filter((entry): entry is [string, string] => typeof entry[1] === 'string')),
     avatarMediaId: safeString(content.avatarMediaId) || null,
+    headerMediaId: safeString(content.headerMediaId) || null,
+    portraitMediaIds: cloudMediaList(content.portraitMediaIds, 24),
+    galleryMediaIds: cloudMediaList(content.galleryMediaIds, 48),
+    cloudTags: cloudTagList(content.cloudTags),
     document: validDocument(content.document) ? content.document : EMPTY_DOCUMENT,
   }
 }
@@ -64,6 +95,10 @@ export function mergeCloudCharacter(
     name: next.name.trim(),
     aliases: [...next.aliases],
     avatarMediaId: next.avatarMediaId,
+    headerMediaId: next.headerMediaId,
+    portraitMediaIds: cloudMediaList(next.portraitMediaIds, 24),
+    galleryMediaIds: cloudMediaList(next.galleryMediaIds, 48),
+    cloudTags: cloudTagList(next.cloudTags),
     // Keep values from pre-existing custom fields which this editor does not expose.
     custom: {
       ...(original.custom && typeof original.custom === 'object' && !Array.isArray(original.custom)

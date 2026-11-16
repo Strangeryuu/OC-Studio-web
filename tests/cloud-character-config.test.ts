@@ -11,9 +11,29 @@ describe('original OC Studio character defaults in cloud', () => {
       'height', 'birthday', 'isMajor',
     ])
     expect(config.components.map(component => component.id)).toEqual([
-      'avatar', 'info', 'summary', 'body',
+      'cover', 'avatar', 'info', 'portrait', 'tags', 'gallery', 'summary', 'body',
     ])
     expect(parseCloudCharacterConfig(config)).toEqual(config)
+  })
+
+
+  it('upgrades legacy four-block workspace settings without unexpectedly showing new sections', () => {
+    const full = defaultCloudCharacterConfig()
+    const old = {
+      fields: full.fields,
+      components: [
+        { id: 'summary', enabled: false },
+        { id: 'info', enabled: true },
+        { id: 'avatar', enabled: true },
+        { id: 'body', enabled: true },
+      ],
+    }
+    const upgraded = parseCloudCharacterConfig(old)
+    expect(upgraded?.components.filter(c => ['summary', 'info', 'avatar', 'body'].includes(c.id))
+      .map(c => ({ id: c.id, enabled: c.enabled }))).toEqual(old.components)
+    expect(upgraded?.components.filter(c => ['cover', 'portrait', 'gallery', 'tags'].includes(c.id))
+      .every(c => c.enabled === false)).toBe(true)
+    expect(upgraded?.components).toHaveLength(8)
   })
 
   it('supports ordered, renamed and hidden builtins without dropping data', () => {

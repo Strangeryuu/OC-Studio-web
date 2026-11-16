@@ -107,6 +107,75 @@ async function run() {
   })
   assert(forbiddenTemplateOrigin.status === 403, 'Cross-site template mutation should be forbidden')
 
+
+  // Media is private and its identifiers must remain within their workspace.
+  const form = new FormData()
+  const tinyPng = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/1tkAAAAASUVORK5CYII=',
+    'base64',
+  )
+  form.set('file', new Blob([tinyPng], { type: 'image/png' }), 'tiny.png')
+  const uploaded = await fetch(BASE + '/api/workspaces/' + workspaceId + '/media', {
+    method: 'POST', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN }, body: form,
+  })
+  assert(uploaded.status === 201, 'Workspace media upload failed HTTP ' + uploaded.status)
+  const asset = (await uploaded.json()).asset
+  assert(asset?.id, 'Media must have a UUID')
+  const guestMedia = await fetch(BASE + '/api/media/' + asset.id)
+  assert(guestMedia.status === 401, 'Private character image leaked to guests')
+  const ownMedia = await fetch(BASE + '/api/media/' + asset.id, {
+    headers: { Cookie: cookie },
+  })
+  assert(ownMedia.status === 200, 'Owner could not read private image')
+  assert((await ownMedia.arrayBuffer()).byteLength === tinyPng.length, 'Private media bytes changed')
+
+  const character = {
+    kind: 'character', title: 'CI 角色',
+    data: {
+      name: 'CI 角色', avatarMediaId: asset.id, headerMediaId: asset.id,
+      portraitMediaIds: [asset.id], galleryMediaIds: [asset.id],
+      cloudTags: ['主角', '设定'], document: { type: 'doc', content: [{ type: 'paragraph' }] },
+    },
+  }
+  const createdCharacter = await fetch(BASE + '/api/workspaces/' + workspaceId + '/entities', {
+    method: 'POST',
+    headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify(character),
+  })
+  assert(createdCharacter.status === 201, 'Character with private cloud images failed creation')
+  const createdEntity = await createdCharacter.json()
+  const entityId = createdEntity.entity?.id
+  assert(entityId, 'Character creation did not return an entity id')
+
+  const patched = await fetch(BASE + '/api/entities/' + entityId, {
+    method: 'PATCH',
+    headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'CI 角色更新', expectedVersion: 1,
+      data: { ...character.data, cloudTags: ['主角', '更新'] } }),
+  })
+  assert(patched.status === 200, 'Character history update failed HTTP ' + patched.status)
+  const changed = await patched.json()
+  assert(changed.version === 2, 'Character revisions must increment')
+
+  const history = await fetch(BASE + '/api/entities/' + entityId + '/revisions', {
+    headers: { Cookie: cookie },
+  })
+  assert(history.status === 200 && (await history.json()).revisions.length === 2,
+    'Character revisions were not recorded')
+
+  const anotherWorld = await fetch(BASE + '/api/workspaces', {
+    method: 'POST', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'CI Other World' }),
+  })
+  assert(anotherWorld.status === 201, 'Second workspace setup failed')
+  const otherId = (await anotherWorld.json()).workspace.id
+  const foreignMedia = await fetch(BASE + '/api/workspaces/' + otherId + '/entities', {
+    method: 'POST',
+    headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify(character),
+  })
+  assert(foreignMedia.status === 400, 'Character must reject an image from another workspace')
+
   const forbiddenOrigin = await fetch(BASE + '/api/workspaces', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Origin: 'https://attacker.example', Cookie: cookie },
