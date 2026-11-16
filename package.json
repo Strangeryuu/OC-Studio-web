@@ -122,7 +122,8 @@
     "pg": "^8.16.0",
     "@tiptap/extension-collaboration": "^3.22.4",
     "yjs": "^13.6.27",
-    "@tiptap/y-tiptap": "^3.0.9"
+    "@tiptap/y-tiptap": "^3.0.9",
+    "@tiptap/extension-node-range": "^3.22.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
