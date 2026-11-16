@@ -50,7 +50,9 @@ async function run() {
     headers: { 'Content-Type': 'application/json', Origin: PUBLIC_ORIGIN, Cookie: cookie },
     body: JSON.stringify({ name: 'CI Private World' }),
   })
-  assert(created.status === 201, 'Authenticated workspace creation failed HTTP ' + created.status + ': ' + await created.text())
+  if (created.status !== 201) {
+    throw new Error('Authenticated workspace creation failed HTTP ' + created.status + ': ' + await created.text())
+  }
   const json = await created.json()
   assert(json.workspace?.id && json.workspace?.role === 'owner',
     'Workspace owner membership was not created')
