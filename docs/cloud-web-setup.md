@@ -94,3 +94,15 @@
 - `deploy/Caddyfile`：站点 HTTPS 反向代理；`deploy/env.example`：环境变量模板。
 - 详细 VPS 配置及上线次序见 [`deploy/README.md`](../deploy/README.md)。
 - 现已提供 `/admin/users` 用户账号管理以及项目页成员角色更改和成员移除，相关操作写入审计记录。
+
+## 角色字段 / 模板云端适配（最新阶段）
+
+现已增加角色字段表和模板组件布局配置。按 [角色模板适配指南](cloud-character-template-bridge.md) 在世界观页点击「角色模板与字段设置」，可以调整角色字段顺序、名称，隐藏/恢复内置字段，新增自定义字段，以及调整已接入的四个组件顺序与显示状态。配置保存在项目专属 PostgreSQL 记录中，Owner/Admin 可以修改。
+
+有现存部署时先备份数据库，再执行迁移任务：
+
+```bash
+docker compose --env-file deploy/.env -f deploy/compose.yml --profile tools run --rm migrate
+```
+
+迁移工具现在按编号遍历 `cloud/migrations` 中的文件；新增 `0002_workspace_settings_version.sql`，提供项目模板配置的版本冲突保护。
