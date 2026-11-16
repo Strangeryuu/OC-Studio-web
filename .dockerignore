@@ -1,0 +1,17 @@
+node_modules
+.next
+out
+.git
+.github
+.env
+.env.*
+**/.env
+**/.env.*
+android
+src-tauri/target
+logs
+tmp
+docs/review-*/
+*.msix
+*.appx
+*.pem

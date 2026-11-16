@@ -1,0 +1,288 @@
+'use strict'
+
+const BASE = 'http://127.0.0.1:3000'
+const PUBLIC_ORIGIN = 'http://localhost:3000'
+
+function assert(condition, message) {
+  if (!condition) throw new Error(message)
+}
+
+async function ready() {
+  for (let n = 0; n < 100; n += 1) {
+    try {
+      const response = await fetch(BASE + '/login', { redirect: 'manual' })
+      if (response.status === 200) return
+    } catch {}
+    await new Promise(resolve => setTimeout(resolve, 400))
+  }
+  throw new Error('Next.js Web server did not become ready')
+}
+
+async function run() {
+  await ready()
+
+  const guestPage = await fetch(BASE + '/', { redirect: 'manual' })
+  assert([302, 303, 307, 308].includes(guestPage.status),
+    'Guest must be redirected away from private dashboard; got HTTP ' + guestPage.status)
+  assert((guestPage.headers.get('location') || '').includes('/login'),
+    'Guest must be redirected to login')
+
+  const guestApi = await fetch(BASE + '/api/workspaces')
+  assert(guestApi.status === 401, 'Guest API access must be rejected')
+
+  const login = await fetch(BASE + '/api/auth/sign-in/email', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: PUBLIC_ORIGIN },
+    body: JSON.stringify({ email: 'ci-admin@example.test', password: 'CI_only_SecurePass_456789' }),
+  })
+  assert(login.status === 200, 'Admin login failed with HTTP ' + login.status + ': ' + await login.text())
+  const cookies = login.headers.getSetCookie().map(entry => entry.split(';')[0])
+  assert(cookies.length > 0, 'Login response must set a session cookie')
+  const cookie = cookies.join('; ')
+
+  const myWorkspaces = await fetch(BASE + '/api/workspaces', {
+    headers: { Cookie: cookie },
+  })
+  assert(myWorkspaces.status === 200, 'Logged-in user could not list workspaces')
+
+  const created = await fetch(BASE + '/api/workspaces', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: PUBLIC_ORIGIN, Cookie: cookie },
+    body: JSON.stringify({ name: 'CI Private World' }),
+  })
+  if (created.status !== 201) {
+    throw new Error('Authenticated workspace creation failed HTTP ' + created.status + ': ' + await created.text())
+  }
+  const json = await created.json()
+  assert(json.workspace?.id && json.workspace?.role === 'owner',
+    'Workspace owner membership was not created')
+  const workspaceId = json.workspace.id
+
+  const privateApi = await fetch(BASE + '/api/workspaces/' + workspaceId)
+  assert(privateApi.status === 401, 'Guest gained access to private workspace')
+  const authorizedApi = await fetch(BASE + '/api/workspaces/' + workspaceId, {
+    headers: { Cookie: cookie },
+  })
+  assert(authorizedApi.status === 200, 'Owner was unable to access their workspace')
+
+  const guestConfig = await fetch(BASE + '/api/workspaces/' + workspaceId + '/character-config')
+  assert(guestConfig.status === 401, 'Guest accessed private character template')
+
+  const templateResponse = await fetch(BASE + '/api/workspaces/' + workspaceId + '/character-config', {
+    headers: { Cookie: cookie },
+  })
+  assert(templateResponse.status === 200, 'Owner could not view their character config')
+  const initialTemplate = await templateResponse.json()
+  assert(initialTemplate.version === 0, 'Fresh workspace should have default character config version 0')
+  assert(initialTemplate.config.fields.some(field => field.id === 'occupation'), 'Upstream occupation field missing')
+  assert(initialTemplate.config.components.some(component => component.id === 'body'), 'Character body missing')
+
+  const newTemplate = {
+    ...initialTemplate.config,
+    fields: [
+      { id: 'f_ci_ability', key: '能力设定', label: '能力', type: 'text' },
+      ...initialTemplate.config.fields,
+    ],
+  }
+  const saveConfig = await fetch(BASE + '/api/workspaces/' + workspaceId + '/character-config', {
+    method: 'PATCH',
+    headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expectedVersion: 0, config: newTemplate }),
+  })
+  assert(saveConfig.status === 200, 'Owner character config save failed HTTP ' + saveConfig.status)
+  const savedTemplate = await saveConfig.json()
+  assert(savedTemplate.version === 1, 'Cloud character config revision should increment')
+
+  const staleConfig = await fetch(BASE + '/api/workspaces/' + workspaceId + '/character-config', {
+    method: 'PATCH',
+    headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expectedVersion: 0, config: newTemplate }),
+  })
+  assert(staleConfig.status === 409, 'Concurrent template update should return HTTP 409')
+
+  const forbiddenTemplateOrigin = await fetch(BASE + '/api/workspaces/' + workspaceId + '/character-config', {
+    method: 'PATCH',
+    headers: { Cookie: cookie, Origin: 'https://attacker.example', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expectedVersion: 1, config: newTemplate }),
+  })
+  assert(forbiddenTemplateOrigin.status === 403, 'Cross-site template mutation should be forbidden')
+
+
+  // Media is private and its identifiers must remain within their workspace.
+  const form = new FormData()
+  const tinyPng = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/1tkAAAAASUVORK5CYII=',
+    'base64',
+  )
+  form.set('file', new Blob([tinyPng], { type: 'image/png' }), 'tiny.png')
+  const uploaded = await fetch(BASE + '/api/workspaces/' + workspaceId + '/media', {
+    method: 'POST', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN }, body: form,
+  })
+  assert(uploaded.status === 201, 'Workspace media upload failed HTTP ' + uploaded.status)
+  const asset = (await uploaded.json()).asset
+  assert(asset?.id, 'Media must have a UUID')
+  const guestMedia = await fetch(BASE + '/api/media/' + asset.id)
+  assert(guestMedia.status === 401, 'Private character image leaked to guests')
+  const ownMedia = await fetch(BASE + '/api/media/' + asset.id, {
+    headers: { Cookie: cookie },
+  })
+  assert(ownMedia.status === 200, 'Owner could not read private image')
+  assert((await ownMedia.arrayBuffer()).byteLength === tinyPng.length, 'Private media bytes changed')
+
+  const character = {
+    kind: 'character', title: 'CI 角色',
+    data: {
+      name: 'CI 角色', avatarMediaId: asset.id, headerMediaId: asset.id,
+      portraitMediaIds: [asset.id], galleryMediaIds: [asset.id],
+      cloudTags: ['主角', '设定'], document: { type: 'doc', content: [{ type: 'paragraph' }] },
+    },
+  }
+  const createdCharacter = await fetch(BASE + '/api/workspaces/' + workspaceId + '/entities', {
+    method: 'POST',
+    headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify(character),
+  })
+  assert(createdCharacter.status === 201, 'Character with private cloud images failed creation')
+  const createdEntity = await createdCharacter.json()
+  const entityId = createdEntity.entity?.id
+  assert(entityId, 'Character creation did not return an entity id')
+
+  const patched = await fetch(BASE + '/api/entities/' + entityId, {
+    method: 'PATCH',
+    headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'CI 角色更新', expectedVersion: 1,
+      data: { ...character.data, cloudTags: ['主角', '更新'] } }),
+  })
+  assert(patched.status === 200, 'Character history update failed HTTP ' + patched.status)
+  const changed = await patched.json()
+  assert(changed.version === 2, 'Character revisions must increment')
+
+  const history = await fetch(BASE + '/api/entities/' + entityId + '/revisions', {
+    headers: { Cookie: cookie },
+  })
+  assert(history.status === 200 && (await history.json()).revisions.length === 2,
+    'Character revisions were not recorded')
+
+  const anotherWorld = await fetch(BASE + '/api/workspaces', {
+    method: 'POST', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'CI Other World' }),
+  })
+  assert(anotherWorld.status === 201, 'Second workspace setup failed')
+  const otherId = (await anotherWorld.json()).workspace.id
+  const foreignMedia = await fetch(BASE + '/api/workspaces/' + otherId + '/entities', {
+    method: 'POST',
+    headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify(character),
+  })
+  assert(foreignMedia.status === 400, 'Character must reject an image from another workspace')
+
+
+  // Tags have stable UUIDs; renaming one does not require rewriting characters.
+  const tagResponse = await fetch(BASE + '/api/workspaces/' + workspaceId + '/tags', {
+    method: 'POST', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: '主角', color: '#4ecdc4' }),
+  })
+  assert(tagResponse.status === 201, 'Shared tag creation failed HTTP ' + tagResponse.status)
+  const tagId = (await tagResponse.json()).tag.id
+
+  const duplicateTag = await fetch(BASE + '/api/workspaces/' + workspaceId + '/tags', {
+    method: 'POST', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: '主角', color: '#4ecdc4' }),
+  })
+  assert(duplicateTag.status === 409, 'Duplicate shared tags should be rejected')
+
+  const foreignTagResponse = await fetch(BASE + '/api/workspaces/' + otherId + '/tags', {
+    method: 'POST', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: '其他世界的标签', color: '#4ecdc4' }),
+  })
+  assert(foreignTagResponse.status === 201, 'Foreign tag test setup failed')
+  const foreignTagId = (await foreignTagResponse.json()).tag.id
+
+  const sibling = await fetch(BASE + '/api/workspaces/' + workspaceId + '/entities', {
+    method: 'POST', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kind: 'character', title: 'CI 表姐',
+      data: { name: 'CI 表姐', document: { type: 'doc', content: [{ type: 'paragraph' }] } } }),
+  })
+  assert(sibling.status === 201, 'Creating related character failed')
+  const siblingId = (await sibling.json()).entity.id
+  const otherCharacter = await fetch(BASE + '/api/workspaces/' + otherId + '/entities', {
+    method: 'POST', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kind: 'character', title: 'Other World Character',
+      data: { name: 'Other World Character' } }),
+  })
+  assert(otherCharacter.status === 201, 'Foreign character test setup failed')
+  const otherCharacterId = (await otherCharacter.json()).entity.id
+
+  const relation = {
+    id: '00000000-0000-4000-8000-000000000001',
+    targetId: siblingId, relation: '表姐', arrow: 'both',
+  }
+  const linkedDocument = {
+    ...character.data, cloudTagIds: [tagId], cloudRelations: [relation],
+  }
+  const linkSave = await fetch(BASE + '/api/entities/' + entityId, {
+    method: 'PATCH', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'CI 角色更新', expectedVersion: 2, data: linkedDocument }),
+  })
+  assert(linkSave.status === 200, 'Saving shared tags/character relation failed HTTP ' + linkSave.status)
+  assert((await linkSave.json()).version === 3, 'Relationship update must create a revision')
+  const updatedEntity = await fetch(BASE + '/api/entities/' + entityId, { headers: { Cookie: cookie } })
+  assert(updatedEntity.status === 200, 'Linked character read failed')
+  const entityData = (await updatedEntity.json()).entity.content
+  assert(entityData.cloudRelations[0].targetId === siblingId && entityData.cloudTagIds[0] === tagId,
+    'Saved relationship or tag references are missing')
+
+  const tagRename = await fetch(BASE + '/api/workspaces/' + workspaceId + '/tags/' + tagId, {
+    method: 'PATCH', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: '核心人物', color: '#45b7d1' }),
+  })
+  assert(tagRename.status === 200, 'Workspace tag rename failed')
+  const tagList = await fetch(BASE + '/api/workspaces/' + workspaceId + '/tags', {
+    headers: { Cookie: cookie },
+  })
+  assert(tagList.status === 200, 'Private tag list failed')
+  assert((await tagList.json()).tags.some(tag => tag.id === tagId && tag.name === '核心人物'),
+    'Shared tag rename lost the stable tag id')
+
+  const guestTags = await fetch(BASE + '/api/workspaces/' + workspaceId + '/tags')
+  assert(guestTags.status === 401, 'Guest could read private workspace tags')
+  const foreignRelation = await fetch(BASE + '/api/entities/' + entityId, {
+    method: 'PATCH', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'CI 角色更新', expectedVersion: 3, data: {
+      ...linkedDocument, cloudRelations: [{ ...relation, targetId: otherCharacterId }],
+    } }),
+  })
+  assert(foreignRelation.status === 400, 'Cross-workspace relationship should be rejected')
+  const foreignTag = await fetch(BASE + '/api/entities/' + entityId, {
+    method: 'PATCH', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'CI 角色更新', expectedVersion: 3, data: {
+      ...linkedDocument, cloudTagIds: [foreignTagId],
+    } }),
+  })
+  assert(foreignTag.status === 400, 'Cross-workspace shared tag should be rejected')
+  const selfRelation = await fetch(BASE + '/api/entities/' + entityId, {
+    method: 'PATCH', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'CI 角色更新', expectedVersion: 3, data: {
+      ...linkedDocument, cloudRelations: [{ ...relation, targetId: entityId }],
+    } }),
+  })
+  assert(selfRelation.status === 400, 'Self-referencing relationship should be rejected')
+
+  const graph = await fetch(BASE + '/workspaces/' + workspaceId + '/relations', {
+    headers: { Cookie: cookie },
+  })
+  assert(graph.status === 200, 'Private workspace graph route failed')
+  const guestGraph = await fetch(BASE + '/workspaces/' + workspaceId + '/relations', { redirect: 'manual' })
+  assert([302, 303, 307, 308].includes(guestGraph.status), 'Guest graph route must redirect to login')
+
+  const forbiddenOrigin = await fetch(BASE + '/api/workspaces', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: 'https://attacker.example', Cookie: cookie },
+    body: JSON.stringify({ name: 'Malicious Write' }),
+  })
+  assert(forbiddenOrigin.status === 403, 'Cross-site write request must be rejected')
+
+  process.stdout.write('OC Studio Cloud end-to-end login/workspace smoke passed.\n')
+}
+
+run().catch(error => { console.error(error); process.exitCode = 1 })
