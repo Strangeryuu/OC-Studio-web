@@ -1,3 +1,4 @@
+import { mutationOriginAllowed } from '@/lib/cloud/server/origin'
 import { NextResponse } from 'next/server'
 import { currentCloudUser, authorizedWorkspace } from '@/lib/cloud/server/authorization'
 import { pool } from '@/lib/cloud/server/db'
@@ -22,6 +23,7 @@ export async function GET(_request: Request, context: { params: Promise<{ worksp
 }
 
 export async function POST(request: Request, context: { params: Promise<{ workspaceId: string }> }) {
+  if (!mutationOriginAllowed(request)) return NextResponse.json({ error: 'INVALID_ORIGIN' }, { status: 403 })
   const user = await currentCloudUser()
   if (!user) return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 })
   const { workspaceId } = await context.params
