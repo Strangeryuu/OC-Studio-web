@@ -53,7 +53,7 @@ export async function PATCH(request: Request, context: Context) {
     const original = { title: existing.title, data: existing.content }
     const plan = planEntityUpdate({
       current: { id: entityId, workspaceId: access.workspaceId, version: existing.version, content: original },
-      expectedVersion, nextContent: document, actorId: access.user.id,
+      expectedVersion, nextContent: { title: document.title, data: document.data }, actorId: access.user.id,
       createdAt: new Date().toISOString(),
     })
     if (plan.kind === 'conflict') {
