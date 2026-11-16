@@ -33,7 +33,7 @@ describe('original OC Studio character defaults in cloud', () => {
       .map(c => ({ id: c.id, enabled: c.enabled }))).toEqual(old.components)
     expect(upgraded?.components.filter(c => ['cover', 'portrait', 'gallery', 'tags'].includes(c.id))
       .every(c => c.enabled === false)).toBe(true)
-    expect(upgraded?.components).toHaveLength(8)
+    expect(upgraded?.components).toHaveLength(9)
   })
 
   it('supports ordered, renamed and hidden builtins without dropping data', () => {
