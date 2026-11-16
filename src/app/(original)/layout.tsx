@@ -7,7 +7,7 @@ import { EntityNavigateProvider } from "@/components/layout/EntityNavigateContex
 import { NavigationSourceProvider } from "@/components/layout/NavigationSourceContext";
 import { SettingsProvider } from "@/lib/settings";
 import { ActiveEditorProvider } from "@/lib/editor-context";
-import { Providers } from "./providers";
+import { Providers } from "@/app/providers";
 import { VaultGate } from "@/features/vault";
 import { VaultProvider } from "@/lib/vault/vault-provider";
 import { OverlayRoot } from "@/components/layout/OverlayRoot";
@@ -19,7 +19,7 @@ import { WindowFocusSync } from "@/components/layout/WindowFocusSync";
 import { KeyboardProvider } from "@/lib/KeyboardContext";
 import { THEME_BOOT_SCRIPT } from "@/lib/theme/boot";
 import { PLATFORM_BOOT_SCRIPT } from "@/lib/env";
-import "./globals.css";
+import "@/app/globals.css";
 
 export const metadata: Metadata = {
   title: "OC Studio",

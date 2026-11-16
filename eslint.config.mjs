@@ -30,6 +30,7 @@ const eslintConfig = defineConfig([
     "logs/**",
   ]),
   {
+    files: ["**/*.{js,jsx,mjs,ts,tsx,mts,cts}"],
     rules: {
       // 约定：前缀下划线的形参 / 变量表示「占位不用」，不该报未使用
       "@typescript-eslint/no-unused-vars": [
@@ -43,6 +44,7 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    files: ["**/*.{js,jsx,mjs,ts,tsx,mts,cts}"],
     // eslint-config-next 16 起内置 React Compiler 的规则，默认是 error。
     // 这两类在库里是**有意为之**的写法，改成 warn：问题照样全部打印，但不再阻断
     // `npm run lint`，贡献者不会分不清哪些红叉是自己这次改出来的。
