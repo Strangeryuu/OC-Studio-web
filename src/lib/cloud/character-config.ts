@@ -7,7 +7,7 @@ import { BUILTIN_FIELDS } from '@/lib/fields/defaults'
 import { builtinTemplate } from '@/lib/templates/defaults'
 import type { FieldDef } from '@/lib/fields/types'
 
-export const CLOUD_CHARACTER_COMPONENTS = ['cover', 'avatar', 'info', 'portrait', 'tags', 'gallery', 'summary', 'body'] as const
+export const CLOUD_CHARACTER_COMPONENTS = ['cover', 'avatar', 'info', 'portrait', 'relations', 'tags', 'gallery', 'summary', 'body'] as const
 export type CloudCharacterComponentId = typeof CLOUD_CHARACTER_COMPONENTS[number]
 export type CloudCharacterComponent = { id: CloudCharacterComponentId; enabled: boolean }
 export interface CloudCharacterConfig {
@@ -21,6 +21,7 @@ const characterBuiltins = new Map(BUILTIN_FIELDS.character.map(field => [field.i
 const defaultComponentOrder: string[] = builtinTemplate('character').components
   .map(component => component.id).filter(id => supported.has(id))
 const legacyComponentIds = ['avatar', 'info', 'summary', 'body'] as const
+const priorComponentIds = ['cover', 'avatar', 'info', 'portrait', 'tags', 'gallery', 'summary', 'body'] as const
 
 /** Existing four-block workspace settings retain their relative order and
  * visibility. New blocks start hidden until a workspace admin opts in. */
@@ -29,8 +30,13 @@ function upgradeComponents(raw: unknown[]): unknown[] {
     item && typeof item === 'object' && !Array.isArray(item)
       ? (item as Record<string, unknown>).id : null,
   )
-  const isLegacy = raw.length === legacyComponentIds.length &&
+  const isLegacy = (
+    raw.length === legacyComponentIds.length &&
     legacyComponentIds.every(id => existingIds.includes(id))
+  ) || (
+    raw.length === priorComponentIds.length &&
+    priorComponentIds.every(id => existingIds.includes(id))
+  )
   if (!isLegacy) return raw
   const result = [...raw]
   const orderIndex = (id: unknown): number => defaultComponentOrder.indexOf(String(id))

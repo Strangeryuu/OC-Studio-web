@@ -176,6 +176,105 @@ async function run() {
   })
   assert(foreignMedia.status === 400, 'Character must reject an image from another workspace')
 
+
+  // Tags have stable UUIDs; renaming one does not require rewriting characters.
+  const tagResponse = await fetch(BASE + '/api/workspaces/' + workspaceId + '/tags', {
+    method: 'POST', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: '主角', color: '#4ecdc4' }),
+  })
+  assert(tagResponse.status === 201, 'Shared tag creation failed HTTP ' + tagResponse.status)
+  const tagId = (await tagResponse.json()).tag.id
+
+  const duplicateTag = await fetch(BASE + '/api/workspaces/' + workspaceId + '/tags', {
+    method: 'POST', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: '主角', color: '#4ecdc4' }),
+  })
+  assert(duplicateTag.status === 409, 'Duplicate shared tags should be rejected')
+
+  const foreignTagResponse = await fetch(BASE + '/api/workspaces/' + otherId + '/tags', {
+    method: 'POST', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: '其他世界的标签', color: '#4ecdc4' }),
+  })
+  assert(foreignTagResponse.status === 201, 'Foreign tag test setup failed')
+  const foreignTagId = (await foreignTagResponse.json()).tag.id
+
+  const sibling = await fetch(BASE + '/api/workspaces/' + workspaceId + '/entities', {
+    method: 'POST', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kind: 'character', title: 'CI 表姐',
+      data: { name: 'CI 表姐', document: { type: 'doc', content: [{ type: 'paragraph' }] } } }),
+  })
+  assert(sibling.status === 201, 'Creating related character failed')
+  const siblingId = (await sibling.json()).entity.id
+  const otherCharacter = await fetch(BASE + '/api/workspaces/' + otherId + '/entities', {
+    method: 'POST', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kind: 'character', title: 'Other World Character',
+      data: { name: 'Other World Character' } }),
+  })
+  assert(otherCharacter.status === 201, 'Foreign character test setup failed')
+  const otherCharacterId = (await otherCharacter.json()).entity.id
+
+  const relation = {
+    id: '00000000-0000-4000-8000-000000000001',
+    targetId: siblingId, relation: '表姐', arrow: 'both',
+  }
+  const linkedDocument = {
+    ...character.data, cloudTagIds: [tagId], cloudRelations: [relation],
+  }
+  const linkSave = await fetch(BASE + '/api/entities/' + entityId, {
+    method: 'PATCH', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'CI 角色更新', expectedVersion: 2, data: linkedDocument }),
+  })
+  assert(linkSave.status === 200, 'Saving shared tags/character relation failed HTTP ' + linkSave.status)
+  assert((await linkSave.json()).version === 3, 'Relationship update must create a revision')
+  const updatedEntity = await fetch(BASE + '/api/entities/' + entityId, { headers: { Cookie: cookie } })
+  assert(updatedEntity.status === 200, 'Linked character read failed')
+  const entityData = (await updatedEntity.json()).entity.content
+  assert(entityData.cloudRelations[0].targetId === siblingId && entityData.cloudTagIds[0] === tagId,
+    'Saved relationship or tag references are missing')
+
+  const tagRename = await fetch(BASE + '/api/workspaces/' + workspaceId + '/tags/' + tagId, {
+    method: 'PATCH', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: '核心人物', color: '#45b7d1' }),
+  })
+  assert(tagRename.status === 200, 'Workspace tag rename failed')
+  const tagList = await fetch(BASE + '/api/workspaces/' + workspaceId + '/tags', {
+    headers: { Cookie: cookie },
+  })
+  assert(tagList.status === 200, 'Private tag list failed')
+  assert((await tagList.json()).tags.some(tag => tag.id === tagId && tag.name === '核心人物'),
+    'Shared tag rename lost the stable tag id')
+
+  const guestTags = await fetch(BASE + '/api/workspaces/' + workspaceId + '/tags')
+  assert(guestTags.status === 401, 'Guest could read private workspace tags')
+  const foreignRelation = await fetch(BASE + '/api/entities/' + entityId, {
+    method: 'PATCH', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'CI 角色更新', expectedVersion: 3, data: {
+      ...linkedDocument, cloudRelations: [{ ...relation, targetId: otherCharacterId }],
+    } }),
+  })
+  assert(foreignRelation.status === 400, 'Cross-workspace relationship should be rejected')
+  const foreignTag = await fetch(BASE + '/api/entities/' + entityId, {
+    method: 'PATCH', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'CI 角色更新', expectedVersion: 3, data: {
+      ...linkedDocument, cloudTagIds: [foreignTagId],
+    } }),
+  })
+  assert(foreignTag.status === 400, 'Cross-workspace shared tag should be rejected')
+  const selfRelation = await fetch(BASE + '/api/entities/' + entityId, {
+    method: 'PATCH', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'CI 角色更新', expectedVersion: 3, data: {
+      ...linkedDocument, cloudRelations: [{ ...relation, targetId: entityId }],
+    } }),
+  })
+  assert(selfRelation.status === 400, 'Self-referencing relationship should be rejected')
+
+  const graph = await fetch(BASE + '/workspaces/' + workspaceId + '/relations', {
+    headers: { Cookie: cookie },
+  })
+  assert(graph.status === 200, 'Private workspace graph route failed')
+  const guestGraph = await fetch(BASE + '/workspaces/' + workspaceId + '/relations', { redirect: 'manual' })
+  assert([302, 303, 307, 308].includes(guestGraph.status), 'Guest graph route must redirect to login')
+
   const forbiddenOrigin = await fetch(BASE + '/api/workspaces', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Origin: 'https://attacker.example', Cookie: cookie },

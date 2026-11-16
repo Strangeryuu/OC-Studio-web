@@ -11,7 +11,7 @@ describe('original OC Studio character defaults in cloud', () => {
       'height', 'birthday', 'isMajor',
     ])
     expect(config.components.map(component => component.id)).toEqual([
-      'cover', 'avatar', 'info', 'portrait', 'tags', 'gallery', 'summary', 'body',
+      'cover', 'avatar', 'info', 'portrait', 'relations', 'tags', 'gallery', 'summary', 'body',
     ])
     expect(parseCloudCharacterConfig(config)).toEqual(config)
   })

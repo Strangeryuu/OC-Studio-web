@@ -7,7 +7,7 @@ const expectedTables = [
   'entities', 'entity_revisions', 'change_events',
   'media_assets', 'media_references', 'workspace_settings',
   'comments', 'collab_documents', 'collab_updates', 'audit_logs',
-  'oc_cloud_schema_migrations',
+  'oc_cloud_schema_migrations', 'workspace_tags',
 ]
 async function run() {
   const db = new Pool({ connectionString: process.env.DATABASE_URL })
@@ -30,13 +30,17 @@ async function run() {
     )
     if (authBanned.rowCount !== 1) throw new Error('Better Auth admin banned field is missing')
     const migration = await db.query(
-      'SELECT version FROM oc_cloud_schema_migrations WHERE version IN (1,2)',
+      'SELECT version FROM oc_cloud_schema_migrations WHERE version IN (1,2,3)',
     )
-    if (migration.rowCount !== 2) throw new Error('Business schema migrations were not recorded')
+    if (migration.rowCount !== 3) throw new Error('Business schema migrations were not recorded')
     const settingsVersion = await db.query(
       "SELECT column_name FROM information_schema.columns WHERE table_name='workspace_settings' AND column_name='version'",
     )
     if (settingsVersion.rowCount !== 1) throw new Error('Workspace settings version column is missing')
+    const tagIndex = await db.query(
+      "SELECT indexname FROM pg_indexes WHERE tablename='workspace_tags' AND indexname='workspace_tags_unique_name_idx'",
+    )
+    if (tagIndex.rowCount !== 1) throw new Error('Workspace tag unique-name index is missing')
     process.stdout.write('Cloud database smoke check passed (' + expectedTables.length + ' tables).\n')
   } finally {
     await db.end()

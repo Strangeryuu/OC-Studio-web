@@ -5,6 +5,7 @@ import { pool } from '@/lib/cloud/server/db'
 import { readEntityDocument, readExpectedVersion } from '@/lib/cloud/entity-input'
 import { planEntityUpdate, type JsonValue } from '@/lib/cloud/versioning'
 import { characterMediaAllowed } from '@/lib/cloud/server/character-media'
+import { characterLinksAllowed } from '@/lib/cloud/server/character-links'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -54,6 +55,10 @@ export async function PATCH(request: Request, context: Context) {
     if (!await characterMediaAllowed(client, access.workspaceId, existing.kind, document.data)) {
       await client.query('ROLLBACK')
       return NextResponse.json({ error: 'INVALID_CHARACTER_MEDIA' }, { status: 400 })
+    }
+    if (!await characterLinksAllowed(client, access.workspaceId, existing.kind, document.data, entityId)) {
+      await client.query('ROLLBACK')
+      return NextResponse.json({ error: 'INVALID_CHARACTER_LINKS' }, { status: 400 })
     }
     const original = { title: existing.title, data: existing.content }
     const plan = planEntityUpdate({

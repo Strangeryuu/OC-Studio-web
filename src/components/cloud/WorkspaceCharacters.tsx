@@ -80,6 +80,6 @@ export function WorkspaceCharacters({ workspaceId, role, initialEntities }: {
     {entities.length === 0 && <p className="rounded-md border border-dashed border-[var(--oc-line)] p-6 text-center text-sm opacity-70">
       还没有角色与创作条目。{canCreate ? '可以从上方创建第一个角色。' : '等待项目编辑者添加内容。'}
     </p>}
-    <p className="mt-4 text-xs opacity-60">云端角色编辑已接入 PostgreSQL，支持自动保存、历史版本、图片与项目成员权限；原版高级关系图和模板继续迁移中。</p>
+    <p className="mt-4 text-xs opacity-60">云端角色编辑已接入 PostgreSQL，支持自动保存、历史版本、图片与项目成员权限；人物关系及共用标签已有云端基础功能，原版高级图谱编辑和完整模板继续迁移中。</p>
   </section>
 }

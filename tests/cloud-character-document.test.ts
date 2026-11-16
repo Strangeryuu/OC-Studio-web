@@ -76,6 +76,24 @@ describe('cloud character data mapping', () => {
     expect(parsed.galleryMediaIds).toEqual(['asset-b'])
   })
 
+
+  it('keeps original numeric relationship and tag data while adding UUID associations', () => {
+    const id = '00000000-0000-4000-8000-000000000001'
+    const other = '00000000-0000-4000-8000-000000000002'
+    const original = {
+      name: '烟玖', tags: [31], relatedCharacters: [{ characterId: 72, relation: '表妹' }],
+    }
+    const parsed = cloudCharacterFields(original, '烟玖')
+    const saved = mergeCloudCharacter(original, {
+      ...parsed, cloudTagIds: [id],
+      cloudRelations: [{ id, targetId: other, relation: '表妹', arrow: 'both' }],
+    })
+    expect(saved.relatedCharacters).toEqual(original.relatedCharacters)
+    expect(saved.tags).toEqual([31])
+    expect(saved.cloudTagIds).toEqual([id])
+    expect(saved.cloudRelations).toHaveLength(1)
+  })
+
   it('normalizes empty or malformed richtext safely', () => {
     const fields = cloudCharacterFields({ name: '角色', document: 'invalid', aliases: ['一', 4] }, '角色')
     expect(fields.document.type).toBe('doc')

@@ -12,7 +12,10 @@ import type { WorkspaceRole } from '@/lib/cloud/permissions'
 import { CloudSnapshotBody } from '@/components/cloud/CloudSnapshotBody'
 import { CloudCharacterInfoFields } from '@/components/cloud/CloudCharacterInfoFields'
 import { CloudMediaPanel } from '@/components/cloud/CloudMediaPanel'
-import { CloudCharacterTags } from '@/components/cloud/CloudCharacterTags'
+import { CloudWorkspaceTags } from '@/components/cloud/CloudWorkspaceTags'
+import { CloudCharacterRelations } from '@/components/cloud/CloudCharacterRelations'
+import type { CloudRelationCandidate, CloudInboundRelation } from '@/lib/cloud/character-links'
+import type { CloudWorkspaceTag } from '@/lib/cloud/shared-tags'
 import type { CloudCharacterConfig } from '@/lib/cloud/character-config'
 import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
@@ -21,11 +24,14 @@ import { TableRow } from '@tiptap/extension-table-row'
 import { TableCell } from '@tiptap/extension-table-cell'
 import { TableHeader } from '@tiptap/extension-table-header'
 
-export function CloudCharacterEditor({ workspaceId, role, initial, config }: {
+export function CloudCharacterEditor({ workspaceId, role, initial, config, candidates, inbound, sharedTags }: {
   workspaceId: string
   role: WorkspaceRole
   initial: CloudEntityRow
   config: CloudCharacterConfig
+  candidates: CloudRelationCandidate[]
+  inbound: CloudInboundRelation[]
+  sharedTags: CloudWorkspaceTag[]
 }) {
   const editable = role === 'owner' || role === 'admin' || role === 'editor'
   const canRestore = role === 'owner' || role === 'admin'
@@ -206,7 +212,7 @@ export function CloudCharacterEditor({ workspaceId, role, initial, config }: {
 
   const avatarUrl = fields.avatarMediaId ? '/api/media/' + encodeURIComponent(fields.avatarMediaId) : null
   const historyFields = revisionDoc ? cloudCharacterFields(revisionDoc.data, revisionDoc.title) : null
-  const compareKeys: (keyof CloudCharacterFields)[] = ['name', 'bio', 'race', 'occupation', 'faction', 'element', 'height', 'birthday', 'country', 'isMajor', 'aliases', 'custom', 'headerMediaId', 'portraitMediaIds', 'galleryMediaIds', 'cloudTags']
+  const compareKeys: (keyof CloudCharacterFields)[] = ['name', 'bio', 'race', 'occupation', 'faction', 'element', 'height', 'birthday', 'country', 'isMajor', 'aliases', 'custom', 'headerMediaId', 'portraitMediaIds', 'galleryMediaIds', 'cloudTags', 'cloudTagIds', 'cloudRelations']
 
   return <div className="flex flex-col gap-6">
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -252,8 +258,17 @@ export function CloudCharacterEditor({ workspaceId, role, initial, config }: {
             onChange={ids => updateFields({ portraitMediaIds: ids })} />
         }
         if (component.id === 'tags') {
-          return <CloudCharacterTags key="tags" tags={fields.cloudTags}
-            editable={editable} onChange={tags => updateFields({ cloudTags: tags })} />
+          return <CloudWorkspaceTags key="tags" workspaceId={workspaceId}
+            role={role} initialTags={sharedTags} selectedIds={fields.cloudTagIds}
+            legacyLabels={fields.cloudTags}
+            onChange={ids => updateFields({ cloudTagIds: ids })}
+            onLegacyChange={labels => updateFields({ cloudTags: labels })} />
+        }
+        if (component.id === 'relations') {
+          return <CloudCharacterRelations key="relations" workspaceId={workspaceId}
+            characterId={initial.id} candidates={candidates} inbound={inbound}
+            relations={fields.cloudRelations} editable={editable}
+            onChange={relations => updateFields({ cloudRelations: relations })} />
         }
         if (component.id === 'gallery') {
           return <CloudMediaPanel key="gallery" title="角色相册" mode="gallery"

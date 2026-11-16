@@ -1,4 +1,5 @@
 import type { JSONContent } from '@tiptap/core'
+import { cloudRelationsForDisplay, cloudTagIdsForDisplay, type CloudCharacterRelation } from './character-links'
 
 /** Cloud editing keeps unknown original OC Studio fields intact. */
 export interface CloudCharacterFields {
@@ -20,6 +21,8 @@ export interface CloudCharacterFields {
   galleryMediaIds: string[]
   /** Text tags for the cloud bridge; original numeric tag ids stay untouched. */
   cloudTags: string[]
+  cloudTagIds: string[]
+  cloudRelations: CloudCharacterRelation[]
   document: JSONContent
 }
 
@@ -81,6 +84,8 @@ export function cloudCharacterFields(content: Record<string, unknown>, title: st
     portraitMediaIds: cloudMediaList(content.portraitMediaIds, 24),
     galleryMediaIds: cloudMediaList(content.galleryMediaIds, 48),
     cloudTags: cloudTagList(content.cloudTags),
+    cloudTagIds: cloudTagIdsForDisplay(content.cloudTagIds),
+    cloudRelations: cloudRelationsForDisplay(content.cloudRelations),
     document: validDocument(content.document) ? content.document : EMPTY_DOCUMENT,
   }
 }
@@ -99,6 +104,8 @@ export function mergeCloudCharacter(
     portraitMediaIds: cloudMediaList(next.portraitMediaIds, 24),
     galleryMediaIds: cloudMediaList(next.galleryMediaIds, 48),
     cloudTags: cloudTagList(next.cloudTags),
+    cloudTagIds: [...next.cloudTagIds],
+    cloudRelations: next.cloudRelations.map(relation => ({ ...relation })),
     // Keep values from pre-existing custom fields which this editor does not expose.
     custom: {
       ...(original.custom && typeof original.custom === 'object' && !Array.isArray(original.custom)
