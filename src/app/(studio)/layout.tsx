@@ -1,102 +1,34 @@
-import type { Metadata, Viewport } from "next";
-import { AppShell } from "@/components/layout/AppShell";
-import { BlurEffect } from "@/components/layout/BlurEffect";
-import { NavigationProvider } from "@/components/layout/NavigationContext";
-import { WordCountProvider } from "@/components/layout/WordCountContext";
-import { EntityNavigateProvider } from "@/components/layout/EntityNavigateContext";
-import { NavigationSourceProvider } from "@/components/layout/NavigationSourceContext";
-import { SettingsProvider } from "@/lib/settings";
-import { ActiveEditorProvider } from "@/lib/editor-context";
-import { Providers } from "../providers";
-import { VaultGate } from "@/features/vault";
-import { VaultProvider } from "@/lib/vault/vault-provider";
-import { OverlayRoot } from "@/components/layout/OverlayRoot";
-import { Toaster } from "@/components/shared/toaster";
-import { NativeMenuBlocker } from "@/components/shared/NativeMenuBlocker";
-import { BrowserKeyBlocker } from "@/components/shared/BrowserKeyBlocker";
-import { ShowWindow } from "@/components/layout/ShowWindow";
-import { WindowFocusSync } from "@/components/layout/WindowFocusSync";
-import { KeyboardProvider } from "@/lib/KeyboardContext";
-import { THEME_BOOT_SCRIPT } from "@/lib/theme/boot";
-import { PLATFORM_BOOT_SCRIPT } from "@/lib/env";
-import "../globals.css";
-
-export const metadata: Metadata = {
-  title: "OC Studio",
-  description: "原创角色与世界观创作工作台",
-  icons: { icon: "/favicon.svg" },
-};
-
-export const viewport: Viewport = {
-  width: "device-width",
-  initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
-  viewportFit: "cover",
-};
-
+import type { Metadata } from 'next'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/cloud/server/auth'
 import { SignOutButton } from '@/components/cloud/SignOutButton'
+import { THEME_BOOT_SCRIPT } from '@/lib/theme/boot'
+import '../globals.css'
 
-export default async function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export const metadata: Metadata = {
+  title: 'OC Studio Cloud',
+  description: '私人世界观与邀请协作',
+}
+
+export default async function StudioLayout({ children }: { children: React.ReactNode }) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session || session.user.banned) redirect('/login')
   return (
     <html lang="zh-CN" className="h-full antialiased" suppressHydrationWarning>
-      <head>
-          <script
-            dangerouslySetInnerHTML={{
-              // 两段 IIFE 必须用 `;` 隔开：主题脚本结尾不带分号，直接拼
-              // `(function(){…})()` 会被解析成「调用前一个的返回值」而抛错。
-              __html: THEME_BOOT_SCRIPT + ';' + PLATFORM_BOOT_SCRIPT,
-            }}
-          />
-        </head>
-        <body className="flex flex-col h-screen overflow-hidden">
-        <Providers>
-          {/* 首帧后显示窗口（窗口配置是 visible:false，防启动白闪）；失焦同步写在 <html> 上。
-              两者都必须在 VaultGate 外面：闸门期间窗口一样要出来、一样要能变灰。 */}
-          <ShowWindow />
-          <WindowFocusSync />
-          <VaultProvider>
-            <KeyboardProvider>
-            <SettingsProvider>
-              <ActiveEditorProvider>
-              <EntityNavigateProvider>
-                <WordCountProvider>
-                  <NavigationProvider>
-                    <NavigationSourceProvider>
-                    <BlurEffect />
-                    <VaultGate>
-                      <AppShell>
-                        {children}
-                        <div className="fixed bottom-3 right-3 z-50"><SignOutButton /></div>
-                      </AppShell>
-                    </VaultGate>
-                    </NavigationSourceProvider>
-                  </NavigationProvider>
-                </WordCountProvider>
-              </EntityNavigateProvider>
-              </ActiveEditorProvider>
-            </SettingsProvider>
-            </KeyboardProvider>
-          </VaultProvider>
-          {/* Toaster 必须在 VaultGate **外面**：闸门期间（还没绑定文件夹）也要能看见提示 */}
-          <Toaster />
-          {/* 同理：屏蔽 WebView 自带右键菜单也要在闸门外面，否则闸门里右键会弹出「刷新/另存为」 */}
-          <NativeMenuBlocker />
-          {/* 浏览器加速键（F5 / Ctrl+R / Ctrl+P / Ctrl+U / Ctrl+加减号）：只在 Tauri 里生效，
-              浏览器开发时保留刷新。也必须挂在闸门外面 —— 闸门期间按 F5 一样会丢草稿。 */}
-          <BrowserKeyBlocker />
-        </Providers>
-      <OverlayRoot />
+      <head><script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} /></head>
+      <body className="min-h-screen bg-[var(--oc-paper)] text-[var(--oc-ink)]">
+        <header className="border-b border-[var(--oc-line)] px-5 py-3">
+          <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
+            <a href="/" className="font-semibold">OC Studio Cloud</a>
+            <nav className="flex items-center gap-4 text-sm">
+              <a href="/join" className="opacity-80 hover:opacity-100">接受邀请</a>
+              <SignOutButton />
+            </nav>
+          </div>
+        </header>
+        <main className="mx-auto max-w-5xl px-5 py-8">{children}</main>
       </body>
     </html>
-  );
+  )
 }
