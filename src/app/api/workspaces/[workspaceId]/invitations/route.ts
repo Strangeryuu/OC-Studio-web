@@ -1,3 +1,4 @@
+import { mutationOriginAllowed } from '@/lib/cloud/server/origin'
 import { randomBytes, createHash } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { currentCloudUser, authorizedWorkspace } from '@/lib/cloud/server/authorization'
@@ -8,6 +9,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: Request, context: { params: Promise<{ workspaceId: string }> }) {
+  if (!mutationOriginAllowed(request)) return NextResponse.json({ error: 'INVALID_ORIGIN' }, { status: 403 })
   const user = await currentCloudUser()
   if (!user) return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 })
   const { workspaceId } = await context.params
