@@ -139,6 +139,11 @@ function valuesSnapshot(values: CharacterValues): Record<string, unknown> {
   }
 }
 
+/** Form-normalized baseline used when saving only a subset of original fields. */
+export function characterFormBaseline(character: Character): Record<string, unknown> {
+  return valuesSnapshot(valuesFromEntity(character))
+}
+
 /** 别人记在我身上的关系：只读镜像，权威记录在发起方（见 docs/关系图.md §2.1） */
 export interface InboundRelation {
   fromId: number
@@ -155,6 +160,7 @@ export interface InboundRelation {
 export function useCharacterForm(
   character: Character,
   onSave: (id: number, data: Partial<CharacterFormData>) => Promise<void>,
+  options?: { localLookups?: boolean },
 ) {
   /** 挂载那一刻的字段值：初始 state 与初始基线都从这里来，不会两边漂移 */
   const [initial] = useState(() => valuesFromEntity(character))
@@ -239,9 +245,10 @@ export function useCharacterForm(
 
   // 外部改写（别处保存 / 同步落地）后回灌的逻辑在保存流水线之后（它要读 `saving`）。
 
-  const { characters: allCharacters } = useCharacterList()
-  const { countries } = useCountryList()
-  const { entries: allNotes } = useCodexEntryList()
+  const useLocalLookups = options?.localLookups !== false
+  const { characters: allCharacters } = useCharacterList(useLocalLookups)
+  const { countries } = useCountryList(useLocalLookups)
+  const { entries: allNotes } = useCodexEntryList(useLocalLookups)
 
   /**
    * 反向关系：遍历全体角色，收集「谁在自己的关系表里记了我」。

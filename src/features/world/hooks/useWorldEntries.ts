@@ -51,24 +51,25 @@ export function useEntryList(): {
  * 全部笔记（**不**按分类过滤）：给角色「相关笔记」提供候选与当前标题。
  * 与 `useEntryList` 分开：那个列表是世界观目录，会把已启用分类的条目摘掉。
  */
-export function useAllEntryList(): {
+export function useAllEntryList(enabled = true): {
   entries: WorldEntry[]
   loading: boolean
 } {
   const { data, isLoading } = useQuery({
     queryKey: [...LIST_KEY, 'all'],
     queryFn: () => service.getAllEntries(),
+    enabled,
     staleTime: 30_000,
   })
-  return { entries: data ?? [], loading: isLoading }
+  return { entries: enabled ? data ?? [] : [], loading: enabled && isLoading }
 }
 
 /** 只看设定类笔记（角色相关笔记的候选）：小说 / 地图不进关系块 */
-export function useCodexEntryList(): {
+export function useCodexEntryList(enabled = true): {
   entries: WorldEntry[]
   loading: boolean
 } {
-  const all = useAllEntryList()
+  const all = useAllEntryList(enabled)
   return { entries: all.entries.filter(isCodexEntry), loading: all.loading }
 }
 

@@ -67,6 +67,6 @@ export function WorkspaceDashboard({ initialWorkspaces, userName }: {
           </a>
         </li>)}</ul>}
     </section>
-    <p className="text-xs opacity-60">原版编辑器的云端适配正在进行，当前开放项目和成员管理。</p>
+    <p className="text-xs opacity-60">角色基本信息可在资料库中编辑，更多原版功能正在接入。</p>
   </div>
 }

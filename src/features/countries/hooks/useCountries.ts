@@ -14,7 +14,7 @@ function makeCountryKey(id: number | null) {
   return ['country', id]
 }
 
-export function useCountryList(): {
+export function useCountryList(enabled = true): {
   countries: Country[]
   loading: boolean
   error: string | null
@@ -23,22 +23,24 @@ export function useCountryList(): {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: LIST_KEY,
     queryFn: () => countryService.getCountries(),
+    enabled,
     staleTime: 30_000,
   })
 
   const refresh = useCallback(() => {
-    void refetch()
-  }, [refetch])
+    if (enabled) void refetch()
+  }, [enabled, refetch])
 
   useEffect(() => {
+    if (!enabled) return
     const handler = () => { void refetch() }
     window.addEventListener(DATA_UPDATED_EVENT, handler)
     return () => window.removeEventListener(DATA_UPDATED_EVENT, handler)
-  }, [refetch])
+  }, [enabled, refetch])
 
   return {
-    countries: data ?? [],
-    loading: isLoading,
+    countries: enabled ? data ?? [] : [],
+    loading: enabled && isLoading,
     error: error instanceof Error ? error.message : null,
     refresh,
   }

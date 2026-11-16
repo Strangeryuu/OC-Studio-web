@@ -4,6 +4,7 @@ import { currentCloudUser, authorizedWorkspace } from '@/lib/cloud/server/author
 import { pool } from '@/lib/cloud/server/db'
 import { InviteCreateForm } from '@/components/cloud/InviteCreateForm'
 import { WorkspaceMembers, type MemberRow } from '@/components/cloud/WorkspaceMembers'
+import { WorkspaceCharacters } from '@/features/characters/cloud/WorkspaceCharacters'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,8 +28,8 @@ export default async function WorkspacePage({ params }: { params: Promise<{ work
     <div>
       <h1 className="text-lg font-semibold">{workspace.name}</h1>
       <p className="mt-2 text-ui text-ink-muted">{workspace.description || '私人世界观'} · {role}</p>
-      <p className="mt-3 text-ui text-ink-muted">原版编辑器的云端数据适配正在进行，暂未开放编辑。</p>
     </div>
+    <WorkspaceCharacters workspaceId={workspaceId} role={role} />
     <WorkspaceMembers workspaceId={workspaceId} selfId={user.id} role={role} initialMembers={members.rows} />
     {(role === 'owner' || role === 'admin') && <section className="rounded-panel border border-line p-5">
       <h2 className="mb-4 text-reading font-medium">邀请成员</h2>

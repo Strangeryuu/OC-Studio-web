@@ -22,13 +22,16 @@ export function CharacterInfoSection({
   form,
   onNavigateToCountry,
   compact = false,
+  fieldsOverride,
 }: {
   form: CharacterForm
   onNavigateToCountry?: (id: number) => void
   /** 三栏中栏的窄容器：字段单列（不依赖 viewport 的 sm 断点） */
   compact?: boolean
+  fieldsOverride?: FieldDef[]
 }) {
-  const fields = useFieldConfig().character
+  const fieldConfig = useFieldConfig()
+  const fields = fieldsOverride ?? fieldConfig.character
 
   const textValues: Record<string, { value: string; set: (v: string) => void }> = {
     aliases: { value: form.aliasesStr, set: form.setAliasesStr },

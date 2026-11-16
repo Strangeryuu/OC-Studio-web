@@ -14,7 +14,7 @@ function makeCharacterKey(id: number | null) {
   return ['character', id]
 }
 
-export function useCharacterList(): {
+export function useCharacterList(enabled = true): {
   characters: Character[]
   loading: boolean
   error: string | null
@@ -23,24 +23,26 @@ export function useCharacterList(): {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: LIST_KEY,
     queryFn: () => characterService.getCharacters(),
+    enabled,
     staleTime: 30_000,
   })
 
   const refresh = useCallback(() => {
-    void refetch()
-  }, [refetch])
+    if (enabled) void refetch()
+  }, [enabled, refetch])
 
   useEffect(() => {
+    if (!enabled) return
     const handler = () => {
       void refetch()
     }
     window.addEventListener(DATA_UPDATED_EVENT, handler)
     return () => window.removeEventListener(DATA_UPDATED_EVENT, handler)
-  }, [refetch])
+  }, [enabled, refetch])
 
   return {
-    characters: data ?? [],
-    loading: isLoading,
+    characters: enabled ? data ?? [] : [],
+    loading: enabled && isLoading,
     error: error instanceof Error ? error.message : null,
     refresh,
   }
