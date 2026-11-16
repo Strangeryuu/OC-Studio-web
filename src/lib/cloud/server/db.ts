@@ -1,4 +1,3 @@
-import 'server-only'
 import { Pool } from 'pg'
 
 // A single connection pool per Node process, shared by the auth service and API.
