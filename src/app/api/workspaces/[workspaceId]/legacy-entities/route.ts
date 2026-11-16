@@ -28,7 +28,7 @@ export async function GET(request: Request, context: { params: Promise<{ workspa
   const hasMore = result.rows.length > PAGE_SIZE
   const rows = result.rows.slice(0, PAGE_SIZE)
   const entities = rows.map(row => {
-    const localId = parseOriginalId(row.local_id)
+    const localId = parseOriginalId(String(row.local_id))
     if (localId === null) throw new Error('Invalid local entity ID')
     return { ...row, local_id: localId }
   })

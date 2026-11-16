@@ -5,6 +5,7 @@ import { pool } from '@/lib/cloud/server/db'
 import { isEntityKind, readEntityDocument } from '@/lib/cloud/entity-input'
 import { characterMediaAllowed } from '@/lib/cloud/server/character-media'
 import { characterLinksAllowed } from '@/lib/cloud/server/character-links'
+import { parseOriginalId } from '@/lib/cloud/original-ids'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -52,12 +53,14 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
       await client.query('ROLLBACK')
       return NextResponse.json({ error: 'INVALID_CHARACTER_LINKS' }, { status: 400 })
     }
-    const result = await client.query<{ id: string; version: number }>(
+    const result = await client.query<{ id: string; local_id: string; version: number }>(
       `INSERT INTO entities(workspace_id,kind,title,content,created_by,updated_by)
-       VALUES($1,$2,$3,$4::jsonb,$5,$5) RETURNING id,version`,
+       VALUES($1,$2,$3,$4::jsonb,$5,$5) RETURNING id,local_id,version`,
       [workspaceId, body.kind, doc.title, JSON.stringify(doc.data), user.id],
     )
     const entity = result.rows[0]
+    const localId = parseOriginalId(String(entity.local_id))
+    if (localId === null) throw new Error('Invalid local entity ID')
     await client.query(
       `INSERT INTO entity_revisions(entity_id,version,actor_id,action,content_snapshot)
        VALUES($1,$2,$3,'create',$4::jsonb)`,
@@ -69,7 +72,7 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
       [entity.id, entity.version, user.id],
     )
     await client.query('COMMIT')
-    return NextResponse.json({ entity: { ...entity, workspaceId, kind: body.kind, ...doc } }, { status: 201 })
+    return NextResponse.json({ entity: { ...entity, local_id: localId, workspaceId, kind: body.kind, ...doc } }, { status: 201 })
   } catch (error) {
     await client.query('ROLLBACK')
     throw error

@@ -27,7 +27,7 @@ export async function GET(_req: Request, context: Context) {
 export async function PATCH(request: Request, context: Context) {
   if (!mutationOriginAllowed(request)) return NextResponse.json({ error: 'INVALID_ORIGIN' }, { status: 403 })
   const { entityId } = await context.params
-  const access = await entityAccess(entityId, 'entity:update')
+  const access = await entityAccess(entityId, 'entity:update', request.headers.get('X-OC-Workspace-Id'))
   if (access.status !== 200) return NextResponse.json({ error: access.status === 401 ? 'UNAUTHORIZED' : 'NOT_FOUND' }, { status: access.status })
   const body: unknown = await request.json().catch(() => null)
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
@@ -104,7 +104,7 @@ export async function PATCH(request: Request, context: Context) {
 export async function DELETE(request: Request, context: Context) {
   if (!mutationOriginAllowed(request)) return NextResponse.json({ error: 'INVALID_ORIGIN' }, { status: 403 })
   const { entityId } = await context.params
-  const access = await entityAccess(entityId, 'entity:delete')
+  const access = await entityAccess(entityId, 'entity:delete', request.headers.get('X-OC-Workspace-Id'))
   if (access.status !== 200) return NextResponse.json({ error: access.status === 401 ? 'UNAUTHORIZED' : 'NOT_FOUND' }, { status: access.status })
   const body: unknown = await request.json().catch(() => null)
   const expected = body && typeof body === 'object' && !Array.isArray(body)

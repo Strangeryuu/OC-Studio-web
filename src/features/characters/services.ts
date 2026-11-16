@@ -11,7 +11,7 @@ import type { JournalActor } from '@/lib/vault/journal'
 
 const TABLE = 'characters'
 
-function buildDefaultCharacter(
+export function buildDefaultCharacter(
   data: CharacterFormData,
   overrides: Partial<Character> = {},
 ): Omit<Character, 'id'> {
