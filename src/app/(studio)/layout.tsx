@@ -23,6 +23,8 @@ export default async function StudioLayout({ children }: { children: React.React
             <a href="/" className="font-semibold">OC Studio Cloud</a>
             <nav className="flex items-center gap-4 text-sm">
               <a href="/join" className="opacity-80 hover:opacity-100">接受邀请</a>
+              {session.user.role?.split(',').includes('admin') &&
+                <a href="/admin/users" className="opacity-80 hover:opacity-100">用户管理</a>}
               <SignOutButton />
             </nav>
           </div>

@@ -9,6 +9,7 @@ import { ArrowLeft, Check, CloudUpload, History, ImagePlus, RefreshCw } from 'lu
 import { cloudCharacterFields, mergeCloudCharacter, type CloudCharacterFields } from '@/lib/cloud/character-document'
 import type { CloudEntityRow, CloudRevision } from '@/lib/cloud/client-types'
 import type { WorkspaceRole } from '@/lib/cloud/permissions'
+import { CloudSnapshotBody } from '@/components/cloud/CloudSnapshotBody'
 
 const FIELD_ITEMS: { key: keyof CloudCharacterFields; label: string }[] = [
   { key: 'name', label: '姓名' }, { key: 'race', label: '种族' },
@@ -289,7 +290,10 @@ export function CloudCharacterEditor({ workspaceId, role, initial }: {
                 </tr>
               })}</tbody>
             </table>
-            <p className="text-xs opacity-70">富文本正文保存在每个完整快照中。详细内容可通过历史版本 API 获取。</p>
+            <div className="flex flex-col gap-2">
+              <h4 className="text-sm font-semibold">旧版本正文预览</h4>
+              <CloudSnapshotBody key={selectedRevision} content={historyFields.document} />
+            </div>
             {canRestore && <button type="button" onClick={() => void restoreRevision()}
               disabled={dirty || saving || historyBusy}
               className="inline-flex items-center justify-center gap-2 self-start rounded-md border border-[var(--oc-line)] px-4 py-2 text-sm disabled:opacity-50">
