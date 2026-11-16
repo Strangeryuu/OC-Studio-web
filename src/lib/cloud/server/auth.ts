@@ -1,4 +1,3 @@
-import 'server-only'
 import { betterAuth } from 'better-auth'
 import { admin } from 'better-auth/plugins'
 import { pool } from './db'
