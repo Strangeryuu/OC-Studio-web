@@ -21,7 +21,7 @@ export async function GET(_request: Request, context: { params: Promise<{ assetI
   }
   try {
     const bytes = await readPrivateImage(asset.storage_key)
-    return new Response(bytes, {
+    return new Response(Uint8Array.from(bytes).buffer, {
       status: 200,
       headers: {
         'Content-Type': asset.mime_type,
