@@ -1,3 +1,4 @@
+import { mutationOriginAllowed } from '@/lib/cloud/server/origin'
 import { NextResponse } from 'next/server'
 import { entityAccess } from '@/lib/cloud/server/entity-access'
 import { pool } from '@/lib/cloud/server/db'
@@ -22,6 +23,7 @@ export async function GET(_req: Request, context: Context) {
 }
 
 export async function PATCH(request: Request, context: Context) {
+  if (!mutationOriginAllowed(request)) return NextResponse.json({ error: 'INVALID_ORIGIN' }, { status: 403 })
   const { entityId } = await context.params
   const access = await entityAccess(entityId, 'entity:update')
   if (access.status !== 200) return NextResponse.json({ error: access.status === 401 ? 'UNAUTHORIZED' : 'NOT_FOUND' }, { status: access.status })
@@ -90,6 +92,7 @@ export async function PATCH(request: Request, context: Context) {
 }
 
 export async function DELETE(request: Request, context: Context) {
+  if (!mutationOriginAllowed(request)) return NextResponse.json({ error: 'INVALID_ORIGIN' }, { status: 403 })
   const { entityId } = await context.params
   const access = await entityAccess(entityId, 'entity:delete')
   if (access.status !== 200) return NextResponse.json({ error: access.status === 401 ? 'UNAUTHORIZED' : 'NOT_FOUND' }, { status: access.status })
