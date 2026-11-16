@@ -121,7 +121,8 @@
     "better-auth": "1.7.23",
     "pg": "^8.16.0",
     "@tiptap/extension-collaboration": "^3.22.4",
-    "yjs": "^13.6.27"
+    "yjs": "^13.6.27",
+    "@tiptap/y-tiptap": "^3.0.9"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
