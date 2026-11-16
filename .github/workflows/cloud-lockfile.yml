@@ -1,6 +1,8 @@
 name: Refresh cloud dependency lockfile
 
 on:
+  push:
+    branches: [feat/cloud-workspaces-foundation]
   workflow_dispatch:
 
 permissions:

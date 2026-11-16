@@ -1,7 +1,7 @@
 # OC Studio Cloud. Build requires a synchronized package-lock.json.
 FROM node:22-bookworm-slim AS deps
 WORKDIR /app
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json .npmrc ./
 RUN npm ci --no-audit --no-fund
 
 FROM deps AS build
