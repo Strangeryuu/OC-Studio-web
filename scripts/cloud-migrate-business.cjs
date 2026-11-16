@@ -10,8 +10,8 @@ async function run() {
   const client = await pool.connect()
   try {
     const sql = readFileSync(resolve(process.cwd(), 'cloud/migrations/0001_workspaces.sql'), 'utf8')
-      .replace(/^\s*BEGIN;\s*/i, '')
-      .replace(/\s*COMMIT;\s*$/i, '')
+      .replace(/^\s*BEGIN;\s*$/gim, '')
+      .replace(/^\s*COMMIT;\s*$/gim, '')
     await client.query('BEGIN')
     await client.query(`
       CREATE TABLE IF NOT EXISTS oc_cloud_schema_migrations (
