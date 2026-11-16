@@ -5,7 +5,7 @@
 ## 前置条件
 
 - Node.js 22，PostgreSQL 16+，可用的 npm / psql。
-- 本分支新增了 Better Auth 与 pg 依赖，**package-lock.json 尚未重新生成**。目前在隔离环境中无法访问 npm registry，也无法运行完整项目，因此首次使用需要在可联网的开发机器执行 `npm install`，把生成的 `package-lock.json` 提交到当前 PR，之后再使用 `npm ci`。
+- 本分支新增了 Better Auth 与 pg 依赖，**package-lock.json 已通过 GitHub Actions 自动更新**。目前在隔离环境中无法访问 npm registry，也无法运行完整项目，因此首次使用需要在可联网的开发机器执行 `npm install`，把生成的 `package-lock.json` 提交到当前 PR，之后再使用 `npm ci`。
 - 此 Draft 尚无生产级 VPS 编排、媒体存储或原编辑器的云端同步。完成验收后再对外开放。
 
 ## 本地初始化
@@ -87,3 +87,10 @@
 - `OC Studio Cloud CI` 在云端分支 push/PR 时尝试执行 npm 安装、TypeScript、单测和 Next 构建。
 - `Refresh cloud dependency lockfile` 可在 Actions 页面手动触发，选择云端分支；它会更新 `package-lock.json` 并提交到该分支（需要仓库 Actions 和 GITHUB_TOKEN 写权限）。
 - 原版的 Windows + Tauri 静态构建 CI 继续服务 main 及其他非云端 PR。
+
+## 已添加的部署文件
+
+- `Dockerfile`：Next.js standalone 分阶段构建；`deploy/compose.yml`：PostgreSQL + Next.js + Caddy + 手工数据库迁移任务。
+- `deploy/Caddyfile`：站点 HTTPS 反向代理；`deploy/env.example`：环境变量模板。
+- 详细 VPS 配置及上线次序见 [`deploy/README.md`](../deploy/README.md)。
+- 现已提供 `/admin/users` 用户账号管理以及项目页成员角色更改和成员移除，相关操作写入审计记录。
