@@ -7,7 +7,7 @@ import { EntityNavigateProvider } from "@/components/layout/EntityNavigateContex
 import { NavigationSourceProvider } from "@/components/layout/NavigationSourceContext";
 import { SettingsProvider } from "@/lib/settings";
 import { ActiveEditorProvider } from "@/lib/editor-context";
-import { Providers } from "./providers";
+import { Providers } from "../providers";
 import { VaultGate } from "@/features/vault";
 import { VaultProvider } from "@/lib/vault/vault-provider";
 import { OverlayRoot } from "@/components/layout/OverlayRoot";
@@ -19,7 +19,7 @@ import { WindowFocusSync } from "@/components/layout/WindowFocusSync";
 import { KeyboardProvider } from "@/lib/KeyboardContext";
 import { THEME_BOOT_SCRIPT } from "@/lib/theme/boot";
 import { PLATFORM_BOOT_SCRIPT } from "@/lib/env";
-import "./globals.css";
+import "../globals.css";
 
 export const metadata: Metadata = {
   title: "OC Studio",
@@ -35,11 +35,18 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-export default function RootLayout({
+import { headers } from 'next/headers'
+import { redirect } from 'next/navigation'
+import { auth } from '@/lib/cloud/server/auth'
+import { SignOutButton } from '@/components/cloud/SignOutButton'
+
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session || session.user.banned) redirect('/login')
   return (
     <html lang="zh-CN" className="h-full antialiased" suppressHydrationWarning>
       <head>
@@ -69,6 +76,7 @@ export default function RootLayout({
                     <VaultGate>
                       <AppShell>
                         {children}
+                        <div className="fixed bottom-3 right-3 z-50"><SignOutButton /></div>
                       </AppShell>
                     </VaultGate>
                     </NavigationSourceProvider>
