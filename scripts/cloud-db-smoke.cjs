@@ -30,9 +30,13 @@ async function run() {
     )
     if (authBanned.rowCount !== 1) throw new Error('Better Auth admin banned field is missing')
     const migration = await db.query(
-      'SELECT version FROM oc_cloud_schema_migrations WHERE version=1',
+      'SELECT version FROM oc_cloud_schema_migrations WHERE version IN (1,2)',
     )
-    if (migration.rowCount !== 1) throw new Error('Business schema migration was not recorded')
+    if (migration.rowCount !== 2) throw new Error('Business schema migrations were not recorded')
+    const settingsVersion = await db.query(
+      "SELECT column_name FROM information_schema.columns WHERE table_name='workspace_settings' AND column_name='version'",
+    )
+    if (settingsVersion.rowCount !== 1) throw new Error('Workspace settings version column is missing')
     process.stdout.write('Cloud database smoke check passed (' + expectedTables.length + ' tables).\n')
   } finally {
     await db.end()
