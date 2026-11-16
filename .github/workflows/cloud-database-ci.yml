@@ -1,0 +1,52 @@
+name: OC Studio Cloud Database CI
+
+on:
+  push:
+    branches: [feat/cloud-workspaces-foundation]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  migration:
+    if: github.event_name != 'pull_request' || github.head_ref == 'feat/cloud-workspaces-foundation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: ocstudio
+          POSTGRES_PASSWORD: ci_password_only
+          POSTGRES_DB: ocstudio
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ocstudio -d ocstudio"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      BETTER_AUTH_SECRET: cloud_ci_test_secret_only_please_do_not_use_in_prod_123
+      BETTER_AUTH_URL: http://localhost:3000
+      DATABASE_URL: postgresql://ocstudio:ci_password_only@localhost:5432/ocstudio
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Apply Better Auth schema
+        run: ./node_modules/.bin/auth migrate --config ./src/lib/cloud/server/auth.ts --yes
+      - name: Apply cloud business schema
+        run: node scripts/cloud-migrate-business.cjs
+      - name: Verify idempotent business migration
+        run: node scripts/cloud-migrate-business.cjs
+      - name: Inspect database constraints and tables
+        run: node scripts/cloud-db-smoke.cjs
