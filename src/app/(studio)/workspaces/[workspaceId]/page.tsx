@@ -1,4 +1,5 @@
 import { notFound, redirect } from 'next/navigation'
+import Link from 'next/link'
 import { currentCloudUser, authorizedWorkspace } from '@/lib/cloud/server/authorization'
 import { pool } from '@/lib/cloud/server/db'
 import { InviteCreateForm } from '@/components/cloud/InviteCreateForm'
@@ -22,7 +23,7 @@ export default async function WorkspacePage({ params }: { params: Promise<{ work
      JOIN "user" u ON u.id=m.user_id WHERE m.workspace_id=$1 ORDER BY m.joined_at ASC`, [workspaceId],
   )
   return <div className="flex flex-col gap-7">
-    <a href="/" className="text-ui text-ink-muted">返回我的世界观</a>
+    <Link href="/" className="text-ui text-ink-muted">返回我的世界观</Link>
     <div>
       <h1 className="text-lg font-semibold">{workspace.name}</h1>
       <p className="mt-2 text-ui text-ink-muted">{workspace.description || '私人世界观'} · {role}</p>

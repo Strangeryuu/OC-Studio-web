@@ -30,6 +30,10 @@ const eslintConfig = defineConfig([
     "logs/**",
   ]),
   {
+    files: ["**/*.cjs"],
+    rules: { "@typescript-eslint/no-require-imports": "off" },
+  },
+  {
     files: ["**/*.{js,jsx,mjs,ts,tsx,mts,cts}"],
     rules: {
       // 约定：前缀下划线的形参 / 变量表示「占位不用」，不该报未使用

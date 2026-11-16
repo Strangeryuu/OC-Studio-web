@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import { auth } from '@/lib/cloud/server/auth'
 import { SignOutButton } from '@/components/cloud/SignOutButton'
 import { THEME_BOOT_SCRIPT } from '@/lib/theme/boot'
@@ -20,7 +21,7 @@ export default async function StudioLayout({ children }: { children: React.React
       <body className="min-h-screen bg-[var(--oc-paper)] text-[var(--oc-ink)]">
         <header className="border-b border-[var(--oc-line)] px-5 py-3">
           <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
-            <a href="/" className="font-semibold">OC Studio Cloud</a>
+            <Link href="/" className="font-semibold">OC Studio Cloud</Link>
             <nav className="flex items-center gap-4 text-sm">
               <a href="/join" className="opacity-80 hover:opacity-100">接受邀请</a>
               {session.user.role?.split(',').includes('admin') &&
