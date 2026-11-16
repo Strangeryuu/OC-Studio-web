@@ -1,0 +1,36 @@
+name: OC Studio Cloud CI
+
+on:
+  push:
+    branches: [feat/cloud-workspaces-foundation]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    if: github.event_name != 'pull_request' || github.head_ref == 'feat/cloud-workspaces-foundation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      BETTER_AUTH_SECRET: ci_only_not_for_production_012345678901234567890123456789
+      BETTER_AUTH_URL: http://localhost:3000
+      DATABASE_URL: postgresql://ocstudio:test@localhost:5432/ocstudio
+      MEDIA_ROOT: /tmp/ocstudio-ci-media
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies and resolve cloud lockfile
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm run test
+      - name: Cloud Next.js build
+        run: npm run build:web

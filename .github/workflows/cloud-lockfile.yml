@@ -1,0 +1,31 @@
+name: Refresh cloud dependency lockfile
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  lockfile:
+    if: github.ref == 'refs/heads/feat/cloud-workspaces-foundation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/cloud-workspaces-foundation
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Resolve npm lockfile without running package scripts
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Commit npm package-lock
+        run: |
+          git add package-lock.json
+          if ! git diff --cached --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "chore(cloud): sync dependency lockfile"
+            git push origin HEAD:feat/cloud-workspaces-foundation
+          fi

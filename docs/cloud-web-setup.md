@@ -1,6 +1,6 @@
 # OC Studio 云端分支：本地启动与部署准备
 
-本分支 `feat/cloud-workspaces-foundation` 属于 **Draft 开发版本**。已经编写账号登录、项目管理、邀请和实体历史 API；旧 Dexie 编辑器暂时关闭云端入口，防止不同账号在同一浏览器中读取同一个 IndexedDB。原始编辑器源代码保留在 Git 历史和功能模块中，待数据适配完成后再接入。
+本分支 `feat/cloud-workspaces-foundation` 属于 **Draft 开发版本**。已经编写账号登录、项目管理、邀请和实体历史 API；云端项目页已提供第一版角色编辑器：角色资料、Tiptap 正文、自动保存、图片上传、历史快照与恢复。原始高级角色编辑器仍依赖 Dexie 数字 ID 和旧服务层，因此继续迁移；云端工作台仅从 PostgreSQL 读取数据，以保持账号隔离。
 
 ## 前置条件
 
@@ -17,7 +17,7 @@
 5. 按顺序创建认证表和业务表：
 
    ```bash
-   npx auth@1.6.34 migrate --config ./src/lib/cloud/server/auth.ts --yes
+   npx auth@1.7.23 migrate --config ./src/lib/cloud/server/auth.ts --yes
    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f cloud/migrations/0001_workspaces.sql
    ```
 
@@ -26,7 +26,7 @@
 6. 使用 Admin 插件的 CLI 创建第一位管理员（请在终端交互式输入密码，避免命令历史泄露）：
 
    ```bash
-   npx auth@1.6.34 create-admin --config ./src/lib/cloud/server/auth.ts --email admin@example.com --name Admin
+   npx auth@1.7.23 create-admin --config ./src/lib/cloud/server/auth.ts --email admin@example.com --name Admin
    ```
 
 7. 执行自检，启动：
@@ -71,5 +71,19 @@
 
 - Next.js 现在以 `standalone` 服务器模式构建。本 Fork 的云端开发分支暂时面向 Web，原项目桌面/Android 的静态导出流程保留在 main；后续独立构建或重构再支持。
 - IndexedDB 旧项目数据尚未导入 PostgreSQL；本地已有角色/立绘暂时仍在原浏览器中，由原 `.ocbak` 导出后在云端迁移阶段处理。
-- 云端图片服务、模板/关系图全量迁移、多人实时协作、用户管理 UI 与自动备份尚待开发。
+- 云端图片上传与授权读取已实现第一版（8 MB，JPEG/PNG/WebP/GIF，私有 MEDIA_ROOT）；模板/关系图全量迁移、多人实时协作、用户管理 UI 与自动备份尚待开发。
 - 本次 GitHub 提交仅表示文件已推送；**没有在 VPS 上部署，也没有在真实数据库和 npm 依赖环境里完成构建与端到端测试**。
+
+## 当前已开放的云端角色操作
+
+登录后创建项目，进入世界观页，使用「新建角色」并打开角色详情。可维护姓名、种族、职业、阵营、元素、身高、生日、别名、简介、Tiptap 正文、头像立绘；停止输入约 1.8 秒后尝试自动保存。项目 Editor 可以编辑，Viewer 只读；Owner/Admin 可将旧版本恢复成新版本。发生 409 时会保留当前本地草稿并提示复制/刷新后合并。
+
+图片上传需要在 `.env.local` 设置 **绝对路径** `MEDIA_ROOT`，并确保 Node 运行账号有目录写权限。上传接口保存文件至 `MEDIA_ROOT/<workspaceId>/<random>.ext`，图片读取地址 `/api/media/<assetId>` 每次检查项目授权。反向代理应将请求体限制在 9 MB 左右，生产站点建议定期扫描图片并配置总存储配额。
+
+目前的云端角色编辑为简化入口，仍需进一步迁移原版的关系图、自定义模板、地图及旧版内容组件。上传的原始图片会留存供版本历史引用，后续需要添加安全的失效文件回收策略。
+
+### GitHub Actions 验证
+
+- `OC Studio Cloud CI` 在云端分支 push/PR 时尝试执行 npm 安装、TypeScript、单测和 Next 构建。
+- `Refresh cloud dependency lockfile` 可在 Actions 页面手动触发，选择云端分支；它会更新 `package-lock.json` 并提交到该分支（需要仓库 Actions 和 GITHUB_TOKEN 写权限）。
+- 原版的 Windows + Tauri 静态构建 CI 继续服务 main 及其他非云端 PR。
