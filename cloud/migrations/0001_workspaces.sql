@@ -105,15 +105,13 @@ CREATE TABLE media_assets (
 CREATE INDEX media_assets_workspace_idx ON media_assets(workspace_id);
 
 CREATE TABLE media_references (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   media_id UUID NOT NULL REFERENCES media_assets(id) ON DELETE RESTRICT,
   entity_id UUID NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
-  revision_id UUID REFERENCES entity_revisions(id) ON DELETE CASCADE,
-  PRIMARY KEY (media_id, entity_id, revision_id)
+  revision_id UUID REFERENCES entity_revisions(id) ON DELETE CASCADE
 );
--- revision_id nullable means a PK is unsuitable for current references in
--- PostgreSQL; use distinct unique indexes and a surrogate identity instead.
-ALTER TABLE media_references DROP CONSTRAINT media_references_pkey;
-ALTER TABLE media_references ADD COLUMN id UUID PRIMARY KEY DEFAULT gen_random_uuid();
+-- Current media references have a NULL revision_id. Historical references
+-- identify the exact revision retaining an asset.
 CREATE UNIQUE INDEX media_refs_current_unique ON media_references(media_id, entity_id)
   WHERE revision_id IS NULL;
 CREATE UNIQUE INDEX media_refs_history_unique ON media_references(media_id, entity_id, revision_id)
