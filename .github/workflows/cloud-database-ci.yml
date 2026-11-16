@@ -50,3 +50,11 @@ jobs:
         run: node scripts/cloud-migrate-business.cjs
       - name: Inspect database constraints and tables
         run: node scripts/cloud-db-smoke.cjs
+      - name: Build production Web server
+        run: npm run build:web
+      - name: Create ephemeral CI admin
+        run: ./node_modules/.bin/auth create-admin --config ./src/lib/cloud/server/auth.ts --email ci-admin@example.test --name "CI Admin" --role admin --password "CI_only_SecurePass_456789" --yes
+      - name: Smoke-test login protection and private workspace API
+        run: |
+          HOSTNAME=127.0.0.1 PORT=3000 node .next/standalone/server.js > /tmp/ocstudio-cloud-next.log 2>&1 &
+          node scripts/cloud-http-smoke.cjs || { cat /tmp/ocstudio-cloud-next.log; exit 1; }
