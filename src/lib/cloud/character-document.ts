@@ -11,6 +11,9 @@ export interface CloudCharacterFields {
   height: string
   birthday: string
   aliases: string[]
+  country: string
+  isMajor: boolean
+  custom: Record<string, string>
   avatarMediaId: string | null
   document: JSONContent
 }
@@ -40,6 +43,12 @@ export function cloudCharacterFields(content: Record<string, unknown>, title: st
     height: safeString(content.height),
     birthday: safeString(content.birthday),
     aliases: Array.isArray(content.aliases) ? content.aliases.filter((v): v is string => typeof v === 'string') : [],
+    country: safeString(content.country) || safeString(content.nationalityLegacy),
+    isMajor: content.isMajor === true,
+    custom: Object.fromEntries(Object.entries(
+      content.custom && typeof content.custom === 'object' && !Array.isArray(content.custom)
+        ? content.custom as Record<string, unknown> : {},
+    ).filter((entry): entry is [string, string] => typeof entry[1] === 'string')),
     avatarMediaId: safeString(content.avatarMediaId) || null,
     document: validDocument(content.document) ? content.document : EMPTY_DOCUMENT,
   }
@@ -55,6 +64,12 @@ export function mergeCloudCharacter(
     name: next.name.trim(),
     aliases: [...next.aliases],
     avatarMediaId: next.avatarMediaId,
+    // Keep values from pre-existing custom fields which this editor does not expose.
+    custom: {
+      ...(original.custom && typeof original.custom === 'object' && !Array.isArray(original.custom)
+        ? original.custom as Record<string, unknown> : {}),
+      ...next.custom,
+    },
     document: structuredClone(next.document),
   }
 }

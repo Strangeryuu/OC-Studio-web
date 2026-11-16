@@ -65,6 +65,48 @@ async function run() {
   })
   assert(authorizedApi.status === 200, 'Owner was unable to access their workspace')
 
+  const guestConfig = await fetch(BASE + '/api/workspaces/' + workspaceId + '/character-config')
+  assert(guestConfig.status === 401, 'Guest accessed private character template')
+
+  const templateResponse = await fetch(BASE + '/api/workspaces/' + workspaceId + '/character-config', {
+    headers: { Cookie: cookie },
+  })
+  assert(templateResponse.status === 200, 'Owner could not view their character config')
+  const initialTemplate = await templateResponse.json()
+  assert(initialTemplate.version === 0, 'Fresh workspace should have default character config version 0')
+  assert(initialTemplate.config.fields.some(field => field.id === 'occupation'), 'Upstream occupation field missing')
+  assert(initialTemplate.config.components.some(component => component.id === 'body'), 'Character body missing')
+
+  const newTemplate = {
+    ...initialTemplate.config,
+    fields: [
+      { id: 'f_ci_ability', key: '能力设定', label: '能力', type: 'text' },
+      ...initialTemplate.config.fields,
+    ],
+  }
+  const saveConfig = await fetch(BASE + '/api/workspaces/' + workspaceId + '/character-config', {
+    method: 'PATCH',
+    headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expectedVersion: 0, config: newTemplate }),
+  })
+  assert(saveConfig.status === 200, 'Owner character config save failed HTTP ' + saveConfig.status)
+  const savedTemplate = await saveConfig.json()
+  assert(savedTemplate.version === 1, 'Cloud character config revision should increment')
+
+  const staleConfig = await fetch(BASE + '/api/workspaces/' + workspaceId + '/character-config', {
+    method: 'PATCH',
+    headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expectedVersion: 0, config: newTemplate }),
+  })
+  assert(staleConfig.status === 409, 'Concurrent template update should return HTTP 409')
+
+  const forbiddenTemplateOrigin = await fetch(BASE + '/api/workspaces/' + workspaceId + '/character-config', {
+    method: 'PATCH',
+    headers: { Cookie: cookie, Origin: 'https://attacker.example', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expectedVersion: 1, config: newTemplate }),
+  })
+  assert(forbiddenTemplateOrigin.status === 403, 'Cross-site template mutation should be forbidden')
+
   const forbiddenOrigin = await fetch(BASE + '/api/workspaces', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Origin: 'https://attacker.example', Cookie: cookie },

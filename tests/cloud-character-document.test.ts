@@ -22,6 +22,20 @@ describe('cloud character data mapping', () => {
     expect(merged.countryId).toBe(5)
   })
 
+  it('retains custom facts even when a field is hidden from the shared template', () => {
+    const original = {
+      name: '羽', country: '旧国', isMajor: true,
+      custom: { '灵子量': '很高', legacyScore: 88 },
+    }
+    const next = cloudCharacterFields(original, '羽')
+    expect(next.country).toBe('旧国')
+    expect(next.isMajor).toBe(true)
+    expect(next.custom['灵子量']).toBe('很高')
+    const result = mergeCloudCharacter(original, { ...next, occupation: '魔法师' })
+    expect(result.custom).toEqual({ '灵子量': '很高', legacyScore: 88 })
+    expect(result.isMajor).toBe(true)
+  })
+
   it('normalizes empty or malformed richtext safely', () => {
     const fields = cloudCharacterFields({ name: '角色', document: 'invalid', aliases: ['一', 4] }, '角色')
     expect(fields.document.type).toBe('doc')

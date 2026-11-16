@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation'
 import { currentCloudUser, authorizedWorkspace, isUuid } from '@/lib/cloud/server/authorization'
 import { pool } from '@/lib/cloud/server/db'
 import { CloudCharacterEditor } from '@/components/cloud/CloudCharacterEditor'
+import { loadCloudCharacterConfig } from '@/lib/cloud/server/character-config'
 import type { CloudEntityRow } from '@/lib/cloud/client-types'
 
 export const dynamic = 'force-dynamic'
@@ -22,5 +23,6 @@ export default async function CloudCharacterPage({ params }: {
   )
   const entity = result.rows[0]
   if (!entity) notFound()
-  return <CloudCharacterEditor workspaceId={workspaceId} role={role} initial={entity} />
+  const { config } = await loadCloudCharacterConfig(workspaceId)
+  return <CloudCharacterEditor workspaceId={workspaceId} role={role} initial={entity} config={config} />
 }

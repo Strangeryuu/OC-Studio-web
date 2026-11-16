@@ -32,7 +32,12 @@ export default async function WorkspacePage({ params }: { params: Promise<{ work
     <a href="/" className="text-sm opacity-70">返回我的世界观</a>
     <div><h1 className="text-2xl font-semibold">{workspace.name}</h1>
       <p className="mt-2 text-sm opacity-70">{workspace.description || '私人世界观'}</p>
-      <p className="mt-2 text-xs opacity-60">你在此项目中的权限：{role}</p></div>
+      <p className="mt-2 text-xs opacity-60">你在此项目中的权限：{role}</p>
+      <a href={'/workspaces/' + workspaceId + '/settings/character'}
+        className="mt-3 inline-block rounded border border-[var(--oc-line)] px-3 py-2 text-sm">
+        角色模板与字段设置
+      </a>
+    </div>
     <WorkspaceCharacters workspaceId={workspaceId} role={role} initialEntities={entityResult.rows} />
     <WorkspaceMembers workspaceId={workspaceId} selfId={user.id} role={role} initialMembers={memberResult.rows} />
     {(role === 'owner' || role === 'admin') && <section className="rounded-lg border border-[var(--oc-line)] p-5">
