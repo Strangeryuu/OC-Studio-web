@@ -16,6 +16,11 @@ import { BTN_PRIMARY, BTN_QUIET, TITLE_INPUT } from '@/lib/ui-tokens'
 import { OriginalCharactersCloudAdapter, type OriginalCharacterSnapshot } from '@/lib/cloud/adapters/original-characters'
 import type { WorkspaceRole } from '@/lib/cloud/permissions'
 import type { Character } from '@/types'
+import type { Editor } from '@tiptap/core'
+import { EditorCore } from '@/components/editor/EditorCore'
+import { ActiveEditorProvider } from '@/lib/editor-context'
+import { collectBodyImageRefs } from '@/lib/image-refs'
+import { legacyBodySections, readStoredBody } from '@/lib/body-content'
 
 // 国家、关系、图片和模板依赖其他本地库，等它们各自迁移后再开放。
 const CLOUD_FIELDS = BUILTIN_FIELDS.character.filter(field => field.id !== 'country')
@@ -36,11 +41,16 @@ export function editablePatch(character: Character, values: Partial<CharacterFor
   return result
 }
 
+export function hasNewBodyImages(original: unknown, next: unknown): boolean {
+  const originalImages = new Set(collectBodyImageRefs(readStoredBody(original)))
+  return collectBodyImageRefs(next).some(src => !originalImages.has(src))
+}
+
 export function WorkspaceCharacters({ workspaceId, role }: { workspaceId: string; role: WorkspaceRole }) {
-  return <Providers><SaveStatusProvider>
+  return <Providers><ActiveEditorProvider><SaveStatusProvider>
     <CharacterWorkspace workspaceId={workspaceId} role={role} />
     <Toaster />
-  </SaveStatusProvider></Providers>
+  </SaveStatusProvider></ActiveEditorProvider></Providers>
 }
 
 function CharacterWorkspace({ workspaceId, role }: { workspaceId: string; role: WorkspaceRole }) {
@@ -101,7 +111,7 @@ function CharacterWorkspace({ workspaceId, role }: { workspaceId: string; role: 
       <h2 className="text-reading font-semibold">角色</h2>
       {canEdit && <button type="button" className={BTN_QUIET} disabled={busy || loading} onClick={() => void create()}>新建角色</button>}
     </div>
-    <p className="text-caption text-ink-muted">当前支持角色基本信息与简介；正文、图片和关系正在接入。</p>
+    <p className="text-caption text-ink-muted">支持角色基本信息、简介与正文；图片和关系正在接入。</p>
     {error && <p role="alert" className="text-ui text-error">{error}</p>}
     {loading ? <p className="text-ui text-ink-muted">正在读取角色…</p> : <div className="flex flex-wrap gap-2">
       {rows.map(row => <button type="button" key={row.entityId} className={BTN_QUIET}
@@ -122,11 +132,21 @@ function OriginalCharacterEditor({ snapshot, adapter, canEdit, disabled, onSaved
   onSaved: (next: OriginalCharacterSnapshot) => void
 }) {
   const baseline = useRef(snapshot)
+  const docDirty = useRef(false)
+  const bodyEditor = useRef<Editor | null>(null)
+  const [bodyDraft, setBodyDraft] = useState<unknown>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const { status, setActiveEntity } = useSaveStatus()
   const save = useCallback(async (_id: number, values: Partial<CharacterFormData>) => {
     try {
-      const next = await adapter.save(baseline.current, editablePatch(baseline.current.character, values))
+      const patch = editablePatch(baseline.current.character, values)
+      if (docDirty.current && values.document !== undefined) {
+        if (hasNewBodyImages(baseline.current.character.document, values.document)) {
+          throw new Error('正文图片上传正在接入，请移除新增图片后保存')
+        }
+        patch.document = values.document
+      }
+      const next = await adapter.save(baseline.current, patch)
       baseline.current = next
       setSaveError(null)
       onSaved(next)
@@ -136,6 +156,17 @@ function OriginalCharacterEditor({ snapshot, adapter, canEdit, disabled, onSaved
     }
   }, [adapter, onSaved])
   const form = useCharacterForm(snapshot.character, save, { localLookups: false })
+  useEffect(() => { docDirty.current = form.docDirty }, [form.docDirty])
+  useEffect(() => { bodyEditor.current?.setEditable(canEdit && !disabled) }, [canEdit, disabled])
+  const onEditorReady = useCallback((editor: Editor) => {
+    bodyEditor.current = editor
+    editor.setEditable(canEdit && !disabled)
+    form.handleDocReady(editor)
+  }, [canEdit, disabled, form.handleDocReady])
+  const onBodyChange = useCallback(() => {
+    form.handleDocChange()
+    if (bodyEditor.current) setBodyDraft(bodyEditor.current.getJSON())
+  }, [form.handleDocChange])
 
   useEffect(() => {
     setActiveEntity('character')
@@ -176,7 +207,7 @@ function OriginalCharacterEditor({ snapshot, adapter, canEdit, disabled, onSaved
           value={JSON.stringify({ name: form.name, aliases: form.aliasesStr, race: form.race,
             element: form.element, occupation: form.occupation, faction: form.faction,
             height: form.height, birthday: [form.birthdayYear, form.birthdayMonth, form.birthdayDay].join('-'),
-            isMajor: form.isMajor, bio: form.bio }, null, 2)} />
+            isMajor: form.isMajor, bio: form.bio, document: bodyDraft }, null, 2)} />
       </details>
     </div>}
     <fieldset disabled={!canEdit || disabled} className="flex min-w-0 flex-col gap-6">
@@ -186,6 +217,14 @@ function OriginalCharacterEditor({ snapshot, adapter, canEdit, disabled, onSaved
       <CharacterInfoSection form={form} fieldsOverride={CLOUD_FIELDS} />
       <SummaryBlock value={form.bio} onChange={form.setBio} />
     </fieldset>
+    <section className="border-t border-line pt-4">
+      <h3 className="text-ui font-semibold">正文</h3>
+      <p className="text-caption text-ink-muted">正文图片上传正在接入。</p>
+      <EditorCore plain imageUploads={false} localReferences={false} content={snapshot.character.document ?? legacyBodySections([
+        { content: snapshot.character.bio },
+        { heading: '人物生平', content: snapshot.character.lifeStory },
+      ]) ?? ''} onReady={onEditorReady} onContentChange={onBodyChange} />
+    </section>
     <CharacterHistory entityId={snapshot.entityId} version={snapshot.version} />
   </div>
 }

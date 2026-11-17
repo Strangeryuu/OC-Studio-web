@@ -36,6 +36,8 @@ interface EditorCoreProps {
   onMentionClick?: (id: string, entityType?: string) => void
   onWikiLinkClick?: (id: string) => void
   plain?: boolean
+  imageUploads?: boolean
+  localReferences?: boolean
 }
 
 /**
@@ -51,7 +53,7 @@ const BUBBLE_MENU_OPTIONS = {
 } satisfies NonNullable<BubbleMenuProps['options']>
 
 export function EditorCore({
-  onReady, onCharacterCount, onContentChange, content, placeholder, onMentionClick, onWikiLinkClick, plain,
+  onReady, onCharacterCount, onContentChange, content, placeholder, onMentionClick, onWikiLinkClick, plain, imageUploads = true, localReferences = true,
 }: EditorCoreProps) {
   const editorId = useId()
   const [blockMenuPosition, setBlockMenuPosition] = useState<{ x: number; y: number } | null>(null)
@@ -96,6 +98,7 @@ export function EditorCore({
     placeholder,
     plain,
     content,
+    localReferences,
     isMobile,
     editorId,
     getEditor: () => editorRef.current,
@@ -237,7 +240,7 @@ export function EditorCore({
     () => buildEditorContextMenu({ editor, isTableActive, onFind: () => setFindOpen(true) }),
     [editor, isTableActive],
   )
-  const { dragging } = useImagePasteDrop(editor)
+  const { dragging } = useImagePasteDrop(editor, imageUploads)
   if (!editor) {
     return <div className="flex h-32 items-center justify-center text-body leading-5 text-ink-muted">编辑器加载中...</div>
   }

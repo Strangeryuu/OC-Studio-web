@@ -158,7 +158,7 @@ function paintSelection(container: HTMLElement, selectedIndex: number) {
  * 监听并把 popup 指针换成新节点，A 那个节点就永久留在 DOM 里（还停在 (0,0)）。
  * @ 引用那边一直是按实例建的（editor-config 里就地调用），这里对齐。
  */
-export function createWikiLinkExtension() {
+export function createWikiLinkExtension(localReferences = true) {
   return Mention.extend({
     name: 'wikiLink',
 
@@ -206,6 +206,7 @@ export function createWikiLinkExtension() {
     suggestion: {
       char: '[[',
       items: async ({ query }) => {
+        if (!localReferences) return []
         // 类型过滤在注册表内完成，词条不会因为角色 / 事件数量多而被截断掉
         const entities = await searchReferableEntities(query, { types: ['world'] })
         return entities.map((e) => ({ ...e, label: e.name }))

@@ -28,13 +28,13 @@ interface DropPosition {
  * 随旧节点消失；capture 也早于 TipTap 自己的 paste 处理。只有真带图片文件时才
  * preventDefault，纯文字/HTML 粘贴照旧交给 TipTap。
  */
-export function useImagePasteDrop(editor: Editor | null): { dragging: boolean } {
+export function useImagePasteDrop(editor: Editor | null, enabled = true): { dragging: boolean } {
   const [dragging, setDragging] = useState(false)
   const busyRef = useRef(false)
 
   const run = useCallback(
     async (files: File[], position: DropPosition) => {
-      if (!editor || files.length === 0 || busyRef.current) return
+      if (!editor || !editor.isEditable || !enabled || files.length === 0 || busyRef.current) return
       busyRef.current = true
       // 一批图片（含替换选区）只算一步撤销：压缩 / 落盘是异步的，
       // 每张图各自成步的话，Ctrl+Z 要按好几次才退干净。
@@ -65,7 +65,7 @@ export function useImagePasteDrop(editor: Editor | null): { dragging: boolean } 
         busyRef.current = false
       }
     },
-    [editor],
+    [editor, enabled],
   )
 
   useEffect(() => {
@@ -81,6 +81,7 @@ export function useImagePasteDrop(editor: Editor | null): { dragging: boolean } 
       // 直接走图片会把文字丢掉。纯文件（访达 / 资源管理器）没有可读文字，仍按图片插。
       if (clipboardHasReadableText(data)) return
       event.preventDefault()
+      if (!enabled || !editor.isEditable) return
       const { from, to } = editor.state.selection
       void run(files, { from, to })
     }
@@ -90,6 +91,7 @@ export function useImagePasteDrop(editor: Editor | null): { dragging: boolean } 
       const types = event.dataTransfer ? Array.from(event.dataTransfer.types) : []
       if (!types.includes('Files')) return
       event.preventDefault()
+      if (!enabled || !editor.isEditable) return
       if (!busyRef.current) setDragging(true)
     }
 
@@ -105,6 +107,7 @@ export function useImagePasteDrop(editor: Editor | null): { dragging: boolean } 
       const files = clipboardImageFiles(transferOf(event))
       if (files.length === 0) return
       event.preventDefault()
+      if (!enabled || !editor.isEditable) return
       const coords = editor.view.posAtCoords({ left: event.clientX, top: event.clientY })
       const position = coords
         ? { from: coords.pos, to: coords.pos }
@@ -126,7 +129,7 @@ export function useImagePasteDrop(editor: Editor | null): { dragging: boolean } 
       document.removeEventListener('drop', onDrop, true)
       window.removeEventListener('dragend', onDragEnd)
     }
-  }, [editor, run])
+  }, [editor, enabled, run])
 
   return { dragging }
 }

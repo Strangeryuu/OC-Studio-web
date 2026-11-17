@@ -34,6 +34,7 @@ export interface BuildEditorConfigArgs {
   placeholder?: string
   plain?: boolean
   content?: string | object
+  localReferences?: boolean
   isMobile: boolean
   editorId: string
   /** 惰性读取当前编辑器（配置模块不持有 ref，只在事件处理器里调用） */
@@ -59,6 +60,7 @@ export function buildEditorConfig({
   placeholder,
   plain,
   content,
+  localReferences = true,
   isMobile,
   editorId,
   getEditor,
@@ -147,7 +149,7 @@ export function buildEditorConfig({
       // Tab = 段首缩进两个全角空格（中文排版）。列表 / 表格 / 代码块里让路给它们自己的 Tab
       FirstLineIndent,
       SlashCommand,
-      createWikiLinkExtension(),
+      createWikiLinkExtension(localReferences),
       ...(isMobile ? [] : [
         DragHandle.configure({
         render: () => {
@@ -210,6 +212,7 @@ export function buildEditorConfig({
         suggestion: {
           char: '@',
           items: async ({ query }) => {
+            if (!localReferences) return []
             // 类型过滤在注册表内完成；先截断再按类型挑选，会让事件与国家在角色众多时整体缺失
             const entities = await searchReferableEntities(query, {
               types: ['character', 'event', 'country'],

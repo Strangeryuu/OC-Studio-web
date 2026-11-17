@@ -7,6 +7,7 @@ import { newCharacterData } from '@/lib/entity-defaults'
 import * as characters from '@/features/characters/services'
 import * as countries from '@/features/countries/services'
 import * as world from '@/features/world/services'
+import type { Editor } from '@tiptap/core'
 
 const fake = vi.hoisted(() => ({ list: vi.fn(), save: vi.fn(), create: vi.fn() }))
 vi.mock('@/lib/cloud/adapters/original-characters', () => ({
@@ -18,7 +19,7 @@ vi.mock('@/lib/cloud/adapters/original-characters', () => ({
 }))
 vi.mock('@/components/shared/toaster', () => ({ Toaster: () => null }))
 
-import { WorkspaceCharacters, editablePatch } from '@/features/characters/cloud/WorkspaceCharacters'
+import { WorkspaceCharacters, editablePatch, hasNewBodyImages } from '@/features/characters/cloud/WorkspaceCharacters'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 const workspaceId = '11111111-1111-4111-8111-111111111111'
@@ -64,6 +65,12 @@ afterEach(async () => {
 })
 
 describe('original character information in cloud workspace', () => {
+  it('keeps existing body images while stopping unsynchronized new images', () => {
+    const image = (src: string) => ({ type: 'imageBlock', attrs: { src } })
+    const original = { type: 'doc', content: [image('/api/media/existing')] }
+    expect(hasNewBodyImages(JSON.stringify(original), original)).toBe(false)
+    expect(hasNewBodyImages(original, { type: 'doc', content: [image('blob:temporary')] })).toBe(true)
+  })
   it('reuses the original form, saves only edited fields, and does not query the browser library', async () => {
     const first = fixture(1, '初始角色')
     first.character.birthday = 'invalid-date'
@@ -111,8 +118,39 @@ describe('original character information in cloud workspace', () => {
     await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'viewer' })); await Promise.resolve() })
     await click(button('只读角色'))
     expect(container.querySelector('fieldset')?.disabled).toBe(true)
+    const editor = (container.querySelector('.tiptap') as HTMLElement & { editor: Editor }).editor
+    expect(editor.isEditable).toBe(false)
     expect([...container.querySelectorAll('button')].map(item => item.textContent)).not.toContain('保存')
     expect([...container.querySelectorAll('button')].map(item => item.textContent)).not.toContain('新建角色')
+  })
+
+  it('saves the original rich-text editor document through the cloud adapter', async () => {
+    const original = fixture(1, '正文角色')
+    fake.list.mockResolvedValue([original])
+    fake.save.mockImplementation(async (snapshot: OriginalCharacterSnapshot, patch: Record<string, unknown>) => ({
+      ...snapshot, version: snapshot.version + 1, character: { ...snapshot.character, ...patch },
+    }))
+    await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' })); await Promise.resolve() })
+    await click(button('正文角色'))
+    const editor = (container.querySelector('.tiptap') as HTMLElement & { editor: Editor }).editor
+    await act(async () => { editor.commands.insertContent('云端正文'); await Promise.resolve() })
+    await click(button('保存'))
+    expect(fake.save).toHaveBeenCalledOnce()
+    const patch = fake.save.mock.calls[0][1] as { document: unknown }
+    expect(JSON.stringify(patch.document)).toContain('云端正文')
+  })
+
+  it('keeps the edited body available for copying after a conflict', async () => {
+    fake.list.mockResolvedValue([fixture(1, '正文角色')])
+    fake.save.mockRejectedValue(new Error('版本冲突'))
+    await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' })); await Promise.resolve() })
+    await click(button('正文角色'))
+    const editor = (container.querySelector('.tiptap') as HTMLElement & { editor: Editor }).editor
+    await act(async () => { editor.commands.insertContent('未保存正文'); await Promise.resolve() })
+    await click(button('保存'))
+    const draft = container.querySelector('textarea[aria-label="当前草稿"]') as HTMLTextAreaElement
+    expect(draft.value).toContain('未保存正文')
+    expect(editor.getText()).toContain('未保存正文')
   })
 
   it('shows the server revision history to a viewer', async () => {
