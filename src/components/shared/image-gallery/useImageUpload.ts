@@ -19,10 +19,12 @@ export function useImageUpload({
   onAdd,
   onReplace,
   enableCrop,
+  saveImage,
 }: {
   onAdd?: (path: string) => void
   onReplace?: (index: number, path: string) => void
   enableCrop: boolean
+  saveImage?: (blob: Blob, type: 'gallery' | 'portrait') => Promise<string | null>
 }) {
   const [rawFileUrl, setRawFileUrl] = useState<string | null>(null)
   const [cropperOpen, setCropperOpen] = useState(false)
@@ -72,7 +74,7 @@ export function useImageUpload({
       } else {
         setUploading(true)
         try {
-          const url = await saveBlobToDiskOrToast(file, 'gallery')
+          const url = saveImage ? await saveImage(file, 'gallery') : await saveBlobToDiskOrToast(file, 'gallery')
           if (url !== null) finish(url)
         } finally {
           setUploading(false)
@@ -102,7 +104,7 @@ export function useImageUpload({
   async function handleCropComplete(blob: Blob) {
     setUploading(true)
     try {
-      const url = await saveBlobToDiskOrToast(blob, 'portrait')
+      const url = saveImage ? await saveImage(blob, 'portrait') : await saveBlobToDiskOrToast(blob, 'portrait')
       if (url === null) return
       finish(url)
       setCropperOpen(false)

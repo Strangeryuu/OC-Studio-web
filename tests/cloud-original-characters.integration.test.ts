@@ -158,6 +158,15 @@ describe('original character adapter against PostgreSQL', () => {
     expect(restore.status).toBe(200)
     const restored = (await adapter.list()).find(row => row.entityId === initial.entityId)
     expect(restored?.character.avatarUrl).toBe(`/api/media/${own}`)
+    await expect(adapter.save(restored!, { gallery: [{ url: `/api/media/${other}`, caption: '' }] }))
+      .rejects.toMatchObject({ status: 400, code: 'INVALID_CHARACTER_MEDIA' })
+    await expect(adapter.save(restored!, { avatars: [{ url: `/api/media/${other}`, type: 'portrait' }] }))
+      .rejects.toMatchObject({ status: 400, code: 'INVALID_CHARACTER_MEDIA' })
+    const gallerySaved = await adapter.save(restored!, { gallery: [{ url: `/api/media/${own}`, caption: '保留文字' }], avatars: [{ url: `/api/media/${own}`, type: 'fullbody' }] })
+    const reread = (await adapter.list()).find(row => row.entityId === initial.entityId)
+    expect(reread?.version).toBe(gallerySaved.version)
+    expect(reread?.character.gallery[0].caption).toBe('保留文字')
+    expect(reread?.character.avatars[0].type).toBe('fullbody')
   })
 
   it('uploads and reads private image bytes with workspace authorization', async () => {

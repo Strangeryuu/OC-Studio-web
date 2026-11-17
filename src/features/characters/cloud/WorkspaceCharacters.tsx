@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Providers } from '@/app/providers'
 import { SaveStatusProvider, useSaveStatus } from '@/components/layout/SaveStatusContext'
 import { Toaster } from '@/components/shared/toaster'
-import { SummaryBlock } from '@/components/shared/template-blocks'
+import { GalleryBlock, SummaryBlock } from '@/components/shared/template-blocks'
 import { CharacterInfoSection } from '@/features/characters/components/CharacterInfoSection'
 import { characterFormBaseline, useCharacterForm } from '@/features/characters/hooks/useCharacterForm'
 import { buildDefaultCharacter } from '@/features/characters/services'
@@ -39,6 +39,25 @@ export function editablePatch(character: Character, values: Partial<CharacterFor
     if (value !== undefined && JSON.stringify(value) !== JSON.stringify(baseline[key])) {
       Object.assign(result, { [key]: value })
     }
+  }
+  for (const key of ['avatars', 'gallery'] as const) {
+    const next = values[key]
+    if (!next) continue
+    const urls = next.map(item => item.url)
+    if (JSON.stringify(urls) === JSON.stringify(baseline[key])) continue
+    const original = Array.isArray(character[key]) ? character[key] : []
+    const used = new Set<number>()
+    const nextUrlSet = new Set(urls)
+    const merged = next.map((item, index) => {
+      const urlOf = (entry: unknown) => typeof entry === 'string' ? entry : entry && typeof entry === 'object' && 'url' in entry ? entry.url : undefined
+      let oldIndex = original.findIndex((entry, i) => !used.has(i) && urlOf(entry) === item.url)
+      if (oldIndex < 0 && original[index] && !used.has(index) && !nextUrlSet.has(String(urlOf(original[index])))) oldIndex = index
+      if (oldIndex < 0) return item
+      used.add(oldIndex)
+      const old = original[oldIndex]
+      return typeof old === 'object' && old !== null ? { ...old, url: item.url } : item
+    })
+    Object.assign(result, { [key]: merged })
   }
   return result
 }
@@ -113,7 +132,7 @@ function CharacterWorkspace({ workspaceId, role }: { workspaceId: string; role: 
       <h2 className="text-reading font-semibold">角色</h2>
       {canEdit && <button type="button" className={BTN_QUIET} disabled={busy || loading} onClick={() => void create()}>新建角色</button>}
     </div>
-    <p className="text-caption text-ink-muted">支持角色基本信息、头像、封面与正文图片；立绘和关系正在接入。</p>
+    <p className="text-caption text-ink-muted">支持角色基本信息、图片和正文；关系正在接入。</p>
     {error && <p role="alert" className="text-ui text-error">{error}</p>}
     {loading ? <p className="text-ui text-ink-muted">正在读取角色…</p> : <div className="flex flex-wrap gap-2">
       {rows.map(row => <button type="button" key={row.entityId} className={BTN_QUIET}
@@ -202,7 +221,7 @@ function OriginalCharacterEditor({ snapshot, adapter, canEdit, disabled, onUploa
     }
   }
 
-  async function uploadProfileImage(blob: Blob, type: 'header' | 'avatar'): Promise<string | null> {
+  async function uploadProfileImage(blob: Blob, type: 'header' | 'avatar' | 'gallery' | 'portrait'): Promise<string | null> {
     if (!canEdit || uploading.current) return null
     uploading.current = true
     onUploadBusy(true)
@@ -265,7 +284,8 @@ function OriginalCharacterEditor({ snapshot, adapter, canEdit, disabled, onUploa
             element: form.element, occupation: form.occupation, faction: form.faction,
             height: form.height, birthday: [form.birthdayYear, form.birthdayMonth, form.birthdayDay].join('-'),
             isMajor: form.isMajor, bio: form.bio, avatarUrl: form.avatarUrl,
-            headerUrl: form.headerUrl, document: bodyDraft }, null, 2)} />
+            headerUrl: form.headerUrl, avatars: form.avatarUrls, gallery: form.galleryUrls,
+            document: bodyDraft }, null, 2)} />
       </details>
     </div>}
     <fieldset disabled={!canEdit || disabled} className="flex min-w-0 flex-col gap-6">
@@ -280,6 +300,16 @@ function OriginalCharacterEditor({ snapshot, adapter, canEdit, disabled, onUploa
       </label>
       <CharacterInfoSection form={form} fieldsOverride={CLOUD_FIELDS} />
       <SummaryBlock value={form.bio} onChange={form.setBio} />
+      <GalleryBlock title="立绘" images={form.avatarUrls} gridAspect="portrait" enableCrop cropAspect={9 / 16}
+        onAdd={canEdit && !disabled ? path => form.setAvatarUrls(current => [...current, path]) : undefined}
+        onReplace={canEdit && !disabled ? (index, path) => form.setAvatarUrls(current => current.map((url, i) => i === index ? path : url)) : undefined}
+        onRemove={canEdit && !disabled ? index => form.setAvatarUrls(current => current.filter((_, i) => i !== index)) : undefined}
+        saveImage={uploadProfileImage} />
+      <GalleryBlock title="相册" images={form.galleryUrls}
+        onAdd={canEdit && !disabled ? path => form.setGalleryUrls(current => [...current, path]) : undefined}
+        onReplace={canEdit && !disabled ? (index, path) => form.setGalleryUrls(current => current.map((url, i) => i === index ? path : url)) : undefined}
+        onRemove={canEdit && !disabled ? index => form.setGalleryUrls(current => current.filter((_, i) => i !== index)) : undefined}
+        saveImage={uploadProfileImage} />
     </fieldset>
     <section className="border-t border-line pt-4">
       <h3 className="text-ui font-semibold">正文</h3>

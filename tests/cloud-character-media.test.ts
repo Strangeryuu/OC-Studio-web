@@ -21,6 +21,10 @@ describe('cloud character media references', () => {
     expect(characterMediaIds('character', { avatarUrl: `/api/media/${a}`, headerUrl: `/api/media/${b}` })).toEqual([a, b])
     expect(characterMediaIds('character', { avatarUrl: '/api/media/invalid' })).toBeNull()
   })
+  it('checks cloud media URLs in original portrait and gallery fields', () => {
+    expect(characterMediaIds('character', { avatars: [{ url: `/api/media/${a}`, type: 'fullbody' }], gallery: [{ url: `/api/media/${b}`, caption: '说明' }] })).toEqual([a, b])
+    expect(characterMediaIds('character', { gallery: [{ url: '/api/media/invalid' }] })).toBeNull()
+  })
   it('rejects path strings, malformed arrays and excessive media ids', () => {
     expect(characterMediaIds('character', { headerMediaId: '../../secret.png' })).toBeNull()
     expect(characterMediaIds('character', { galleryMediaIds: ['other-id'] })).toBeNull()

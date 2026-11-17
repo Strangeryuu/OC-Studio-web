@@ -31,6 +31,7 @@ interface ImageGalleryProps {
   /** 添加入口由调用方放在区块标题里：网格不再渲染瓦片、底部按钮与空态 */
   externalAdd?: boolean
   ref?: Ref<ImageGalleryHandle>
+  saveImage?: (blob: Blob, type: 'gallery' | 'portrait') => Promise<string | null>
 }
 
 /**
@@ -52,6 +53,7 @@ export function ImageGallery({
   addTile = false,
   externalAdd = false,
   ref,
+  saveImage,
 }: ImageGalleryProps) {
   const [viewerIndex, setViewerIndex] = useState<number | null>(null)
   const [menuAt, setMenuAt] = useState<{ x: number; y: number; index: number } | null>(null)
@@ -65,7 +67,7 @@ export function ImageGallery({
     converting,
     handleCropComplete,
     handleCropperClose,
-  } = useImageUpload({ onAdd, onReplace, enableCrop })
+  } = useImageUpload({ onAdd, onReplace, enableCrop, saveImage })
 
   /** 新增入口：不能把 triggerFileUpload 直接交给 onClick —— 事件对象会被当成 replaceIndex */
   const uploadNew = () => {

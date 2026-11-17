@@ -23,6 +23,17 @@ export function characterMediaIds(kind: unknown, content: unknown): string[] | n
     if (id === null) return null
     ids.push(id)
   }
+  for (const key of ['avatars', 'gallery']) {
+    const images = record[key]
+    if (!Array.isArray(images)) continue
+    for (const item of images) {
+      const value = typeof item === 'string' ? item : item && typeof item === 'object' ? (item as Record<string, unknown>).url : undefined
+      if (typeof value !== 'string' || !value.startsWith('/api/media/')) continue
+      const id = cloudMediaUrlId(value)
+      if (id === null) return null
+      ids.push(id)
+    }
+  }
   for (const src of collectBodyImageRefs(readStoredBody(record.document))) {
     const id = cloudMediaUrlId(src)
     if (id) ids.push(id)

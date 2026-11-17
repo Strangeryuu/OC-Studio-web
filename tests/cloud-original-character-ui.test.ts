@@ -133,6 +133,63 @@ describe('original character information in cloud workspace', () => {
     expect(fake.save.mock.calls[0][1]).toEqual({ avatarUrl: imageUrl })
   })
 
+  it('uploads through the original gallery and saves the resulting image', async () => {
+    fake.list.mockResolvedValue([fixture(1, '相册角色')])
+    fake.save.mockImplementation(async (snapshot: OriginalCharacterSnapshot, patch: Record<string, unknown>) => ({
+      ...snapshot, version: snapshot.version + 1, character: { ...snapshot.character, ...patch },
+    }))
+    const imageUrl = '/api/media/33333333-3333-4333-8333-333333333333'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ asset: { url: imageUrl } }), { status: 201 })))
+    vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (this: HTMLInputElement) {
+      Object.defineProperty(this, 'files', { configurable: true, value: [new File(['image'], 'gallery.png', { type: 'image/png' })] })
+      this.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' })); await Promise.resolve() })
+    await click(button('相册角色'))
+    const adds = [...container.querySelectorAll('button')].filter(item => item.textContent?.trim() === '添加')
+    expect(adds).toHaveLength(2)
+    await click(adds[1])
+    await click(button('保存'))
+    expect(fake.save.mock.calls[0][1]).toEqual({ gallery: [{ url: imageUrl, caption: '' }] })
+  })
+
+  it('retains gallery image addresses in a conflicting draft', async () => {
+    fake.list.mockResolvedValue([fixture(1, '相册角色')])
+    fake.save.mockRejectedValue(new Error('版本冲突'))
+    const imageUrl = '/api/media/33333333-3333-4333-8333-333333333333'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ asset: { url: imageUrl } }), { status: 201 })))
+    vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (this: HTMLInputElement) {
+      Object.defineProperty(this, 'files', { configurable: true, value: [new File(['image'], 'gallery.png', { type: 'image/png' })] })
+      this.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' })); await Promise.resolve() })
+    await click(button('相册角色'))
+    const adds = [...container.querySelectorAll('button')].filter(item => item.textContent?.trim() === '添加')
+    await click(adds[1])
+    await click(button('保存'))
+    expect((container.querySelector('textarea[aria-label="当前草稿"]') as HTMLTextAreaElement).value).toContain(imageUrl)
+  })
+
+  it('crops and uploads a portrait through the original gallery', async () => {
+    fake.list.mockResolvedValue([fixture(1, '立绘角色')])
+    fake.save.mockImplementation(async (snapshot: OriginalCharacterSnapshot, patch: Record<string, unknown>) => ({
+      ...snapshot, version: snapshot.version + 1, character: { ...snapshot.character, ...patch },
+    }))
+    const imageUrl = '/api/media/33333333-3333-4333-8333-333333333333'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ asset: { url: imageUrl } }), { status: 201 })))
+    vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (this: HTMLInputElement) {
+      Object.defineProperty(this, 'files', { configurable: true, value: [new File(['image'], 'portrait.png', { type: 'image/png' })] })
+      this.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' })); await Promise.resolve() })
+    await click(button('立绘角色'))
+    const adds = [...container.querySelectorAll('button')].filter(item => item.textContent?.trim() === '添加')
+    await click(adds[0])
+    await click(button('完成裁剪'))
+    await click(button('保存'))
+    expect(fake.save.mock.calls[0][1]).toEqual({ avatars: [{ url: imageUrl, type: 'portrait' }] })
+  })
+
   it('keeps a failed cover upload out of the character', async () => {
     fake.list.mockResolvedValue([fixture(1, '封面角色')])
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 413 })))
@@ -255,6 +312,7 @@ describe('original character information in cloud workspace', () => {
     expect(editor.isEditable).toBe(false)
     expect([...container.querySelectorAll('button')].map(item => item.textContent)).not.toContain('保存')
     expect([...container.querySelectorAll('button')].map(item => item.textContent)).not.toContain('新建角色')
+    expect([...container.querySelectorAll('button')].some(item => item.textContent?.trim() === '添加')).toBe(false)
   })
 
   it('saves the original rich-text editor document through the cloud adapter', async () => {
@@ -304,5 +362,17 @@ describe('original character information in cloud workspace', () => {
     const character = fixture(1, '甲').character
     character.birthday = '2000-3-2'
     expect(editablePatch(character, { name: '新名字', birthday: '2000-03-02', aliases: [] })).toEqual({ name: '新名字' })
+  })
+
+  it('preserves portrait types and gallery captions when pictures are edited', () => {
+    const character = fixture(1, '甲').character
+    character.avatars = [{ url: 'old-a', type: 'fullbody' }, { url: 'old-b', type: 'other' }]
+    character.gallery = [{ url: 'old-c', caption: '旧说明' }]
+    const patch = editablePatch(character, {
+      avatars: [{ url: 'old-b', type: 'portrait' }, { url: 'old-a', type: 'portrait' }],
+      gallery: [{ url: 'new-c', caption: '' }],
+    })
+    expect(patch.avatars).toEqual([{ url: 'old-b', type: 'other' }, { url: 'old-a', type: 'fullbody' }])
+    expect(patch.gallery).toEqual([{ url: 'new-c', caption: '旧说明' }])
   })
 })

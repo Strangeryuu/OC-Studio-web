@@ -15,7 +15,7 @@ import { ComponentSection } from '../ComponentSection'
 
 interface GalleryBlockProps {
   images: string[]
-  onAdd: (path: string) => void
+  onAdd?: (path: string) => void
   onReplace?: (index: number, path: string) => void
   onRemove?: (index: number) => void
   showTitle?: boolean
@@ -26,6 +26,7 @@ interface GalleryBlockProps {
   gridAspect?: 'square' | 'portrait' | 'wide'
   enableCrop?: boolean
   cropAspect?: number
+  saveImage?: (blob: Blob, type: 'gallery' | 'portrait') => Promise<string | null>
 }
 
 export function GalleryBlock({
@@ -40,6 +41,7 @@ export function GalleryBlock({
   gridAspect = 'square',
   enableCrop = false,
   cropAspect,
+  saveImage,
 }: GalleryBlockProps) {
   const gallery = useRef<ImageGalleryHandle>(null)
 
@@ -48,14 +50,14 @@ export function GalleryBlock({
       divider={false}
       title={showTitle ? title : undefined}
       action={
-        <button
+        onAdd ? <button
           type="button"
           onClick={() => gallery.current?.add()}
           className={ADD_ACTION}
         >
           <Plus size={12} strokeWidth={2} />
           <span>添加</span>
-        </button>
+        </button> : undefined
       }
     >
       <ImageGallery
@@ -70,6 +72,7 @@ export function GalleryBlock({
         onAdd={onAdd}
         onReplace={onReplace}
         onRemove={onRemove}
+        saveImage={saveImage}
       />
     </ComponentSection>
   )
