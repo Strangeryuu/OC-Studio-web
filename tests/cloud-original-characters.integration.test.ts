@@ -132,6 +132,30 @@ describe('original character adapter against PostgreSQL', () => {
     expect(all[0].character.id).toBe(created.character.id)
   })
 
+  it('restricts original character relationships to their workspace and retains history', async () => {
+    state.userId = 'owner'
+    const adapter = new OriginalCharactersCloudAdapter(workspaceA, apiFetch)
+    const first = await adapter.create(buildDefaultCharacter({ ...newCharacterData(), name: '关系甲' }))
+    const second = await adapter.create(buildDefaultCharacter({ ...newCharacterData(), name: '关系乙' }))
+    state.userId = 'outsider'
+    const foreign = await new OriginalCharactersCloudAdapter(workspaceB, apiFetch)
+      .create(buildDefaultCharacter({ ...newCharacterData(), name: '其他资料库' }))
+    state.userId = 'owner'
+    const relation = (characterId: number, name: string) => [{ characterId, name, relation: '朋友' }]
+    await expect(adapter.save(first, { relatedCharacters: relation(foreign.character.id!, '其他资料库') }))
+      .rejects.toMatchObject({ status: 400, code: 'INVALID_CHARACTER_LINKS' })
+    await expect(adapter.save(first, { relatedCharacters: relation(first.character.id!, '关系甲') }))
+      .rejects.toMatchObject({ status: 400, code: 'INVALID_CHARACTER_LINKS' })
+    const linked = await adapter.save(first, { relatedCharacters: relation(second.character.id!, '关系乙') })
+    expect(linked.character.relatedCharacters[0].characterId).toBe(second.character.id)
+    await expect(adapter.save(first, { relatedCharacters: [] })).rejects.toMatchObject({ status: 409 })
+    await adapter.remove(second)
+    const edited = await adapter.save(linked, { bio: '保留已删除角色的关系' })
+    expect(edited.character.relatedCharacters[0].name).toBe('关系乙')
+    const revisions = await revisionRoute.GET(new Request('http://localhost:3000'), ctxEntity(first.entityId))
+    expect((await revisions.json()).revisions.map((item: { version: number }) => item.version)).toEqual([3, 2, 1])
+  })
+
   it('accepts body images only from the character workspace', async () => {
     state.userId = 'owner'
     const own = '33333333-3333-4333-8333-333333333333'

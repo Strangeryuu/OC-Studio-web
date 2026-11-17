@@ -23,6 +23,7 @@ import { collectBodyImageRefs } from '@/lib/image-refs'
 import { legacyBodySections, readStoredBody } from '@/lib/body-content'
 import { cloudMediaUrlId } from '@/lib/cloud/character-media'
 import { ProfileBannerEditor } from '@/components/shared/ProfileBannerEditor'
+import { RelationsSection } from '@/components/shared/relations/RelationsSection'
 
 // 国家、关系、图片和模板依赖其他本地库，等它们各自迁移后再开放。
 const CLOUD_FIELDS = BUILTIN_FIELDS.character.filter(field => field.id !== 'country')
@@ -38,6 +39,15 @@ export function editablePatch(character: Character, values: Partial<CharacterFor
     const value = values[key]
     if (value !== undefined && JSON.stringify(value) !== JSON.stringify(baseline[key])) {
       Object.assign(result, { [key]: value })
+    }
+  }
+  if (values.relatedCharacters !== undefined) {
+    const normalized = values.relatedCharacters.map(relation => ({
+      characterId: relation.characterId ?? null, relation: relation.relation,
+      arrow: relation.arrow ?? null, color: relation.color ?? null,
+    }))
+    if (JSON.stringify(normalized) !== JSON.stringify(baseline.related)) {
+      result.relatedCharacters = values.relatedCharacters
     }
   }
   for (const key of ['avatars', 'gallery'] as const) {
@@ -132,7 +142,7 @@ function CharacterWorkspace({ workspaceId, role }: { workspaceId: string; role: 
       <h2 className="text-reading font-semibold">角色</h2>
       {canEdit && <button type="button" className={BTN_QUIET} disabled={busy || loading} onClick={() => void create()}>新建角色</button>}
     </div>
-    <p className="text-caption text-ink-muted">支持角色基本信息、图片和正文；关系正在接入。</p>
+    <p className="text-caption text-ink-muted">支持角色基本信息、图片、正文与角色关系。</p>
     {error && <p role="alert" className="text-ui text-error">{error}</p>}
     {loading ? <p className="text-ui text-ink-muted">正在读取角色…</p> : <div className="flex flex-wrap gap-2">
       {rows.map(row => <button type="button" key={row.entityId} className={BTN_QUIET}
@@ -141,13 +151,17 @@ function CharacterWorkspace({ workspaceId, role }: { workspaceId: string; role: 
       {rows.length === 0 && <p className="text-ui text-ink-muted">暂无角色</p>}
     </div>}
     {selected && <OriginalCharacterEditor key={selected.entityId} snapshot={selected} adapter={adapter}
+      characters={rows.map(row => row.character)}
+      onNavigateCharacter={id => { const target = rows.find(row => row.character.id === id); if (target) void select(target) }}
       canEdit={canEdit} disabled={busy} onUploadBusy={setBusy} onSaved={saved} />}
   </section>
 }
 
-function OriginalCharacterEditor({ snapshot, adapter, canEdit, disabled, onUploadBusy, onSaved }: {
+function OriginalCharacterEditor({ snapshot, adapter, characters, onNavigateCharacter, canEdit, disabled, onUploadBusy, onSaved }: {
   snapshot: OriginalCharacterSnapshot
   adapter: OriginalCharactersCloudAdapter
+  characters: Character[]
+  onNavigateCharacter: (id: number) => void
   canEdit: boolean
   disabled: boolean
   onUploadBusy: (busy: boolean) => void
@@ -178,7 +192,7 @@ function OriginalCharacterEditor({ snapshot, adapter, canEdit, disabled, onUploa
       throw cause
     }
   }, [adapter, onSaved])
-  const form = useCharacterForm(snapshot.character, save, { localLookups: false })
+  const form = useCharacterForm(snapshot.character, save, { localLookups: false, characters })
   useEffect(() => { docDirty.current = form.docDirty }, [form.docDirty])
   useEffect(() => { bodyEditor.current?.setEditable(canEdit && !disabled) }, [canEdit, disabled])
   const onEditorReady = useCallback((editor: Editor) => {
@@ -285,6 +299,7 @@ function OriginalCharacterEditor({ snapshot, adapter, canEdit, disabled, onUploa
             height: form.height, birthday: [form.birthdayYear, form.birthdayMonth, form.birthdayDay].join('-'),
             isMajor: form.isMajor, bio: form.bio, avatarUrl: form.avatarUrl,
             headerUrl: form.headerUrl, avatars: form.avatarUrls, gallery: form.galleryUrls,
+            relatedCharacters: form.relatedCharacters,
             document: bodyDraft }, null, 2)} />
       </details>
     </div>}
@@ -300,6 +315,15 @@ function OriginalCharacterEditor({ snapshot, adapter, canEdit, disabled, onUploa
       </label>
       <CharacterInfoSection form={form} fieldsOverride={CLOUD_FIELDS} />
       <SummaryBlock value={form.bio} onChange={form.setBio} />
+      <RelationsSection title="角色关系" selfName={form.name}
+        rows={form.relationRows.filter(row => row.kind === 'character')}
+        inbound={form.inboundRelationRows}
+        candidates={form.relationCandidates.filter(candidate => candidate.kind === 'character')}
+        onAdd={canEdit && !disabled ? form.addRelation : undefined}
+        onRemove={canEdit && !disabled ? form.removeRelation : undefined}
+        onRename={canEdit && !disabled ? form.renameRelation : undefined}
+        onArrowChange={canEdit && !disabled ? form.setRelationArrow : undefined}
+        onNavigate={(_kind, id) => onNavigateCharacter(id)} />
       <GalleryBlock title="立绘" images={form.avatarUrls} gridAspect="portrait" enableCrop cropAspect={9 / 16}
         onAdd={canEdit && !disabled ? path => form.setAvatarUrls(current => [...current, path]) : undefined}
         onReplace={canEdit && !disabled ? (index, path) => form.setAvatarUrls(current => current.map((url, i) => i === index ? path : url)) : undefined}

@@ -56,7 +56,7 @@ export async function PATCH(request: Request, context: Context) {
       await client.query('ROLLBACK')
       return NextResponse.json({ error: 'INVALID_CHARACTER_MEDIA' }, { status: 400 })
     }
-    if (!await characterLinksAllowed(client, access.workspaceId, existing.kind, document.data, entityId)) {
+    if (!await characterLinksAllowed(client, access.workspaceId, existing.kind, document.data, entityId, existing.content)) {
       await client.query('ROLLBACK')
       return NextResponse.json({ error: 'INVALID_CHARACTER_LINKS' }, { status: 400 })
     }

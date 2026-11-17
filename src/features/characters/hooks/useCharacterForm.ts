@@ -160,7 +160,7 @@ export interface InboundRelation {
 export function useCharacterForm(
   character: Character,
   onSave: (id: number, data: Partial<CharacterFormData>) => Promise<void>,
-  options?: { localLookups?: boolean },
+  options?: { localLookups?: boolean; characters?: Character[] },
 ) {
   /** 挂载那一刻的字段值：初始 state 与初始基线都从这里来，不会两边漂移 */
   const [initial] = useState(() => valuesFromEntity(character))
@@ -246,7 +246,8 @@ export function useCharacterForm(
   // 外部改写（别处保存 / 同步落地）后回灌的逻辑在保存流水线之后（它要读 `saving`）。
 
   const useLocalLookups = options?.localLookups !== false
-  const { characters: allCharacters } = useCharacterList(useLocalLookups)
+  const { characters: localCharacters } = useCharacterList(useLocalLookups)
+  const allCharacters = options?.characters ?? localCharacters
   const { countries } = useCountryList(useLocalLookups)
   const { entries: allNotes } = useCodexEntryList(useLocalLookups)
 

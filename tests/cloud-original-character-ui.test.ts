@@ -71,6 +71,22 @@ afterEach(async () => {
 })
 
 describe('original character information in cloud workspace', () => {
+  it('adds a relationship using the original picker and saves the original fields', async () => {
+    fake.list.mockResolvedValue([fixture(1, '关系甲'), fixture(2, '关系乙')])
+    fake.save.mockImplementation(async (snapshot: OriginalCharacterSnapshot, patch: Record<string, unknown>) => ({
+      ...snapshot, version: snapshot.version + 1, character: { ...snapshot.character, ...patch },
+    }))
+    await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' })); await Promise.resolve() })
+    await click(button('关系甲'))
+    const section = [...container.querySelectorAll('section')].find(item => item.querySelector('h3')?.textContent === '角色关系')!
+    await click([...section.querySelectorAll('button')].find(item => item.textContent?.trim() === '添加')!)
+    const candidate = [...document.body.querySelectorAll('button')].find(item => item.textContent?.trim() === '关系乙' && !container.contains(item))!
+    expect(candidate).toBeTruthy()
+    await click(candidate)
+    await click(button('保存'))
+    expect(fake.save.mock.calls[0][1].relatedCharacters).toEqual([expect.objectContaining({ characterId: 2, name: '关系乙' })])
+  })
+
   it('keeps existing body images while stopping unsynchronized new images', () => {
     const image = (src: string) => ({ type: 'imageBlock', attrs: { src } })
     const original = { type: 'doc', content: [image('/api/media/existing')] }
