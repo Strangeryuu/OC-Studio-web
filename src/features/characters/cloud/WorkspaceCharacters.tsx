@@ -22,12 +22,13 @@ import { ActiveEditorProvider } from '@/lib/editor-context'
 import { collectBodyImageRefs } from '@/lib/image-refs'
 import { legacyBodySections, readStoredBody } from '@/lib/body-content'
 import { cloudMediaUrlId } from '@/lib/cloud/character-media'
+import { ProfileBannerEditor } from '@/components/shared/ProfileBannerEditor'
 
 // 国家、关系、图片和模板依赖其他本地库，等它们各自迁移后再开放。
 const CLOUD_FIELDS = BUILTIN_FIELDS.character.filter(field => field.id !== 'country')
 const EDITABLE_KEYS = [
   'name', 'aliases', 'race', 'element', 'occupation', 'faction',
-  'height', 'birthday', 'isMajor', 'bio',
+  'height', 'birthday', 'isMajor', 'bio', 'avatarUrl', 'headerUrl',
 ] as const satisfies readonly (keyof CharacterFormData)[]
 
 export function editablePatch(character: Character, values: Partial<CharacterFormData>): Partial<CharacterFormData> {
@@ -112,7 +113,7 @@ function CharacterWorkspace({ workspaceId, role }: { workspaceId: string; role: 
       <h2 className="text-reading font-semibold">角色</h2>
       {canEdit && <button type="button" className={BTN_QUIET} disabled={busy || loading} onClick={() => void create()}>新建角色</button>}
     </div>
-    <p className="text-caption text-ink-muted">支持角色基本信息、简介与正文图片；头像、立绘和关系正在接入。</p>
+    <p className="text-caption text-ink-muted">支持角色基本信息、头像、封面与正文图片；立绘和关系正在接入。</p>
     {error && <p role="alert" className="text-ui text-error">{error}</p>}
     {loading ? <p className="text-ui text-ink-muted">正在读取角色…</p> : <div className="flex flex-wrap gap-2">
       {rows.map(row => <button type="button" key={row.entityId} className={BTN_QUIET}
@@ -201,6 +202,29 @@ function OriginalCharacterEditor({ snapshot, adapter, canEdit, disabled, onUploa
     }
   }
 
+  async function uploadProfileImage(blob: Blob, type: 'header' | 'avatar'): Promise<string | null> {
+    if (!canEdit || uploading.current) return null
+    uploading.current = true
+    onUploadBusy(true)
+    setSaveError(null)
+    try {
+      const data = new FormData()
+      data.append('file', blob, `${type}.png`)
+      const response = await fetch(`/api/workspaces/${snapshot.workspaceId}/media`, { method: 'POST', body: data })
+      if (!response.ok) throw new Error('图片上传失败，请检查文件格式和大小')
+      const result: { asset?: { url?: unknown } } = await response.json()
+      const url = result.asset?.url
+      if (typeof url !== 'string' || cloudMediaUrlId(url) === null) throw new Error('图片上传结果无效')
+      return url
+    } catch (cause) {
+      setSaveError(cause instanceof Error ? cause.message : '图片上传失败')
+      return null
+    } finally {
+      uploading.current = false
+      onUploadBusy(false)
+    }
+  }
+
   useEffect(() => {
     setActiveEntity('character')
     return () => setActiveEntity(null)
@@ -240,10 +264,17 @@ function OriginalCharacterEditor({ snapshot, adapter, canEdit, disabled, onUploa
           value={JSON.stringify({ name: form.name, aliases: form.aliasesStr, race: form.race,
             element: form.element, occupation: form.occupation, faction: form.faction,
             height: form.height, birthday: [form.birthdayYear, form.birthdayMonth, form.birthdayDay].join('-'),
-            isMajor: form.isMajor, bio: form.bio, document: bodyDraft }, null, 2)} />
+            isMajor: form.isMajor, bio: form.bio, avatarUrl: form.avatarUrl,
+            headerUrl: form.headerUrl, document: bodyDraft }, null, 2)} />
       </details>
     </div>}
     <fieldset disabled={!canEdit || disabled} className="flex min-w-0 flex-col gap-6">
+      <ProfileBannerEditor headerUrl={form.headerUrl} avatarUrl={form.avatarUrl}
+        onHeaderChange={canEdit && !disabled ? form.setHeaderUrl : undefined}
+        onAvatarChange={canEdit && !disabled ? form.setAvatarUrl : undefined}
+        onHeaderRemove={canEdit && !disabled ? () => form.setHeaderUrl('') : undefined}
+        onAvatarRemove={canEdit && !disabled ? () => form.setAvatarUrl('') : undefined}
+        saveImage={uploadProfileImage} />
       <label className="flex flex-col gap-2 text-ui text-ink-muted">角色名称
         <input value={form.name} onChange={event => form.setName(event.target.value)} className={TITLE_INPUT} />
       </label>
@@ -254,7 +285,7 @@ function OriginalCharacterEditor({ snapshot, adapter, canEdit, disabled, onUploa
       <h3 className="text-ui font-semibold">正文</h3>
       {canEdit && <label className={`${BTN_QUIET} cursor-pointer`}>
         上传正文图片
-        <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" disabled={disabled}
+        <input type="file" aria-label="上传正文图片" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" disabled={disabled}
           onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void uploadBodyImage(file) }} />
       </label>}
       <EditorCore plain imageUploads={false} localReferences={false} content={snapshot.character.document ?? legacyBodySections([

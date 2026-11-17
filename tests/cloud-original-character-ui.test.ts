@@ -19,6 +19,11 @@ vi.mock('@/lib/cloud/adapters/original-characters', () => ({
   },
 }))
 vi.mock('@/components/shared/toaster', () => ({ Toaster: () => null }))
+vi.mock('@/components/shared/ImageCropper', async () => {
+  const React = await import('react')
+  return { ImageCropper: ({ open, onComplete }: { open: boolean; onComplete: (blob: Blob) => void }) =>
+    open ? React.createElement('button', { type: 'button', onClick: () => onComplete(new Blob(['test'], { type: 'image/png' })) }, '完成裁剪') : null }
+})
 
 import { WorkspaceCharacters, editablePatch, hasNewBodyImages } from '@/features/characters/cloud/WorkspaceCharacters'
 
@@ -84,12 +89,81 @@ describe('original character information in cloud workspace', () => {
     vi.stubGlobal('fetch', upload)
     await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' })); await Promise.resolve() })
     await click(button('图片角色'))
-    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    const input = container.querySelector('input[aria-label="上传正文图片"]') as HTMLInputElement
     Object.defineProperty(input, 'files', { configurable: true, value: [new File(['image'], 'test.png', { type: 'image/png' })] })
     await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })); await Promise.resolve(); await Promise.resolve() })
     expect(upload).toHaveBeenCalledWith(`/api/workspaces/${workspaceId}/media`, expect.objectContaining({ method: 'POST' }))
     await click(button('保存'))
     expect(JSON.stringify(fake.save.mock.calls[0][1])).toContain(imageUrl)
+  })
+
+  it('reuses the original cover cropper and saves the private cloud URL', async () => {
+    fake.list.mockResolvedValue([fixture(1, '封面角色')])
+    fake.save.mockImplementation(async (snapshot: OriginalCharacterSnapshot, patch: Record<string, unknown>) => ({
+      ...snapshot, version: snapshot.version + 1, character: { ...snapshot.character, ...patch },
+    }))
+    const imageUrl = '/api/media/33333333-3333-4333-8333-333333333333'
+    const upload = vi.fn().mockResolvedValue(new Response(JSON.stringify({ asset: { url: imageUrl } }), { status: 201 }))
+    vi.stubGlobal('fetch', upload)
+    await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' })); await Promise.resolve() })
+    await click(button('封面角色'))
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    Object.defineProperty(input, 'files', { configurable: true, value: [new File(['image'], 'test.png', { type: 'image/png' })] })
+    await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })); await Promise.resolve(); await Promise.resolve() })
+    await click(button('完成裁剪'))
+    expect(upload).toHaveBeenCalledWith(`/api/workspaces/${workspaceId}/media`, expect.objectContaining({ method: 'POST' }))
+    await click(button('保存'))
+    expect(fake.save.mock.calls[0][1]).toEqual({ headerUrl: imageUrl })
+  })
+
+  it('reuses the original avatar cropper and saves the private cloud URL', async () => {
+    fake.list.mockResolvedValue([fixture(1, '头像角色')])
+    fake.save.mockImplementation(async (snapshot: OriginalCharacterSnapshot, patch: Record<string, unknown>) => ({
+      ...snapshot, version: snapshot.version + 1, character: { ...snapshot.character, ...patch },
+    }))
+    const imageUrl = '/api/media/33333333-3333-4333-8333-333333333333'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ asset: { url: imageUrl } }), { status: 201 })))
+    await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' })); await Promise.resolve() })
+    await click(button('头像角色'))
+    const input = container.querySelectorAll('input[type="file"]')[1] as HTMLInputElement
+    Object.defineProperty(input, 'files', { configurable: true, value: [new File(['image'], 'avatar.png', { type: 'image/png' })] })
+    await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })); await Promise.resolve(); await Promise.resolve() })
+    await click(button('完成裁剪'))
+    await click(button('保存'))
+    expect(fake.save.mock.calls[0][1]).toEqual({ avatarUrl: imageUrl })
+  })
+
+  it('keeps a failed cover upload out of the character', async () => {
+    fake.list.mockResolvedValue([fixture(1, '封面角色')])
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 413 })))
+    await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' })); await Promise.resolve() })
+    await click(button('封面角色'))
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    Object.defineProperty(input, 'files', { configurable: true, value: [new File(['image'], 'test.png', { type: 'image/png' })] })
+    await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })); await Promise.resolve(); await Promise.resolve() })
+    await click(button('完成裁剪'))
+    expect(container.textContent).toContain('图片上传失败')
+    expect(fake.save).not.toHaveBeenCalled()
+    expect(container.querySelector('img[src^="/api/media/"]')).toBeNull()
+  })
+
+  it('blocks leaving while a profile image upload is in progress', async () => {
+    fake.list.mockResolvedValue([fixture(1, '甲'), fixture(2, '乙')])
+    let resolveUpload!: (response: Response) => void
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(resolve => { resolveUpload = resolve })))
+    await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' })); await Promise.resolve() })
+    await click(button('甲'))
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    Object.defineProperty(input, 'files', { configurable: true, value: [new File(['image'], 'test.png', { type: 'image/png' })] })
+    await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })); await Promise.resolve(); await Promise.resolve() })
+    await click(button('完成裁剪'))
+    expect(button('乙').disabled).toBe(true)
+    await expect(flushPendingSaves()).rejects.toThrow('图片正在上传')
+    await act(async () => {
+      resolveUpload(new Response(JSON.stringify({ asset: { url: '/api/media/33333333-3333-4333-8333-333333333333' } }), { status: 201 }))
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+    })
+    expect(button('乙').disabled).toBe(false)
   })
 
   it('keeps the editor open and blocks leaving while an image is uploading', async () => {
@@ -101,7 +175,7 @@ describe('original character information in cloud workspace', () => {
     vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(resolve => { resolveUpload = resolve })))
     await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' })); await Promise.resolve() })
     await click(button('甲'))
-    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    const input = container.querySelector('input[aria-label="上传正文图片"]') as HTMLInputElement
     Object.defineProperty(input, 'files', { configurable: true, value: [new File(['image'], 'test.png', { type: 'image/png' })] })
     await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })); await Promise.resolve() })
     expect(button('乙').disabled).toBe(true)
@@ -120,7 +194,7 @@ describe('original character information in cloud workspace', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 413 })))
     await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' })); await Promise.resolve() })
     await click(button('角色'))
-    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    const input = container.querySelector('input[aria-label="上传正文图片"]') as HTMLInputElement
     Object.defineProperty(input, 'files', { configurable: true, value: [new File(['image'], 'test.png', { type: 'image/png' })] })
     await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })); await Promise.resolve(); await Promise.resolve() })
     expect(container.textContent).toContain('图片上传失败')
@@ -140,11 +214,11 @@ describe('original character information in cloud workspace', () => {
     }))
     await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' })); await Promise.resolve() })
     await click(button('初始角色'))
-    const name = container.querySelector('input') as HTMLInputElement
+    const name = container.querySelector('input:not([type="file"])') as HTMLInputElement
     expect(name.value).toBe('初始角色')
     await inputText(name, '修改角色')
     await click(button('初始角色'))
-    expect((container.querySelector('input') as HTMLInputElement).value).toBe('修改角色')
+    expect((container.querySelector('input:not([type="file"])') as HTMLInputElement).value).toBe('修改角色')
     expect(fake.save).not.toHaveBeenCalled()
     await click(button('保存'))
     expect(fake.save).toHaveBeenCalledOnce()
@@ -160,20 +234,23 @@ describe('original character information in cloud workspace', () => {
     fake.save.mockRejectedValue(new Error('版本冲突'))
     await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' })); await Promise.resolve() })
     await click(button('甲'))
-    const name = container.querySelector('input') as HTMLInputElement
+    const name = container.querySelector('input:not([type="file"])') as HTMLInputElement
     await inputText(name, '未保存草稿')
     await click(button('保存'))
     expect(container.textContent).toContain('版本冲突')
     expect((container.querySelector('textarea[aria-label="当前草稿"]') as HTMLTextAreaElement).value).toContain('未保存草稿')
     await click(button('乙'))
-    expect((container.querySelector('input') as HTMLInputElement).value).toBe('未保存草稿')
+    expect((container.querySelector('input:not([type="file"])') as HTMLInputElement).value).toBe('未保存草稿')
   })
 
   it('renders viewer fields disabled and omits create and save', async () => {
-    fake.list.mockResolvedValue([fixture(1, '只读角色')])
+    const item = fixture(1, '只读角色')
+    item.character.avatarUrl = '/api/media/33333333-3333-4333-8333-333333333333'
+    fake.list.mockResolvedValue([item])
     await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'viewer' })); await Promise.resolve() })
     await click(button('只读角色'))
     expect(container.querySelector('fieldset')?.disabled).toBe(true)
+    expect(container.querySelector('img[src="/api/media/33333333-3333-4333-8333-333333333333"]')).not.toBeNull()
     const editor = (container.querySelector('.tiptap') as HTMLElement & { editor: Editor }).editor
     expect(editor.isEditable).toBe(false)
     expect([...container.querySelectorAll('button')].map(item => item.textContent)).not.toContain('保存')

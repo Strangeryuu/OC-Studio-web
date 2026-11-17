@@ -24,6 +24,7 @@ interface ProfileBannerEditorProps {
   avatarType?: 'avatar' | 'flag'
   /** 只画头像（模板里的「头像」组件用它；默认连头图一起画） */
   showHeader?: boolean
+  saveImage?: (blob: Blob, type: 'header' | 'avatar') => Promise<string | null>
 }
 
 /**
@@ -41,6 +42,7 @@ export function ProfileBannerEditor({
   onAvatarRemove,
   avatarType = 'avatar',
   showHeader = true,
+  saveImage,
 }: ProfileBannerEditorProps) {
   const headerInputRef = useRef<HTMLInputElement>(null)
   const avatarInputRef = useRef<HTMLInputElement>(null)
@@ -141,7 +143,7 @@ export function ProfileBannerEditor({
 
   async function handleHeaderCropComplete(blob: Blob) {
     // 失败要明说：以前这里连 try 都没有，写盘一抛就只剩「裁剪器关不掉」的观感
-    const url = await saveBlobToDiskOrToast(blob, 'header', '横图')
+    const url = saveImage ? await saveImage(blob, 'header') : await saveBlobToDiskOrToast(blob, 'header', '横图')
     if (url === null) return
     onHeaderChange?.(url)
     setHeaderCropperOpen(false)
@@ -180,7 +182,7 @@ export function ProfileBannerEditor({
   }
 
   async function handleAvatarCropComplete(blob: Blob) {
-    const url = await saveBlobToDiskOrToast(blob, 'avatar', '头像')
+    const url = saveImage ? await saveImage(blob, 'avatar') : await saveBlobToDiskOrToast(blob, 'avatar', '头像')
     if (url === null) return
     onAvatarChange?.(url)
     setAvatarCropperOpen(false)
@@ -252,13 +254,13 @@ export function ProfileBannerEditor({
       ) : null}
 
       {/* Avatar */}
-      {onAvatarChange ? (
+      {onAvatarChange || avatarUrl ? (
         <div className={showHeader ? 'absolute -bottom-6 left-4' : 'relative w-fit'}>
           <div className="relative inline-block">
             <button
               type="button"
               {...avatarMenuHandlers}
-              onClick={viewAvatar}
+              onClick={avatarUrl ? viewAvatar : onAvatarChange ? pickAvatar : undefined}
               className="relative block bg-transparent hover:bg-transparent"
             >
               <div className="overflow-hidden rounded-full border-4 border-paper"> {/* design-audit-allow border-fat 头像外圈装饰描边 */}

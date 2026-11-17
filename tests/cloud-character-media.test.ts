@@ -17,6 +17,10 @@ describe('cloud character media references', () => {
     expect(characterMediaIds('character', { name: '旧角色', avatars: ['/images/old.png'], tags: [1] })).toEqual([])
     expect(characterMediaIds('event', { avatarMediaId: 'legacy.png' })).toEqual([])
   })
+  it('checks original avatar and cover URLs against workspace assets', () => {
+    expect(characterMediaIds('character', { avatarUrl: `/api/media/${a}`, headerUrl: `/api/media/${b}` })).toEqual([a, b])
+    expect(characterMediaIds('character', { avatarUrl: '/api/media/invalid' })).toBeNull()
+  })
   it('rejects path strings, malformed arrays and excessive media ids', () => {
     expect(characterMediaIds('character', { headerMediaId: '../../secret.png' })).toBeNull()
     expect(characterMediaIds('character', { galleryMediaIds: ['other-id'] })).toBeNull()

@@ -145,7 +145,19 @@ describe('original character adapter against PostgreSQL', () => {
     const saved = await adapter.save(initial, { document: doc(own) })
     expect(saved.version).toBe(2)
     await expect(adapter.save(saved, { document: doc(other) })).rejects.toMatchObject({ status: 400, code: 'INVALID_CHARACTER_MEDIA' })
+    await expect(adapter.save(saved, { avatarUrl: `/api/media/${other}` })).rejects.toMatchObject({ status: 400, code: 'INVALID_CHARACTER_MEDIA' })
     expect((await adapter.list()).find(row => row.entityId === saved.entityId)?.version).toBe(2)
+    const withAvatar = await adapter.save(saved, { avatarUrl: `/api/media/${own}`, headerUrl: `/api/media/${own}` })
+    expect(withAvatar.version).toBe(3)
+    expect(withAvatar.character.avatarUrl).toBe(`/api/media/${own}`)
+    const removedAvatar = await adapter.save(withAvatar, { avatarUrl: '' })
+    const restore = await restoreRoute.POST(new Request('http://localhost:3000', {
+      method: 'POST', headers: { Origin: 'http://localhost:3000', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expectedVersion: removedAvatar.version, restoreVersion: 3 }),
+    }), ctxEntity(initial.entityId))
+    expect(restore.status).toBe(200)
+    const restored = (await adapter.list()).find(row => row.entityId === initial.entityId)
+    expect(restored?.character.avatarUrl).toBe(`/api/media/${own}`)
   })
 
   it('uploads and reads private image bytes with workspace authorization', async () => {

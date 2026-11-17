@@ -16,6 +16,13 @@ export function characterMediaIds(kind: unknown, content: unknown): string[] | n
   if (!content || typeof content !== 'object' || Array.isArray(content)) return null
   const record = content as Record<string, unknown>
   const ids: string[] = []
+  for (const key of ['avatarUrl', 'headerUrl']) {
+    const value = record[key]
+    if (typeof value !== 'string' || !value.startsWith('/api/media/')) continue
+    const id = cloudMediaUrlId(value)
+    if (id === null) return null
+    ids.push(id)
+  }
   for (const src of collectBodyImageRefs(readStoredBody(record.document))) {
     const id = cloudMediaUrlId(src)
     if (id) ids.push(id)
