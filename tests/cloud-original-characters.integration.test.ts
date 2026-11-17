@@ -1,5 +1,7 @@
 // @vitest-environment node
-import { readFileSync, readdirSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
 import { OriginalCharactersCloudAdapter, CloudCharacterError } from '@/lib/cloud/adapters/original-characters'
@@ -22,6 +24,8 @@ import * as legacyEntities from '@/app/api/workspaces/[workspaceId]/legacy-entit
 import * as entityRoute from '@/app/api/entities/[entityId]/route'
 import * as revisionRoute from '@/app/api/entities/[entityId]/revisions/route'
 import * as restoreRoute from '@/app/api/entities/[entityId]/restore/route'
+import * as uploadRoute from '@/app/api/workspaces/[workspaceId]/media/route'
+import * as mediaRoute from '@/app/api/media/[assetId]/route'
 
 const workspaceA = '11111111-1111-4111-8111-111111111111'
 const workspaceB = '22222222-2222-4222-8222-222222222222'
@@ -43,8 +47,11 @@ async function apiFetch(input: string, init: RequestInit = {}): Promise<Response
 }
 
 describe('original character adapter against PostgreSQL', () => {
+  let mediaRoot: string
   beforeAll(async () => {
     process.env.BETTER_AUTH_URL = 'http://localhost:3000'
+    mediaRoot = mkdtempSync(join(tmpdir(), 'ocstudio-cloud-test-'))
+    process.env.MEDIA_ROOT = mediaRoot
     state.db = new PGlite()
     await state.db.exec('CREATE TABLE "user" (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL, banned BOOLEAN NOT NULL DEFAULT false)')
     for (const file of readdirSync('cloud/migrations').filter(name => name.endsWith('.sql')).sort()) {
@@ -60,7 +67,7 @@ describe('original character adapter against PostgreSQL', () => {
     await state.db.query('INSERT INTO workspace_members(workspace_id,user_id,role) VALUES ($1,$2,$3)',
       [workspaceA, 'viewer', 'viewer'])
   }, 30000)
-  afterAll(async () => { await state.db?.close() })
+  afterAll(async () => { await state.db?.close(); rmSync(mediaRoot, { recursive: true, force: true }) })
 
   it('saves original character fields, rejects stale edits, and restores history', async () => {
     const adapter = new OriginalCharactersCloudAdapter(workspaceA, apiFetch)
@@ -123,6 +130,40 @@ describe('original character adapter against PostgreSQL', () => {
     const all = await adapter.list()
     expect(all.map(item => item.character.name)).toEqual(['跨页角色'])
     expect(all[0].character.id).toBe(created.character.id)
+  })
+
+  it('accepts body images only from the character workspace', async () => {
+    state.userId = 'owner'
+    const own = '33333333-3333-4333-8333-333333333333'
+    const other = '44444444-4444-4444-8444-444444444444'
+    await state.db!.query(`INSERT INTO media_assets(id,workspace_id,uploaded_by,storage_key,mime_type,byte_size,content_sha256)
+      VALUES ($1,$3,'owner','own.png','image/png',1,'own'),($2,$4,'outsider','other.png','image/png',1,'other')`,
+    [own, other, workspaceA, workspaceB])
+    const adapter = new OriginalCharactersCloudAdapter(workspaceA, apiFetch)
+    const initial = await adapter.create(buildDefaultCharacter({ ...newCharacterData(), name: '图片角色' }))
+    const doc = (id: string) => ({ type: 'doc', content: [{ type: 'imageBlock', attrs: { src: `/api/media/${id}` } }] })
+    const saved = await adapter.save(initial, { document: doc(own) })
+    expect(saved.version).toBe(2)
+    await expect(adapter.save(saved, { document: doc(other) })).rejects.toMatchObject({ status: 400, code: 'INVALID_CHARACTER_MEDIA' })
+    expect((await adapter.list()).find(row => row.entityId === saved.entityId)?.version).toBe(2)
+  })
+
+  it('uploads and reads private image bytes with workspace authorization', async () => {
+    state.userId = 'owner'
+    const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0])
+    const form = new FormData()
+    form.append('file', new File([bytes], 'image.png', { type: 'image/png' }))
+    const result = await uploadRoute.POST(new Request('http://localhost:3000', {
+      method: 'POST', headers: { Origin: 'http://localhost:3000' }, body: form,
+    }), ctxWorkspace(workspaceA))
+    expect(result.status).toBe(201)
+    const { asset } = await result.json()
+    const get = () => mediaRoute.GET(new Request('http://localhost:3000'), { params: Promise.resolve({ assetId: asset.id }) })
+    expect(new Uint8Array(await (await get()).arrayBuffer())).toEqual(bytes)
+    state.userId = 'viewer'
+    expect((await get()).status).toBe(200)
+    state.userId = 'outsider'
+    expect((await get()).status).toBe(404)
   })
 
   it('enforces login and same-origin protection', async () => {

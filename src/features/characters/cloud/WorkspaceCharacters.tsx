@@ -11,7 +11,7 @@ import { buildDefaultCharacter } from '@/features/characters/services'
 import type { CharacterFormData } from '@/features/characters/types'
 import { newCharacterData } from '@/lib/entity-defaults'
 import { BUILTIN_FIELDS } from '@/lib/fields'
-import { flushPendingSaves } from '@/lib/pending-saves'
+import { flushPendingSaves, registerPendingSave } from '@/lib/pending-saves'
 import { BTN_PRIMARY, BTN_QUIET, TITLE_INPUT } from '@/lib/ui-tokens'
 import { OriginalCharactersCloudAdapter, type OriginalCharacterSnapshot } from '@/lib/cloud/adapters/original-characters'
 import type { WorkspaceRole } from '@/lib/cloud/permissions'
@@ -21,6 +21,7 @@ import { EditorCore } from '@/components/editor/EditorCore'
 import { ActiveEditorProvider } from '@/lib/editor-context'
 import { collectBodyImageRefs } from '@/lib/image-refs'
 import { legacyBodySections, readStoredBody } from '@/lib/body-content'
+import { cloudMediaUrlId } from '@/lib/cloud/character-media'
 
 // 国家、关系、图片和模板依赖其他本地库，等它们各自迁移后再开放。
 const CLOUD_FIELDS = BUILTIN_FIELDS.character.filter(field => field.id !== 'country')
@@ -43,7 +44,7 @@ export function editablePatch(character: Character, values: Partial<CharacterFor
 
 export function hasNewBodyImages(original: unknown, next: unknown): boolean {
   const originalImages = new Set(collectBodyImageRefs(readStoredBody(original)))
-  return collectBodyImageRefs(next).some(src => !originalImages.has(src))
+  return collectBodyImageRefs(next).some(src => !originalImages.has(src) && cloudMediaUrlId(src) === null)
 }
 
 export function WorkspaceCharacters({ workspaceId, role }: { workspaceId: string; role: WorkspaceRole }) {
@@ -111,7 +112,7 @@ function CharacterWorkspace({ workspaceId, role }: { workspaceId: string; role: 
       <h2 className="text-reading font-semibold">角色</h2>
       {canEdit && <button type="button" className={BTN_QUIET} disabled={busy || loading} onClick={() => void create()}>新建角色</button>}
     </div>
-    <p className="text-caption text-ink-muted">支持角色基本信息、简介与正文；图片和关系正在接入。</p>
+    <p className="text-caption text-ink-muted">支持角色基本信息、简介与正文图片；头像、立绘和关系正在接入。</p>
     {error && <p role="alert" className="text-ui text-error">{error}</p>}
     {loading ? <p className="text-ui text-ink-muted">正在读取角色…</p> : <div className="flex flex-wrap gap-2">
       {rows.map(row => <button type="button" key={row.entityId} className={BTN_QUIET}
@@ -120,20 +121,22 @@ function CharacterWorkspace({ workspaceId, role }: { workspaceId: string; role: 
       {rows.length === 0 && <p className="text-ui text-ink-muted">暂无角色</p>}
     </div>}
     {selected && <OriginalCharacterEditor key={selected.entityId} snapshot={selected} adapter={adapter}
-      canEdit={canEdit} disabled={busy} onSaved={saved} />}
+      canEdit={canEdit} disabled={busy} onUploadBusy={setBusy} onSaved={saved} />}
   </section>
 }
 
-function OriginalCharacterEditor({ snapshot, adapter, canEdit, disabled, onSaved }: {
+function OriginalCharacterEditor({ snapshot, adapter, canEdit, disabled, onUploadBusy, onSaved }: {
   snapshot: OriginalCharacterSnapshot
   adapter: OriginalCharactersCloudAdapter
   canEdit: boolean
   disabled: boolean
+  onUploadBusy: (busy: boolean) => void
   onSaved: (next: OriginalCharacterSnapshot) => void
 }) {
   const baseline = useRef(snapshot)
   const docDirty = useRef(false)
   const bodyEditor = useRef<Editor | null>(null)
+  const uploading = useRef(false)
   const [bodyDraft, setBodyDraft] = useState<unknown>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const { status, setActiveEntity } = useSaveStatus()
@@ -142,7 +145,7 @@ function OriginalCharacterEditor({ snapshot, adapter, canEdit, disabled, onSaved
       const patch = editablePatch(baseline.current.character, values)
       if (docDirty.current && values.document !== undefined) {
         if (hasNewBodyImages(baseline.current.character.document, values.document)) {
-          throw new Error('正文图片上传正在接入，请移除新增图片后保存')
+          throw new Error('请使用正文的上传按钮添加图片')
         }
         patch.document = values.document
       }
@@ -168,12 +171,42 @@ function OriginalCharacterEditor({ snapshot, adapter, canEdit, disabled, onSaved
     if (bodyEditor.current) setBodyDraft(bodyEditor.current.getJSON())
   }, [form.handleDocChange])
 
+  useEffect(() => registerPendingSave(() => {
+    if (uploading.current) throw new Error('图片正在上传，请稍后重试')
+  }), [])
+
+  async function uploadBodyImage(file: File) {
+    const editor = bodyEditor.current
+    if (!editor || !canEdit || uploading.current) return
+    uploading.current = true
+    onUploadBusy(true)
+    setSaveError(null)
+    try {
+      const data = new FormData()
+      data.append('file', file)
+      const response = await fetch(`/api/workspaces/${snapshot.workspaceId}/media`, { method: 'POST', body: data })
+      if (!response.ok) throw new Error('图片上传失败，请检查文件格式和大小')
+      const result: { asset?: { url?: unknown } } = await response.json()
+      const url = result.asset?.url
+      if (typeof url !== 'string' || cloudMediaUrlId(url) === null) throw new Error('图片上传结果无效')
+      if (editor.isDestroyed) throw new Error('编辑器已关闭，请重新添加图片')
+      if (!editor.chain().insertContent({ type: 'imageBlock', attrs: { src: url, width: null } }).run()) {
+        throw new Error('图片未能插入正文，请重试')
+      }
+    } catch (cause) {
+      setSaveError(cause instanceof Error ? cause.message : '图片上传失败')
+    } finally {
+      uploading.current = false
+      onUploadBusy(false)
+    }
+  }
+
   useEffect(() => {
     setActiveEntity('character')
     return () => setActiveEntity(null)
   }, [setActiveEntity])
   useEffect(() => {
-    if (!form.dirty && !form.saving) return
+    if (!form.dirty && !form.saving && !disabled) return
     const handler = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
     const guardLink = (event: MouseEvent) => {
       if (event.defaultPrevented || event.button !== 0 || !(event.target instanceof Element)) return
@@ -191,7 +224,7 @@ function OriginalCharacterEditor({ snapshot, adapter, canEdit, disabled, onSaved
       window.removeEventListener('beforeunload', handler)
       document.removeEventListener('click', guardLink, true)
     }
-  }, [form.dirty, form.saving])
+  }, [form.dirty, form.saving, disabled])
 
   return <div className="flex flex-col gap-5 rounded-panel border border-line p-5">
     <div className="flex items-center justify-between gap-3">
@@ -219,7 +252,11 @@ function OriginalCharacterEditor({ snapshot, adapter, canEdit, disabled, onSaved
     </fieldset>
     <section className="border-t border-line pt-4">
       <h3 className="text-ui font-semibold">正文</h3>
-      <p className="text-caption text-ink-muted">正文图片上传正在接入。</p>
+      {canEdit && <label className={`${BTN_QUIET} cursor-pointer`}>
+        上传正文图片
+        <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" disabled={disabled}
+          onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void uploadBodyImage(file) }} />
+      </label>}
       <EditorCore plain imageUploads={false} localReferences={false} content={snapshot.character.document ?? legacyBodySections([
         { content: snapshot.character.bio },
         { heading: '人物生平', content: snapshot.character.lifeStory },
