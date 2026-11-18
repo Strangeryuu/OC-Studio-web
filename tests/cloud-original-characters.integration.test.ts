@@ -465,9 +465,11 @@ describe('original entity adapters against PostgreSQL', () => {
     const map = await notes.create(buildDefaultEntry({
       ...newWorldEntryData(), title: '事务地图一', category: '地图',
     }))
+    state.userId = 'outsider'
     const otherMap = await new OriginalNotesCloudAdapter(workspaceB, apiFetch).create(buildDefaultEntry({
       ...newWorldEntryData(), title: '事务地图二', category: '地图',
     }))
+    state.userId = 'owner'
     const country = await countries.create(buildDefaultCountry({ ...newCountryData(), name: '事务国' }))
     const event = await events.create(buildDefaultEvent({ ...newEventData(), title: '事务事件' }))
     const pinnedCountry = await countries.save(country, { mapId: map.entity.title, mapPosition: { x: .1, y: .2 } })
@@ -509,7 +511,7 @@ describe('original entity adapters against PostgreSQL', () => {
     expect(clearedCountry.entity.mapPosition).toBeNull()
     expect(clearedEvent.entity.mapId).toBeNull()
     const revisions = await revisionRoute.GET(new Request('http://localhost:3000'), ctxEntity(country.entityId))
-    expect((await revisions.json()).revisions.map((row: { version: number }) => row.version)).toEqual([4, 3, 2, 1])
+    expect((await revisions.json()).revisions.map((row: { version: number }) => row.version)).toEqual([5, 4, 3, 2, 1])
     expect(otherMap.entityId).not.toBe(map.entityId)
   })
 
