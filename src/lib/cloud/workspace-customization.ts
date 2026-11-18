@@ -18,7 +18,7 @@ const object=(value:unknown):value is Record<string,unknown>=>
 const templateMap=new Map(BUILTIN_TEMPLATES.map(item=>[item.id,item]))
 const categoryMap=new Map(BUILTIN_CATEGORIES.map(item=>[item.id,item]))
 const icons=new Set<string>(CATEGORY_ICON_NAMES)
-const componentIds=new Set(TEMPLATE_COMPONENTS.map(item=>item.id))
+const componentIds=new Set<string>(TEMPLATE_COMPONENTS.map(item=>item.id))
 
 export function readWorkspaceCustomization(value: unknown): WorkspaceCustomization | null {
   if(!object(value)||!Array.isArray(value.categories)||!Array.isArray(value.templates)||
