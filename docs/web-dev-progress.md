@@ -109,3 +109,17 @@
 **已确认的 CI 结果**：`15f0eb9` 的 `Web cloud verification` 运行结论为 success，包含 Web 类型检查、ESLint、单元测试、31 项项目自检与生产构建，以及独立 PostgreSQL 的 Better Auth/业务迁移、幂等、数据库隔离与真实登录/地图生命周期 HTTP 测试。后续文档提交仍以各自工作流为准。
 
 **上线前继续处理**：实际浏览器地图拖拽、上下文菜单位置、文件下载与地图生成器 Worker；邀请码/成员权限与多浏览器并发的独立 PostgreSQL 端到端覆盖；服务器备份恢复演练；原版其它工作台板块的完整移植。当前 Web 分支保持开发版，不建议存储未经备份的正式数据。
+
+
+## 2026-11-18：云端树形表格第一阶段（第五阶段）
+
+开发基线 `76cdd9b`（GitHub Actions Web + 独立 PostgreSQL 两个作业均 success）。继续直接复用上游 `src/features/tree-table` 的 `TreeTableTabs`、`TreeTableRow`、`EditableCell`、`tree-table-rows.ts` 与 `buildEntryTree`。
+
+- 在 `src/components/cloud/WorkspaceNavigation.tsx` 开通“表格”板块；云端入口挂载 `src/features/tree-table/cloud/WorkspaceTreeTable.tsx`，使用已有四类云端快照，按原版树形行模型显示角色（按国家分组）、事件、国家（父子层级）和世界观词条（父子层级）。支持当前页签搜索、展开/折叠、页签顺序拖动、实体跳转及刷新。
+- 角色名、种族、职业、所属国家，以及事件/国家/词条名称均通过原有版本化云端实体适配器保存；创建当前页签类型及子项也通过对应资料库 API。权限为 viewer 时原版单元格与国籍下拉只读、无新建入口。服务器返回版本冲突时，原版 `EditableCell` 保留正在编辑的文字。表格保存操作参与工作台切换前的 `flushPendingSaves`，在单元格编辑中禁止无提示离开。
+- 原版 `EditableCell`、`TreeTableRow`、`FilterSelect` 增加兼容性的可选只读/编辑状态参数，默认保持原版交互。删除按钮暂在云端表格关闭，以避免父子提级过程出现多次请求的部分提交；后续应以事务方式实现。
+- `src/features/tree-table/cloud/cloud-table-tags.ts` 将当前资料库的共享标签 UUID 与历史标签名映射为**仅用于展示**的临时数字 ID，复用原版 `TagBadge` 和行搜索口径。临时 ID 只在 React 行模型中使用，写入 API 时仍由已有实体适配器保存真实 UUID。
+- 新增 `tests/cloud-tree-table.test.ts`，覆盖云端国家分组、条目跳转、viewer 只读、新建和正在编辑的草稿保护；新增 `tests/cloud-tree-table-tags.test.ts`，覆盖 UUID 标签显示、历史标签回落、无效标签颜色和展示 ID 不回写。
+- 本阶段第一次新增 UI 用例因测试角色缺少预期的所属国家，导致行投影正确显示“未归属”，已修正测试夹具。完整 CI 结果以最后代码提交对应的工作流状态为准。
+
+**后续表格差距**：安全的事务式删除和子项提升、从原版数据批量导入、云端标签增删编辑、测试真实浏览器单元格/下拉选项互动。其后进入原版多视图浏览模式、小说、模板与全局相册的云端移植。
