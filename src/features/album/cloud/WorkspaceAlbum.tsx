@@ -22,6 +22,7 @@ import { projectCloudAlbum } from './cloud-album-projection'
 
 export interface WorkspaceAlbumProps {
   workspaceId: string
+  worldName?: string
   characters: OriginalCharacterSnapshot[]
   countries: OriginalCountrySnapshot[]
   events: OriginalEventSnapshot[]
@@ -45,6 +46,7 @@ export function WorkspaceAlbum(props: WorkspaceAlbumProps) {
   const [refreshing, setRefreshing] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
   const [tags, setTags] = useState<CloudWorkspaceTag[]>([])
+  const [worldCover, setWorldCover] = useState('')
   const [tagRefresh, setTagRefresh] = useState(0)
 
   useEffect(() => {
@@ -59,6 +61,18 @@ export function WorkspaceAlbum(props: WorkspaceAlbumProps) {
     return () => { active = false }
   }, [props.workspaceId, tagRefresh])
 
+  useEffect(() => {
+    let active = true
+    void fetch('/api/workspaces/' + props.workspaceId + '/cover', { cache: 'no-store' })
+      .then(async response => {
+        if (!response.ok) throw new Error('无法读取世界封面')
+        return response.json() as Promise<{ coverUrl?: string }>
+      })
+      .then(result => { if (active) setWorldCover(result.coverUrl ?? '') })
+      .catch(() => { if (active) setWorldCover('') })
+    return () => { active = false }
+  }, [props.workspaceId, tagRefresh])
+
   const tagged = useMemo(() => cloudTableTagProjection(tags, [
     ...props.characters.map(row => row.character),
     ...props.countries.map(row => row.entity),
@@ -70,7 +84,8 @@ export function WorkspaceAlbum(props: WorkspaceAlbumProps) {
     countries: props.countries.map(row => tagged.decorate(row.entity)),
     events: props.events.map(row => tagged.decorate(row.entity)),
     notes: props.notes.map(row => tagged.decorate(row.entity)),
-  }), [props.characters, props.countries, props.events, props.notes, tagged])
+    worldCoverUrl: worldCover, worldName: props.worldName,
+  }), [props.characters, props.countries, props.events, props.notes, tagged, worldCover, props.worldName])
 
   const sourceType = albumSourceType(selectedKey)
   const sources = useMemo(() => sourceType ? collectAlbumSources(entries, sourceType) : [], [entries, sourceType])
@@ -173,7 +188,7 @@ export function WorkspaceAlbum(props: WorkspaceAlbumProps) {
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                 {filtered.map((item, index) =>
                   <AlbumCard key={item.sourceType + ':' + item.sourceId + ':' + item.category + ':' + index}
-                    entry={item} isMobile={false} onNavigate={navigate}
+                    entry={item} isMobile={false} onNavigate={item.sourceType === 'world' ? undefined : navigate}
                     onViewImage={() => setViewerIndex(index)} />)}
               </div>}
         </div>

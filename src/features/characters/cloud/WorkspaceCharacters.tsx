@@ -50,8 +50,8 @@ import { projectGraphData } from '@/features/relations/services'
 import type { RelationNodeType } from '@/features/relations/types'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
-const DashboardView = dynamic(
-  () => import('@/features/dashboard/components/Dashboard').then(mod => mod.DashboardView),
+const WorkspaceHome = dynamic(
+  () => import('@/features/dashboard/cloud/WorkspaceHome').then(mod => mod.WorkspaceHome),
   { ssr: false },
 )
 
@@ -387,7 +387,8 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
       }) : undefined} />
     <div className="flex min-w-0 flex-col gap-4">
       {error && <p role="alert" className="text-ui text-error">{error}</p>}
-      {section === 'home' && <DashboardView worldName={workspaceName ?? '未命名世界'}
+      {section === 'home' && <WorkspaceHome workspaceId={workspaceId}
+        canUpdate={role === 'owner' || role === 'admin'} worldName={workspaceName ?? '未命名世界'}
         tagline={workspaceDescription ?? ''} characters={characters} events={events} countries={countries}
         entries={notes} novels={novelRoots.length} maps={mapEntries.length}
         onNavigate={(id, kind) => navigate(kind as RelationTargetKind, id)}
@@ -417,7 +418,7 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
             return row.entityId
           })
         }} />}
-      {section === 'album' && <WorkspaceAlbum workspaceId={workspaceId}
+      {section === 'album' && <WorkspaceAlbum workspaceId={workspaceId} worldName={workspaceName ?? '世界'}
         characters={characterList.rows} countries={countryList.rows}
         events={eventList.rows} notes={noteList.rows}
         loading={characterList.loading || countryList.loading || eventList.loading || noteList.loading}

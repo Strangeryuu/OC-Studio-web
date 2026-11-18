@@ -11,6 +11,8 @@ export interface CloudAlbumDataset {
   countries: readonly Country[]
   events: readonly Event[]
   notes: readonly WorldEntry[]
+  worldCoverUrl?: string
+  worldName?: string
 }
 
 export function projectCloudAlbum(dataset: CloudAlbumDataset): AlbumEntry[] {
@@ -30,6 +32,11 @@ export function projectCloudAlbum(dataset: CloudAlbumDataset): AlbumEntry[] {
   // Match desktop global-album rules: novels and maps are separate content categories.
   for (const row of dataset.notes) if (isCodexEntry(row)) {
     push(row, row.title, 'worldEntry', collectWorldEntryImageRefs(row))
+  }
+  if (dataset.worldCoverUrl && cloudMediaUrlId(dataset.worldCoverUrl)) {
+    items.push({ url: dataset.worldCoverUrl, sourceName: dataset.worldName ?? '世界',
+      sourceType: 'world', sourceId: 1, category: 'cover',
+      updatedAt: 0, tags: [] })
   }
   return items
 }
