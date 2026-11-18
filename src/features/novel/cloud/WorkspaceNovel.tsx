@@ -27,7 +27,7 @@ import { paginateNovel } from '@/features/novel/pagination'
 import { DEFAULT_NOVEL_LAYOUT, toPaginateOptions } from '@/features/novel/layout'
 import { resolveNovelBackground } from '@/features/novel/background'
 import { saveBlobAs } from '@/features/map/export'
-import { cloudNovelBooks, novelChapterTree, novelSubtree, safeNovelFileName } from './cloud-novel-projection'
+import { cloudNovelBooks, novelChapterTree, novelSubtree, safeNovelFileName, filterCloudNovelTree } from './cloud-novel-projection'
 import { BTN_PRIMARY, BTN_QUIET, FIELD_INPUT, FIELD_LABEL, FIELD_ROW, TITLE_INPUT } from '@/lib/ui-tokens'
 
 const NovelReader = dynamic(() => import('@/features/novel/NovelReader').then(module => module.NovelReader), { ssr: false })
@@ -312,6 +312,7 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
   const chapters=useMemo(()=>activeBookId!==null
     ? novelSubtree(entries,activeBookId).filter(row=>row.id!==activeBookId) : [],[entries,activeBookId])
   const chapterTree=useMemo(()=>activeBookId!==null?novelChapterTree(entries,activeBookId):[],[entries,activeBookId])
+  const visibleChapterTree=useMemo(()=>filterCloudNovelTree(chapterTree,query),[chapterTree,query])
   const selected=props.notes.find(row=>row.entity.id===activeChapterId&&row.entity.category===NOVEL_CATEGORY)??null
   const exported=useMemo(()=>flattenNovel(chapters),[chapters])
   const readingMeta={title:root?.entity.title??'小说',author:root?.entity.novelAuthor??'',
@@ -399,14 +400,23 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
       return
     }
     setError(null);setBusy(true)
-    const name=safeNovelFileName(root.entity.title)
     try{
+      // A pending editor flush has completed; re-read the authoritative cloud
+      // snapshots so an immediate export includes its just-saved body/revision.
+      const live=await props.adapter.list()
+      const currentRoot=live.find(row=>row.entityId===root.entityId && row.entity.category===NOVEL_CATEGORY)
+      if(!currentRoot) throw new Error('小说已被其他成员删除，请刷新')
+      const currentChapters=novelSubtree(live.map(row=>row.entity),currentRoot.entity.id)
+        .filter(row=>row.id!==currentRoot.entity.id)
+      const plain=flattenNovel(currentChapters)
+      const name=safeNovelFileName(currentRoot.entity.title)
       if(format==='docx'){
-        await downloadNovelDocx(exported,{title:root.entity.title,author:root.entity.novelAuthor,
-          synopsis:root.entity.novelSynopsis, coverSrc:root.entity.novelCover},name)
+        await downloadNovelDocx(plain,{title:currentRoot.entity.title,
+          author:currentRoot.entity.novelAuthor,synopsis:currentRoot.entity.novelSynopsis,
+          coverSrc:currentRoot.entity.novelCover},name)
       }else{
-        const text=format==='txt'?toTxt(exported,{title:root.entity.title}):
-          toMarkdown(flattenNovel(chapters,{markdown:true}),{title:root.entity.title})
+        const text=format==='txt'?toTxt(plain,{title:currentRoot.entity.title}):
+          toMarkdown(flattenNovel(currentChapters,{markdown:true}),{title:currentRoot.entity.title})
         await saveBlobAs(new Blob([text],{type:format==='txt'?'text/plain;charset=utf-8':'text/markdown;charset=utf-8'}),
           name+'.'+format,{filterName:'小说'})
       }
@@ -482,7 +492,7 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
           <input value={query} aria-label="搜索章节" onChange={event=>setQuery(event.target.value)}
             placeholder="搜索章节" className="min-w-0 w-full bg-transparent px-1 py-1 text-ui" />
         </div>
-        <ul>{chapterTree.filter(node=>!query.trim()||node.entry.title.includes(query)).map(node=>
+        <ul>{visibleChapterTree.map(node=>
           <ChapterNode key={node.entry.id} node={node} depth={0} selectedId={activeChapterId}
             onSelect={id=>afterSaving(()=>setActiveChapterId(id))} canEdit={props.canEdit} canDelete={props.canDelete} busy={busy}
             onCreateChild={create} onDelete={id=>void remove(id)} />)}</ul>

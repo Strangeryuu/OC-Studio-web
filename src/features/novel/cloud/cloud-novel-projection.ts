@@ -1,7 +1,7 @@
 import { NOVEL_CATEGORY } from '@/lib/entry-kinds'
 import type { WorldEntry } from '@/types'
 import { flattenNovel, countNovelWords } from '@/features/novel/export'
-import { buildEntryTree } from '@/lib/world-tree'
+import { buildEntryTree, type WorldTreeNode } from '@/lib/world-tree'
 
 export interface CloudBook {
   id: number
@@ -53,4 +53,18 @@ export function novelChapterTree(notes: readonly WorldEntry[], rootId: number) {
 
 export function safeNovelFileName(name: string) {
   return name.replace(/[\\/:*?"<>|]+/g, '-').replace(/\.+$/, '').trim().slice(0, 120) || '小说'
+}
+
+/** The original novel tree preserves ancestors when a nested chapter matches search. */
+export function filterCloudNovelTree(nodes: WorldTreeNode[], query: string): WorldTreeNode[] {
+  const keyword = query.trim().toLocaleLowerCase()
+  if (!keyword) return nodes
+  const include = (items: WorldTreeNode[]): WorldTreeNode[] =>
+    items.flatMap(node => {
+      const children = include(node.children)
+      if (node.entry.title.toLocaleLowerCase().includes(keyword) || children.length > 0)
+        return [{ ...node, children }]
+      return []
+    })
+  return include(nodes)
 }

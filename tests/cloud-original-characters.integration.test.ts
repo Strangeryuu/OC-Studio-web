@@ -544,6 +544,8 @@ describe('original entity adapters against PostgreSQL', () => {
     expect(updated.entity.novelCover).toBe('/api/media/' + coverId)
     await expect(notes.save(updated, { novelCover: '/api/media/66666666-6666-4666-8666-666666666666' }))
       .rejects.toMatchObject({ status: 400, code: 'INVALID_NOTE_MEDIA' })
+    await expect(notes.save(updated, { novelCover: 'https://other.example/cover.png' }))
+      .rejects.toMatchObject({ status: 400, code: 'INVALID_NOVEL_FIELDS' })
 
     // Generic single-entity removal would strand chapters, so the novel API owns the cascade.
     await expect(notes.remove(updated)).rejects.toMatchObject({ status: 400, code: 'NOVEL_MANAGEMENT_REQUIRED' })

@@ -5,7 +5,7 @@ import { buildDefaultEvent } from '@/features/events/services'
 import { buildDefaultEntry } from '@/features/world/services'
 import { newCharacterData, newCountryData, newEventData, newWorldEntryData } from '@/lib/entity-defaults'
 import { projectCloudAlbum } from '@/features/album/cloud/cloud-album-projection'
-import { cloudNovelBooks, novelSubtree, novelChapterTree, safeNovelFileName } from '@/features/novel/cloud/cloud-novel-projection'
+import { cloudNovelBooks, novelSubtree, novelChapterTree, filterCloudNovelTree, safeNovelFileName } from '@/features/novel/cloud/cloud-novel-projection'
 import { flattenNovel, countNovelWords, toMarkdown, toTxt } from '@/features/novel/export'
 import { paginateNovel } from '@/features/novel/pagination'
 
@@ -28,7 +28,11 @@ describe('cloud original novel and album projections', () => {
     expect(books[0].chapters).toBe(2)
     expect(books[0].words).toBe(6)
     expect(novelSubtree(all,bookA.id).map(item=>item.id)).toHaveLength(3)
-    expect(novelChapterTree(all,bookA.id)[0].children[0].entry.id).toBe(sub.id)
+    const originalTree=novelChapterTree(all,bookA.id)
+    expect(originalTree[0].children[0].entry.id).toBe(sub.id)
+    expect(filterCloudNovelTree(originalTree,'第一节')[0].entry.title).toBe('第一章')
+    expect(filterCloudNovelTree(originalTree,'第一节')[0].children[0].entry.id).toBe(sub.id)
+    expect(filterCloudNovelTree(originalTree,'找不到')).toEqual([])
     const output=flattenNovel(novelSubtree(all,bookA.id).filter(row=>row.id!==bookA.id))
     expect(countNovelWords(output)).toBe(6)
     expect(toTxt(output,{title:'第一本'})).toContain('第一章')

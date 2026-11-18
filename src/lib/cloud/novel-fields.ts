@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg'
 import { NOVEL_CATEGORY } from '@/lib/entry-kinds'
+import { cloudMediaUrlId } from '@/lib/cloud/character-media'
 
 /**
  * Novel roots/chapters are original notes; the parent must be a novel in the
@@ -25,7 +26,8 @@ export async function cloudNovelAllowed(
   }
   if (next.novelTargetWords != null && (typeof next.novelTargetWords !== 'number' ||
     !Number.isSafeInteger(next.novelTargetWords) || next.novelTargetWords < 0 || next.novelTargetWords > 100000000)) return false
-  if (next.novelCover != null && typeof next.novelCover !== 'string') return false
+  if (next.novelCover != null && (typeof next.novelCover !== 'string' ||
+    (next.novelCover !== '' && cloudMediaUrlId(next.novelCover) === null))) return false
   const parent = next.parentId
   if (parent == null) return true
   if (typeof parent !== 'number' || !Number.isSafeInteger(parent) || parent <= 0) return false
