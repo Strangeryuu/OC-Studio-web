@@ -38,6 +38,7 @@ import * as uploadRoute from '@/app/api/workspaces/[workspaceId]/media/route'
 import * as mediaRoute from '@/app/api/media/[assetId]/route'
 import * as cloudMaps from '@/app/api/workspaces/[workspaceId]/maps/[mapEntityId]/route'
 import * as cloudNovels from '@/app/api/workspaces/[workspaceId]/novels/[entryId]/route'
+import * as workspaceCover from '@/app/api/workspaces/[workspaceId]/cover/route'
 
 import StudioEntry from '@/app/(studio)/studio/page'
 import StudioWorkspace from '@/app/(studio)/studio/[workspaceId]/page'
@@ -570,6 +571,43 @@ describe('original entity adapters against PostgreSQL', () => {
     }
     expect(remaining.some(row => row.entityId === separate.entityId)).toBe(true)
     expect(remaining.some(row => row.entityId === ordinary.entityId)).toBe(true)
+  })
+
+  it('versions private world covers and enforces workspace update permissions', async () => {
+    state.userId = 'owner'
+    const ctx = ctxWorkspace(workspaceA)
+    const initial = await workspaceCover.GET(new Request('http://localhost:3000'), ctx)
+    expect(initial.status).toBe(200)
+    expect(await initial.json()).toEqual({ coverUrl: '', version: 0 })
+    const own = '88888888-8888-4888-8888-888888888888'
+    await state.db!.query(`INSERT INTO media_assets
+      (id,workspace_id,uploaded_by,storage_key,mime_type,byte_size,content_sha256)
+      VALUES($1,$2,'owner','ci-world-cover.png','image/png',1,'ci-world-cover')`,
+      [own, workspaceA])
+    const request = (expectedVersion: number, coverUrl: string) => new Request('http://localhost:3000', {
+      method: 'PATCH', headers: { Origin: 'http://localhost:3000', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expectedVersion, coverUrl }),
+    })
+    state.userId = 'viewer'
+    expect((await workspaceCover.PATCH(request(0, '/api/media/' + own), ctx)).status).toBe(404)
+    state.userId = 'editor'
+    expect((await workspaceCover.PATCH(request(0, '/api/media/' + own), ctx)).status).toBe(404)
+    state.userId = 'owner'
+    expect((await workspaceCover.PATCH(request(0, 'https://example.invalid/img.png'), ctx)).status).toBe(400)
+    const foreignAsset = '66666666-6666-4666-8666-666666666666'
+    expect((await workspaceCover.PATCH(request(0, '/api/media/' + foreignAsset), ctx)).status).toBe(400)
+    const saved = await workspaceCover.PATCH(request(0, '/api/media/' + own), ctx)
+    expect(saved.status).toBe(200)
+    expect(await saved.json()).toEqual({ coverUrl: '/api/media/' + own, version: 1 })
+    expect(await (await workspaceCover.GET(new Request('http://localhost:3000'), ctx)).json())
+      .toEqual({ coverUrl: '/api/media/' + own, version: 1 })
+    expect((await workspaceCover.PATCH(request(0, ''), ctx)).status).toBe(409)
+    const removed = await workspaceCover.PATCH(request(1, ''), ctx)
+    expect(removed.status).toBe(200)
+    expect(await removed.json()).toEqual({ coverUrl: '', version: 2 })
+    state.userId = 'outsider'
+    expect((await workspaceCover.GET(new Request('http://localhost:3000'), ctx)).status).toBe(404)
+    state.userId = 'owner'
   })
 
   it('uploads and reads private image bytes with workspace authorization', async () => {

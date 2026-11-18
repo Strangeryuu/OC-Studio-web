@@ -41,6 +41,14 @@ describe('cloud original novel and album projections', () => {
     expect(safeNovelFileName('A/B:书.docx')).toBe('A-B-书.docx')
   })
 
+  it('includes the original world-cover album category only for private workspace media', () => {
+    const empty = {characters:[],countries:[],events:[],notes:[]}
+    const projected = projectCloudAlbum({...empty, worldCoverUrl:asset(20), worldName:'群星世界'})
+    expect(projected).toEqual([{url:asset(20),sourceName:'群星世界',sourceType:'world',
+      sourceId:1,category:'cover',updatedAt:0,tags:[]}])
+    expect(projectCloudAlbum({...empty, worldCoverUrl:'https://example.invalid/cover.png'}))
+      .toEqual([])
+  })
   it('collects only private workspace media from the original album slots and body', () => {
     const character={...buildDefaultCharacter({
       ...newCharacterData(),name:'云端角色',avatarUrl:asset(1),
