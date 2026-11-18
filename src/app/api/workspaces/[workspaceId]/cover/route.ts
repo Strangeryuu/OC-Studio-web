@@ -84,8 +84,8 @@ export async function PATCH(request: Request, context: Context) {
     )
     await client.query(
       `INSERT INTO audit_logs(workspace_id,actor_id,action,target_id,details)
-       VALUES($1,$2,'workspace:cover:update',$1::text,$3::jsonb)`,
-      [workspaceId, user.id, JSON.stringify({ before: current?.setting_value ?? '', after: coverUrl })],
+       VALUES($1,$2,'workspace:cover:update',$4,$3::jsonb)`,
+      [workspaceId, user.id, JSON.stringify({ before: current?.setting_value ?? '', after: coverUrl }), workspaceId],
     )
     await client.query('COMMIT')
     return NextResponse.json({ coverUrl, version: result.rows[0].version })
