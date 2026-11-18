@@ -394,7 +394,7 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
       {section === 'world' && <WorkspaceNoteTree entries={notes} selectedId={note?.entity.id} loading={noteList.loading}
         error={noteList.error} busy={busy} onSelect={id => navigate('world', id)}
         onCreate={canEdit ? () => createNote(null) : undefined} />}
-      {section === 'table' && <WorkspaceTreeTable
+      {section === 'table' && <WorkspaceTreeTable workspaceId={workspaceId}
         characters={characterList.rows} countries={countryList.rows} events={eventList.rows} notes={noteList.rows}
         characterAdapter={characterAdapter} countryAdapter={countryAdapter}
         eventAdapter={eventAdapter} noteAdapter={noteAdapter}

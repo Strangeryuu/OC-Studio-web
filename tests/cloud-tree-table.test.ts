@@ -40,7 +40,7 @@ const refresh = vi.fn(async () => undefined)
 function Fixture({ canEdit }: { canEdit: boolean }) {
   const [characters, setCharacters] = useState([character])
   return React.createElement(WorkspaceTreeTable, {
-    characters, countries: [country], events: [], notes: [],
+    workspaceId, characters, countries: [country], events: [], notes: [],
     characterAdapter: fake, countryAdapter, eventAdapter, noteAdapter,
     onCharacterCreated: row => setCharacters(current => [...current, row]),
     onCharacterSaved: row => setCharacters(current => current.map(item => item.entityId === row.entityId ? row : item)),
