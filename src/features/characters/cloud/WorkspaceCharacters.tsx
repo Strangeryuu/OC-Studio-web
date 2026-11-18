@@ -50,6 +50,11 @@ import { projectGraphData } from '@/features/relations/services'
 import type { RelationNodeType } from '@/features/relations/types'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
+const WorkspaceMaps = dynamic(
+  () => import('@/features/map/cloud/WorkspaceMaps').then(module => module.WorkspaceMaps),
+  { ssr: false },
+)
+
 const RelationGraph = dynamic(
   () => import('@/features/relations/components/RelationGraph').then(module => module.RelationGraph),
   { ssr: false },
@@ -375,6 +380,15 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
       {section === 'world' && <WorkspaceNoteTree entries={notes} selectedId={note?.entity.id} loading={noteList.loading}
         error={noteList.error} busy={busy} onSelect={id => navigate('world', id)}
         onCreate={canEdit ? () => createNote(null) : undefined} />}
+      {section === 'map' && <WorkspaceMaps workspaceId={workspaceId}
+        rows={noteList.rows} countries={countryList.rows} events={eventList.rows}
+        noteAdapter={noteAdapter} countryAdapter={countryAdapter} eventAdapter={eventAdapter}
+        onMapCreated={noteList.append} onMapSaved={noteList.replace}
+        onCountrySaved={countryList.replace} onEventSaved={eventList.replace}
+        onNavigate={(kind, id) => navigate(kind, id)}
+        canEdit={canEdit} disabled={busy}
+        loading={noteList.loading || countryList.loading || eventList.loading}
+        error={noteList.error || countryList.error || eventList.error} />}
       {section === 'timeline' && <div className="h-[65vh] min-h-96 rounded-panel border border-line">
         <TimelineView workspace={{
           characters, countries, events,

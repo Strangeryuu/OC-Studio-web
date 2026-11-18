@@ -7,7 +7,18 @@ import { OriginalEntityCloudAdapter, type Fetcher, type OriginalSnapshot, type R
 export type OriginalNoteSnapshot = OriginalSnapshot<WorldEntry>
 export type OriginalNotePatch = Partial<Pick<WorldFormData,
   'title' | 'summary' | 'cover' | 'gallery' | 'relations' | 'parentId' | 'document' | 'content'
->> & { graphPosition?: GraphPosition }
+>> & {
+  graphPosition?: GraphPosition
+  mapPosition?: GraphPosition | null
+  mapId?: string | null
+  mapImage?: string | null
+  mapWidth?: number
+  mapHeight?: number
+  mapAnnotations?: string | null
+  mapSeed?: number
+  mapParams?: string
+  mapMode?: string
+}
 
 function readNote(id: number, data: RecordValue, title: unknown): WorldEntry {
   const defaults = buildDefaultEntry(newWorldEntryData(), { createdAt: 0, updatedAt: 0, _lastModified: 0 })

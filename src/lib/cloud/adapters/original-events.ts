@@ -8,7 +8,7 @@ export type OriginalEventSnapshot = OriginalSnapshot<Event>
 export type OriginalEventPatch = Partial<Pick<EventFormData,
   'title' | 'time' | 'endTime' | 'location' | 'summary' | 'isMajor' | 'headerUrl' |
   'images' | 'characters' | 'countries' | 'relations' | 'document'
->> & { graphPosition?: GraphPosition }
+>> & { graphPosition?: GraphPosition; mapPosition?: GraphPosition | null; mapId?: string | null }
 
 function readEvent(id: number, data: RecordValue, title: unknown): Event {
   const defaults = buildDefaultEvent(newEventData(), { createdAt: 0, updatedAt: 0, _lastModified: 0 })
