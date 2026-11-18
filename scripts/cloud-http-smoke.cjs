@@ -261,6 +261,63 @@ async function run() {
     'Deleting the map left an orphaned country anchor')
 
 
+  // Novel books, chapters, media and deletion use the same real PostgreSQL HTTP service.
+  const novelTitle = 'CI 云端小说'
+  const createNovel = (workspace, title, data) => fetch(BASE + '/api/workspaces/' + workspace + '/entities', {
+    method: 'POST', headers: mapHeaders,
+    body: JSON.stringify({ kind: 'worldEntry', title, data: { title, category: '小说', ...data } }),
+  })
+  const novelResponse = await createNovel(workspaceId, novelTitle, {
+    parentId: null, order: 5, novelAuthor: '测试作者', novelSynopsis: '小说简介',
+    novelCover: '/api/media/' + asset.id,
+  })
+  const novelBody = await novelResponse.json()
+  assert(novelResponse.status === 201, 'Novel book creation failed: ' + JSON.stringify(novelBody))
+  const bookId = novelBody.entity.id
+  const bookLocalId = novelBody.entity.local_id
+
+  const foreignBook = await createNovel(otherId, novelTitle, { parentId: null, order: 6 })
+  assert(foreignBook.status === 201, 'A second workspace should support the same novel title')
+  const foreignBookData = await foreignBook.json()
+  const outsiderChapter = await createNovel(workspaceId, '跨库非法章节', {
+    parentId: foreignBookData.entity.local_id, order: 10,
+  })
+  assert(outsiderChapter.status === 400, 'A chapter may only reference a book in its workspace')
+
+  const chapterResponse = await createNovel(workspaceId, '第一章', {
+    parentId: bookLocalId, order: 11,
+    document: { type: 'doc', content: [
+      { type: 'paragraph', content: [{ type: 'text', text: '世界观小说正文' }] },
+    ] },
+  })
+  const chapterData = await chapterResponse.json()
+  assert(chapterResponse.status === 201, 'Chapter creation failed: ' + JSON.stringify(chapterData))
+  const chapterId = chapterData.entity.id
+  const nested = await createNovel(workspaceId, '第一节', {
+    parentId: chapterData.entity.local_id, order: 12,
+  })
+  assert(nested.status === 201, 'Novel subchapter creation failed')
+
+  const illegalDelete = await fetch(BASE + '/api/entities/' + bookId, {
+    method: 'DELETE', headers: mapHeaders,
+    body: JSON.stringify({ expectedVersion: 1 }),
+  })
+  assert(illegalDelete.status === 400, 'Generic entity removal must not strand novel chapters')
+  const staleNovel = await fetch(BASE + '/api/workspaces/' + workspaceId + '/novels/' + bookId, {
+    method: 'DELETE', headers: mapHeaders, body: JSON.stringify({ expectedVersion: 2 }),
+  })
+  assert(staleNovel.status === 409, 'Stale novel version must be rejected')
+  const deletedNovel = await fetch(BASE + '/api/workspaces/' + workspaceId + '/novels/' + bookId, {
+    method: 'DELETE', headers: mapHeaders, body: JSON.stringify({ expectedVersion: 1 }),
+  })
+  const deletedNovelData = await deletedNovel.json()
+  assert(deletedNovel.status === 200 && deletedNovelData.removedEntries === 3,
+    'Novel removal must atomically delete its chapter subtree: ' + JSON.stringify(deletedNovelData))
+  const deletedChapter = await fetch(BASE + '/api/entities/' + chapterId, {
+    headers: { Cookie: cookie },
+  })
+  assert(deletedChapter.status === 404, 'Deleted novel chapter remains readable')
+
   // Tags have stable UUIDs; renaming one does not require rewriting characters.
   const tagResponse = await fetch(BASE + '/api/workspaces/' + workspaceId + '/tags', {
     method: 'POST', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
