@@ -243,7 +243,7 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
         if(!response.ok)throw new Error('资料库分类读取失败')
         return response.json() as Promise<{customization:WorkspaceCustomization}>
       })
-      .then(result=>{if(active)setCustomization(result.customization)})
+      .then(result=>{if(active&&result?.customization&&Array.isArray(result.customization.categories)&&Array.isArray(result.customization.templates))setCustomization(result.customization)})
       .catch(()=>undefined)
     return()=>{active=false}
   },[workspaceId,configurationRefresh])
