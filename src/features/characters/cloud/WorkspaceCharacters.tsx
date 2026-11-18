@@ -50,6 +50,11 @@ import { projectGraphData } from '@/features/relations/services'
 import type { RelationNodeType } from '@/features/relations/types'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
+const WorkspaceTreeTable = dynamic(
+  () => import('@/features/tree-table/cloud/WorkspaceTreeTable').then(mod => mod.WorkspaceTreeTable),
+  { ssr: false },
+)
+
 const WorkspaceMaps = dynamic(
   () => import('@/features/map/cloud/WorkspaceMaps').then(module => module.WorkspaceMaps),
   { ssr: false },
@@ -389,6 +394,18 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
       {section === 'world' && <WorkspaceNoteTree entries={notes} selectedId={note?.entity.id} loading={noteList.loading}
         error={noteList.error} busy={busy} onSelect={id => navigate('world', id)}
         onCreate={canEdit ? () => createNote(null) : undefined} />}
+      {section === 'table' && <WorkspaceTreeTable
+        characters={characterList.rows} countries={countryList.rows} events={eventList.rows} notes={noteList.rows}
+        characterAdapter={characterAdapter} countryAdapter={countryAdapter}
+        eventAdapter={eventAdapter} noteAdapter={noteAdapter}
+        onCharacterCreated={characterList.append} onCountryCreated={countryList.append}
+        onEventCreated={eventList.append} onNoteCreated={noteList.append}
+        onCharacterSaved={characterList.replace} onCountrySaved={countryList.replace}
+        onEventSaved={eventList.replace} onNoteSaved={noteList.replace}
+        onRefresh={refreshGraph} onNavigate={(kind, id) => navigate(kind, id)}
+        canEdit={canEdit} disabled={busy}
+        loading={characterList.loading || countryList.loading || eventList.loading || noteList.loading}
+        error={graphError || characterList.error || countryList.error || eventList.error || noteList.error} />}
       {section === 'map' && <WorkspaceMaps workspaceId={workspaceId}
         rows={noteList.rows} countries={countryList.rows} events={eventList.rows}
         noteAdapter={noteAdapter} countryAdapter={countryAdapter} eventAdapter={eventAdapter}
