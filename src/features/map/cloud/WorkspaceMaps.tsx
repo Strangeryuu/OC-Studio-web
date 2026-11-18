@@ -8,7 +8,7 @@ import { MAP_VIEWS, type MapViewRenderer } from '@/features/map/save-generated'
 import { renderMapView } from '@/features/map/render-view'
 import { archiveFileName, archiveImageToBlob, blobToArchiveImage, parseMapArchive,
   scaleAnnotations, serializeMapArchive, type MapArchive } from '@/features/map/archive'
-import { saveBlobAs } from '@/features/map/export'
+import { saveBlobAs, exportMapImage } from '@/features/map/export'
 import type { MapView, WorldMapParams } from '@/plugins/map-generator'
 import { useMapViewport } from '@/features/map/hooks/useMapViewport'
 import { DEFAULT_MAP_LAYERS, MAP_LAYER_LABELS, type MapAnchor, type MapLayerKind } from '@/features/map/types'
@@ -321,6 +321,21 @@ export function WorkspaceMaps(props: Props) {
     } finally { setSaving(false) }
   }
 
+  async function exportImage() {
+    if (!map?.image || !canEdit || saving) return
+    setSaving(true)
+    setError(null)
+    try {
+      const anchors = pins.filter(pin => pin.position && pin.mapId === map.name)
+        .map(pin => ({ title: pin.title, kind: pin.kind,
+          x: pin.position!.x, y: pin.position!.y }))
+      await exportMapImage({ image: map.image, width: map.width, height: map.height },
+        anchors, { fileName: map.name.replace(/[\\/:*?"<>|]+/g, '-') + '.png' })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '地图图片导出失败')
+    } finally { setSaving(false) }
+  }
+
   async function importArchive(file: File | undefined) {
     if (!file || !canEdit || saving || disabled) return
     if (file.size > 20 * 1024 * 1024) { setError('地图档案超过 20 MB'); return }
@@ -398,7 +413,7 @@ export function WorkspaceMaps(props: Props) {
       <h2 className="mr-2 text-reading font-semibold">地图</h2>
       {maps.length > 0 && <div className="relative">
         <button type="button" aria-expanded={switcherOpen} aria-label="选择地图"
-          disabled={saving || draft !== null || generatorOpen}
+          disabled={saving || draft !== null || generatorOpen || failedDraft !== null}
           className={BTN_QUIET} onClick={() => setSwitcherOpen(value => !value)}>
           {map?.name ?? '选择地图'} · 切换
         </button>
@@ -419,12 +434,12 @@ export function WorkspaceMaps(props: Props) {
         <button type="button" className={BTN_QUIET} disabled={!canModify}
           onClick={() => archiveRef.current?.click()}>导入 .ocmap</button>
         <input id="new-map-name" aria-label="新地图名称" placeholder="新地图名称" value={name}
-        onChange={event => setName(event.target.value)} disabled={disabled || saving}
+        onChange={event => setName(event.target.value)} disabled={disabled || saving || failedDraft !== null}
         className="min-w-0 w-36 rounded-control border border-line bg-transparent px-2 py-1 text-ui" />
         <button className={BTN_QUIET} type="button" onClick={() => void createMap()}
-          disabled={!name.trim() || disabled || saving}>新建地图</button></>}
+          disabled={!name.trim() || disabled || saving || failedDraft !== null}>新建地图</button></>}
       {map && canEdit && <button type="button" className={BTN_QUIET}
-        disabled={disabled || saving} onClick={() => { setEdit(value => !value); setDraft(null) }}>
+        disabled={disabled || saving || draft !== null} onClick={() => setEdit(value => !value)}>
         {edit ? '完成编辑' : '编辑地图'}
       </button>}
     </div>
@@ -432,7 +447,14 @@ export function WorkspaceMaps(props: Props) {
     {props.error && <p role="alert" className="text-ui text-error">{props.error}</p>}
     {archiveWarning && <p role="status" className="text-ui text-ink-muted">{archiveWarning}</p>}
     {error && <div role="alert" className="text-ui text-error">{error}
-      {failedDraft && <details><summary>复制未保存数据</summary><textarea readOnly className="w-full" value={failedDraft}/></details>}
+      {failedDraft && <>
+        <details><summary>复制未保存数据</summary><textarea readOnly className="w-full" value={failedDraft}/></details>
+        <button type="button" className={BTN_QUIET} onClick={() => {
+          if (window.confirm('确认放弃此次未保存的地图修改？')) {
+            setFailedDraft(null); setDraftAnchor(null); setError(null)
+          }
+        }}>放弃未保存修改</button>
+      </>}
     </div>}
     {map && <>
       {showDetails && <div className="rounded-panel border border-line p-3 text-ui">
@@ -449,7 +471,9 @@ export function WorkspaceMaps(props: Props) {
       {canEdit && <div className="flex flex-wrap items-center gap-2 text-ui">
         <button type="button" className={BTN_QUIET} disabled={saving}
           onClick={() => void exportArchive()}>导出 .ocmap</button>
-        <button type="button" className={BTN_QUIET} disabled={!canModify || generatorBusy}
+        <button type="button" className={BTN_QUIET} disabled={saving || !map.image}
+          onClick={() => void exportImage()}>导出 PNG（含锚点）</button>
+        <button type="button" className={BTN_QUIET} disabled={!canModify || generatorBusy || draft !== null}
           onClick={() => setGeneratorOpen(current => !current)}>{generatorOpen ? '返回地图' : '地图生成器'}</button>
       </div>}
       {edit && canEdit && !generatorOpen && <div className="flex flex-wrap items-center gap-2 text-ui">
