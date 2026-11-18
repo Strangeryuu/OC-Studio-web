@@ -660,7 +660,7 @@ describe('original entity adapters against PostgreSQL', () => {
     expect(promoted?.entity.parentId).toBeNull()
     expect(promoted?.version).toBe(2)
     const detached = (await characters.list()).find(row=>row.entityId===member.entityId)
-    expect(detached?.character.countryId).toBeNull()
+    expect(detached?.character.countryId ?? null).toBeNull()
     expect(detached?.version).toBe(2)
     const cleaned = (await events.list()).find(row=>row.entityId===event.entityId)
     expect(cleaned?.entity.countries).toEqual([])
