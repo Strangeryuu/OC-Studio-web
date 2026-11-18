@@ -120,10 +120,11 @@ export function WorkspaceMaps(props: Props) {
   const canModify = canEdit && !disabled && !saving
 
   useEffect(() => registerPendingSave(() => {
+    if (generatorBusy && writing.current === null) throw new Error('地图生成结果仍在处理中')
     if (draft !== null) throw new Error('地图有尚未完成的标注，请先完成或取消')
     if (failedDraft !== null) throw new Error('地图上次保存失败，未保存的数据仍保留在页面中')
     return writing.current ?? undefined
-  }), [draft, failedDraft])
+  }), [draft, failedDraft, generatorBusy])
   useWorkspaceDraftGuard(draft !== null || saving || generatorBusy || failedDraft !== null, '地图')
 
   // The surrounding operation owns the save lock; the upload helper only reports failures.
@@ -245,7 +246,7 @@ export function WorkspaceMaps(props: Props) {
     onProgress?: (stage: string, value: number) => void,
     renderView?: MapViewRenderer,
   ) {
-    if (!selected) throw new Error('请先创建地图')
+    if (!selected || writing.current || disabled || !canEdit) throw new Error('当前地图仍在保存，请稍后重试')
     await execute(async () => {
       const views: Record<string, string> = {}
       views[view] = await uploadMapImage(blob, `${selected.entity.title}-${view}.png`)
@@ -412,7 +413,12 @@ export function WorkspaceMaps(props: Props) {
             onOpenDetail={() => { setShowDetails(true); setSwitcherOpen(false) }} />
         </div>}
       </div>}
-      {canEdit && <><input id="new-map-name" aria-label="新地图名称" placeholder="新地图名称" value={name}
+      {canEdit && <><input ref={archiveRef} type="file" accept=".ocmap,application/json"
+        aria-label="导入地图档案" className="sr-only" disabled={!canModify}
+        onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; void importArchive(file) }} />
+        <button type="button" className={BTN_QUIET} disabled={!canModify}
+          onClick={() => archiveRef.current?.click()}>导入 .ocmap</button>
+        <input id="new-map-name" aria-label="新地图名称" placeholder="新地图名称" value={name}
         onChange={event => setName(event.target.value)} disabled={disabled || saving}
         className="min-w-0 w-36 rounded-control border border-line bg-transparent px-2 py-1 text-ui" />
         <button className={BTN_QUIET} type="button" onClick={() => void createMap()}
@@ -437,15 +443,10 @@ export function WorkspaceMaps(props: Props) {
         <p>尺寸：{map.width ?? '—'} × {map.height ?? '—'} · 标注 {annotations.length} 条 ·
           锚点 {pins.filter(pin => pin.mapId === map.name && pin.position).length} 个</p>
       </div>}
-      <input ref={archiveRef} type="file" accept=".ocmap,application/json"
-        aria-label="导入地图档案" className="sr-only" disabled={!canModify}
-        onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; void importArchive(file) }} />
       <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="sr-only"
         aria-label="上传地图底图" disabled={!canModify}
         onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; void setBackground(file) }} />
       {canEdit && <div className="flex flex-wrap items-center gap-2 text-ui">
-        <button type="button" className={BTN_QUIET} disabled={!canModify}
-          onClick={() => archiveRef.current?.click()}>导入 .ocmap</button>
         <button type="button" className={BTN_QUIET} disabled={saving}
           onClick={() => void exportArchive()}>导出 .ocmap</button>
         <button type="button" className={BTN_QUIET} disabled={!canModify || generatorBusy}
@@ -512,6 +513,7 @@ export function WorkspaceMaps(props: Props) {
           onOpenAnchor={point => props.onNavigate(point.kind === 'worldEntry' ? 'world' : point.kind, point.id)}
           onEnableAllLayers={() => setShownLayers(DEFAULT_MAP_LAYERS.map(layer => layer.kind))}
           onPickBackground={() => { if (canModify) fileRef.current?.click() }}
+          allowBackgroundEditing={canModify}
           readOnly={!edit || !canModify || generatorOpen}
           annotations={annotations} draft={edit && canModify ? draft : null}
           onDraftPoint={anchor => setDraft(current => current ? { ...current, points: [...current.points, anchor] } : null)}

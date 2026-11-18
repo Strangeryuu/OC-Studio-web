@@ -79,6 +79,8 @@ export interface MapCanvasProps {
   onOpenAnchor: (point: AnchorPoint) => void
   onEnableAllLayers: () => void
   onPickBackground: () => void
+  /** Cloud viewers can inspect an empty map without seeing inactive upload controls. */
+  allowBackgroundEditing?: boolean
   /** 没有底图时，空态里的第二个出口 */
   /** 生成器插件关掉时不传：空态卡里只剩「导入底图」 */
   onGenerate?: () => void
@@ -115,6 +117,7 @@ export function MapCanvas({
   onOpenAnchor,
   onEnableAllLayers,
   onPickBackground,
+  allowBackgroundEditing = true,
   onGenerate,
   readOnly = false,
   bleed = false,
@@ -413,7 +416,7 @@ export function MapCanvas({
                 文件可能被移走，或没有读取权限
               </p>
             ) : null}
-            <div className="flex w-full flex-col gap-1.5">
+            {allowBackgroundEditing ? <div className="flex w-full flex-col gap-1.5">
               {onGenerate !== undefined ? (
                 <button type="button" onClick={onGenerate} className={`${BTN_PRIMARY} justify-center`}>
                   <Wand2 size={14} strokeWidth={2} />
@@ -428,7 +431,7 @@ export function MapCanvas({
                 <Upload size={14} strokeWidth={2} />
                 {empty === 'image-failed' ? '重新选择底图' : '导入底图'}
               </button>
-            </div>
+            </div> : null}
           </div>
         </div>
       ) : null}

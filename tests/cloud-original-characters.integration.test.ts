@@ -474,6 +474,8 @@ describe('original entity adapters against PostgreSQL', () => {
     const event = await events.create(buildDefaultEvent({ ...newEventData(), title: '事务事件' }))
     const pinnedCountry = await countries.save(country, { mapId: map.entity.title, mapPosition: { x: .1, y: .2 } })
     const pinnedEvent = await events.save(event, { mapId: map.entity.title, mapPosition: { x: .4, y: .5 } })
+    expect(pinnedCountry.version).toBe(2)
+    expect(pinnedEvent.version).toBe(2)
 
     const ctx = { params: Promise.resolve({ workspaceId: workspaceA, mapEntityId: map.entityId }) }
     const request = (method: 'PATCH' | 'DELETE', payload: object) => new Request('http://localhost:3000', {
