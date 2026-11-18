@@ -76,3 +76,24 @@
 ### CI 全量审计修复记录
 
 对 `4e7da96` 的 CI 执行 `npm run audit` 时，31 个自检脚本中 29 个通过，`audit:agent` 与 `audit:library-guide` 由于新增 `world.mapViews` 未申明字段归属而失败；其余地图档案、地图内核和通用审计脚本通过。随后在 `src/lib/capabilities/agent-tools.ts` 的 `UI_ONLY_FIELDS.world` 标注了 `mapViews` 由云端地图编辑器维护，原版 Agent 工具仍维持已有写入边界。修复后以新提交的 CI 结果为准。
+
+
+## 2026-11-18：云端地图第三阶段（右键标注 / 矢量导出 / PostgreSQL CI）
+
+本阶段从 `3f0266d` 开始，继续沿用上游原版组件和操作模型，并保持 `main` 原状。
+
+### 新增与修复
+
+- `966c09c`：扩展原版 `exportMapImage` 的可选 `annotations` 参数，在当前底图与锚点标签之间绘制国界多边形、道路虚线、线下纸色外壳及色板颜色。浏览器导出 PNG 现在可以包含国界、道路和锚点；保留原版无标注时的导出效果。新增 `tests/cloud-map-export.test.ts` 验证归一化几何、闭合多边形、道路虚线和绘制调用。
+- `8962df4`：云端地图接入上游 `MediaContextMenu`、`AnnotationColorMenu` 和 `annotationAt`。桌面端地图编辑模式右键可以在当前位置开始绘制国界/道路，右键已有标注可修改线条色、国界填充色或删除。所有保存继续使用资料库版本化实体接口。完成标注后先写入云端，成功才结束草稿；失败保留原有绘制点。
+- `d34afb5`：在 `.github/workflows/web-cloud-check.yml` 新增独立 PostgreSQL 16 服务作业，执行 Better Auth 迁移、5 个业务迁移、幂等复跑与 `cloud-db-smoke.cjs` 检查；检验数字原版 ID 字段和当前资料库地图名称唯一索引。
+- `44d87fc`：服务端验证地图政治标注颜色必须属于原版关系色板，拒绝重复标注 ID、道路填充和无效色值；补充回归测试。
+- `5a109d1`：新增 `scripts/cloud-postgres-map-smoke.cjs`，以真实 PostgreSQL 事务验证：跨资料库允许同名地图、同库禁止重名、普通笔记允许同名，以及软删除地图后可复用名称；测试结束回滚所有测试数据。
+
+### 已完成验证与明确界限
+
+- `8962df4`、`966c09c` 和 `44d87fc` 的 GitHub Actions Web 作业已返回成功。包含 TypeScript、ESLint、Vitest、31 项项目自检及 Next.js 生产构建；`8962df4` 的记录为 60 个测试文件、567 项测试通过。
+- `d34afb5` 的 PostgreSQL 作业已确认 Better Auth 与 5 项业务迁移、迁移幂等和数据库结构检查通过。
+- `5a109d1` 引入的真实数据隔离写入测试，最终以对应 GitHub Actions 运行结论为准。
+
+仍需验收：独立 PostgreSQL 下完整登录/邀请/编辑/媒体的 HTTP 端到端流程；实际浏览器锚点拖动、右键定位、生成器 Worker、文件下载和多成员并发；地图高级详情及其他原版功能（表格、小说、模板、相册等）。目前为开发版，部署 VPS 前仍需进行安全配置、备份恢复与端到端验证。
