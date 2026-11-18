@@ -4,10 +4,16 @@ import dynamic from 'next/dynamic'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen, BookPlus, BookText, FileDown, Plus, Search, Trash2 } from 'lucide-react'
 import type { Editor } from '@tiptap/core'
+import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors,
+  type DragEndEvent } from '@dnd-kit/core'
+import { SortableContext, sortableKeyboardCoordinates, useSortable,
+  verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import type { WorldEntry } from '@/types'
 import type { WorldTreeNode } from '@/lib/world-tree'
 import type { OriginalNoteSnapshot, OriginalNotesCloudAdapter, OriginalNotePatch } from '@/lib/cloud/adapters/original-notes'
 import { NOVEL_CATEGORY } from '@/lib/entry-kinds'
+import { planCloudNovelReorder } from '@/lib/cloud/novel-reorder'
 import { buildDefaultEntry } from '@/features/world/services'
 import { newWorldEntryData } from '@/lib/entity-defaults'
 import { CoverCard } from '@/components/shared/cover/CoverCard'
@@ -261,16 +267,38 @@ function CloudChapterEditor({ snapshot, adapter, onSaved, canEdit, disabled }: M
   </article>
 }
 
+function ChapterNodes({ nodes, depth, selectedId, onSelect, canEdit, canDelete, busy,
+  sortable, onCreateChild, onDelete }: {
+  nodes: WorldTreeNode[]; depth: number; selectedId: number | null
+  onSelect: (id: number) => void; canEdit: boolean; canDelete?: boolean; busy: boolean
+  sortable: boolean; onCreateChild: (id: number) => void; onDelete: (id: number) => void
+}) {
+  return <SortableContext items={nodes.map(node => node.entry.id)}
+    strategy={verticalListSortingStrategy} disabled={!sortable}>
+    <ul>{nodes.map(node => <ChapterNode key={node.entry.id} node={node} depth={depth}
+      selectedId={selectedId} onSelect={onSelect} canEdit={canEdit} canDelete={canDelete}
+      busy={busy} sortable={sortable} onCreateChild={onCreateChild} onDelete={onDelete} />)}</ul>
+  </SortableContext>
+}
+
 function ChapterNode({ node, depth, selectedId, onSelect, canEdit, busy,
-  onCreateChild, onDelete, canDelete = false }: {
+  onCreateChild, onDelete, canDelete = false, sortable }: {
   node: WorldTreeNode; depth: number; selectedId: number | null
-  onSelect: (id:number)=>void; canEdit:boolean; canDelete?: boolean; busy:boolean
-  onCreateChild:(id:number)=>void; onDelete:(id:number)=>void
+  onSelect: (id:number)=>void; canEdit:boolean; canDelete?:boolean; busy:boolean
+  sortable:boolean; onCreateChild:(id:number)=>void; onDelete:(id:number)=>void
 }) {
   const [expanded, setExpanded] = useState(true)
-  return <li>
-    <TreeRow depth={depth} selected={node.entry.id===selectedId} title={node.entry.title}
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: node.entry.id, disabled: !sortable,
+  })
+  return <li ref={setNodeRef} style={{
+    transform: CSS.Transform.toString(transform), transition,
+    opacity: isDragging ? .5 : undefined, zIndex: isDragging ? 20 : undefined,
+    position: isDragging ? 'relative' : undefined,
+  }}>
+    <TreeRow depth={depth} selected={node.entry.id === selectedId} title={node.entry.title}
       icon={<BookText size={12}/>} onClick={()=>onSelect(node.entry.id)}
+      dragHandle={sortable ? {attributes,listeners} : undefined}
       expanded={node.children.length ? expanded : undefined}
       onToggleExpand={()=>setExpanded(value=>!value)}
       actions={canEdit && !busy ? <div className="flex items-center gap-1">
@@ -279,11 +307,9 @@ function ChapterNode({ node, depth, selectedId, onSelect, canEdit, busy,
         {canDelete && <button type="button" title="删除章节及子级" aria-label="删除章节"
           onClick={event=>{event.stopPropagation();onDelete(node.entry.id)}}><Trash2 size={13}/></button>}
       </div> : undefined}/>
-    {expanded && node.children.length>0 && <ul>
-      {node.children.map(child=><ChapterNode key={child.entry.id} node={child} depth={depth+1}
-        selectedId={selectedId} onSelect={onSelect} canEdit={canEdit} busy={busy}
-        onCreateChild={onCreateChild} onDelete={onDelete} canDelete={canDelete}/>)}
-    </ul>}
+    {expanded && node.children.length > 0 && <ChapterNodes nodes={node.children} depth={depth+1}
+      selectedId={selectedId} onSelect={onSelect} canEdit={canEdit} busy={busy}
+      canDelete={canDelete} sortable={sortable} onCreateChild={onCreateChild} onDelete={onDelete}/>}
   </li>
 }
 
@@ -301,6 +327,10 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
   const [deleting,setDeleting]=useState(false)
   const pending=useRef<Promise<void>|null>(null)
   const writable=props.canEdit&&!props.disabled&&!busy&&!props.loading
+  const sensors=useSensors(
+    useSensor(PointerSensor,{activationConstraint:{distance:5}}),
+    useSensor(KeyboardSensor,{coordinateGetter:sortableKeyboardCoordinates}),
+  )
 
   const entries=useMemo(()=>props.notes.map(row=>row.entity).filter(row=>row.category===NOVEL_CATEGORY),[props.notes])
   const books=useMemo(()=>cloudNovelBooks(entries),[entries])
@@ -391,6 +421,40 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
       else if(chapters.some(row=>row.id===id)||activeChapterId===id) setActiveChapterId(null)
     })
     setDeleting(false)
+  }
+
+
+  async function reorder(draggedId: number, overId: number) {
+    if (!root || !writable || query.trim()) return
+    const plan = planCloudNovelReorder(entries, root.entity.id, draggedId, overId)
+    if (plan === null) {
+      setError('章节只能在同一本小说中调整，且需保持父子关系有效')
+      return
+    }
+    if (plan.length === 0) return
+    const expectedVersions = Object.fromEntries(plan.map(patch => {
+      const snapshot = props.notes.find(item => item.entity.id === patch.id)
+      return [String(patch.id), snapshot?.version ?? -1]
+    }))
+    await write(async () => {
+      const response=await fetch('/api/workspaces/'+props.workspaceId+'/novels/'+root.entityId+'/reorder',{
+        method:'PATCH', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({draggedId,overId,expectedVersions}),
+      })
+      if (!response.ok) {
+        const result:{error?:string}=await response.json().catch(()=>({}))
+        throw new Error(result.error === 'VERSION_CONFLICT'
+          ? '其他成员已修改章节顺序，请刷新后再拖动' : '章节排序失败：'+(result.error ?? response.status))
+      }
+      await props.onRefresh()
+    })
+  }
+  function onChapterDragEnd(event: DragEndEvent) {
+    const over=event.over
+    if (!over || event.active.id === over.id) return
+    const draggedId=Number(event.active.id), overId=Number(over.id)
+    if (!Number.isSafeInteger(draggedId) || !Number.isSafeInteger(overId)) return
+    void reorder(draggedId,overId)
   }
 
   async function download(format:'txt'|'md'|'docx'){
@@ -492,10 +556,13 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
           <input value={query} aria-label="搜索章节" onChange={event=>setQuery(event.target.value)}
             placeholder="搜索章节" className="min-w-0 w-full bg-transparent px-1 py-1 text-ui" />
         </div>
-        <ul>{visibleChapterTree.map(node=>
-          <ChapterNode key={node.entry.id} node={node} depth={0} selectedId={activeChapterId}
-            onSelect={id=>afterSaving(()=>setActiveChapterId(id))} canEdit={props.canEdit} canDelete={props.canDelete} busy={busy}
-            onCreateChild={create} onDelete={id=>void remove(id)} />)}</ul>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onChapterDragEnd}>
+          <ChapterNodes nodes={visibleChapterTree} depth={0} selectedId={activeChapterId}
+            onSelect={id=>afterSaving(()=>setActiveChapterId(id))} canEdit={props.canEdit}
+            canDelete={props.canDelete} busy={busy} sortable={writable && !query.trim()}
+            onCreateChild={create} onDelete={id=>void remove(id)} />
+        </DndContext>
+        {props.canEdit && <p className="mt-2 text-micro text-ink-faint">拖动章节左侧手柄可在本书内调整顺序；搜索时暂停排序。</p>}
         {chapterTree.length===0&&<p className="text-caption text-ink-faint">暂无章节</p>}
         <p className="mt-3 text-caption text-ink-faint">{chapters.length} 章 · {countNovelWords(exported)} 字</p>
       </aside>
