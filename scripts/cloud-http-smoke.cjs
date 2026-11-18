@@ -649,6 +649,53 @@ async function run() {
   assert((await copiedChapters.json()).hits.some(hit=>hit.kind==='novel'),
     'Recovered imported chapter was not searchable')
 
+  // The original desktop v1 .ocbak remains importable, including embedded
+  // PNG bytes, numeric country references and legacy tag identifiers.
+  const legacyWorld = await makeWorld('CI Legacy Desktop Import')
+  const legacyArchive = {
+    version:1,
+    data:{
+      characters:[{id:21,name:'旧版迁移角色',countryId:7,tags:[1],
+        avatarUrl:'data:image/png;base64,'+tinyPng.toString('base64')}],
+      countries:[{id:7,name:'旧版迁移国家'}],
+      events:[],worldEntries:[],
+      tags:[{id:1,name:'旧版分类标签',color:'#4ecdc4'}],
+      periods:[],meta:[],
+    },
+  }
+  const legacyResponse = await scopedMutation(legacyWorld,'/backup','POST',legacyArchive)
+  const legacyResult=await legacyResponse.json()
+  assert(legacyResponse.status===200 && legacyResult.source==='legacy' &&
+    legacyResult.restored===2 && legacyResult.media===1 && legacyResult.tags===1,
+    'Original desktop .ocbak import failed: '+JSON.stringify(legacyResult))
+  const legacySearchResponse=await scoped(legacyWorld,'/search?q='+encodeURIComponent('旧版迁移'))
+  const legacyHits=(await legacySearchResponse.json()).hits
+  const countryHit=legacyHits.find(item=>item.title==='旧版迁移国家')
+  const characterHit=legacyHits.find(item=>item.title==='旧版迁移角色')
+  assert(countryHit&&characterHit,'Legacy imported entries were not indexed')
+  const legacyCountryResponse=await fetch(BASE+'/api/entities/'+countryHit.entityId,
+    {headers:{Cookie:cookie}})
+  const legacyCharacterResponse=await fetch(BASE+'/api/entities/'+characterHit.entityId,
+    {headers:{Cookie:cookie}})
+  const legacyCountry=(await legacyCountryResponse.json()).entity
+  const legacyCharacter=(await legacyCharacterResponse.json()).entity
+  assert(legacyCharacter.content.countryId===legacyCountry.local_id,
+    'Original desktop numeric country reference was not remapped')
+  assert(Array.isArray(legacyCharacter.content.cloudTagIds) &&
+    legacyCharacter.content.cloudTagIds.length===1,
+    'Original numeric tags did not become shared cloud tags')
+  const legacyMedia=await fetch(BASE+legacyCharacter.content.avatarUrl,{headers:{Cookie:cookie}})
+  assert(legacyMedia.status===200 &&
+    (await legacyMedia.arrayBuffer()).byteLength===tinyPng.byteLength,
+    'Original desktop inline image was lost during conversion')
+  const badLegacy=await makeWorld('CI Invalid Archive')
+  const invalidArchive={...legacyArchive,cloud:{format:'unrecognized-cloud-backup'}}
+  const rejected=await scopedMutation(badLegacy,'/backup','POST',invalidArchive)
+  assert(rejected.status===400,'An unsupported cloud sidecar was silently downgraded to legacy')
+  const untouched=await scoped(badLegacy,'/search?q='+encodeURIComponent('旧版迁移'))
+  assert((await untouched.json()).hits.length===0,
+    'A rejected import left partial data in the new workspace')
+
   const workbenchPath = '/studio/' + workspaceId
   const workbench = await fetch(BASE + workbenchPath, { headers: { Cookie: cookie } })
   assert(workbench.status === 200, 'Private workbench did not open')
