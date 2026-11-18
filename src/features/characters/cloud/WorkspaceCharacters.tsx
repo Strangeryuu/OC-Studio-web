@@ -266,9 +266,8 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
   const notes = useMemo(() => noteList.rows.map(row => row.entity).filter(isCodexEntry), [noteList.rows])
   const activeCategory=customization.categories.find(c=>c.id===activeCategoryId)??null
   const visibleCategories=customization.categories.filter(c=>c.enabled)
-  const worldNotes=useMemo(()=>notes.filter(row=>
-    !visibleCategories.some(category=>category.name===row.category)),
-    [notes,visibleCategories.map(c=>c.id+':'+c.enabled+':'+c.name).join('|')])
+  const worldNotes=notes.filter(row=>
+    !visibleCategories.some(category=>category.name===row.category))
   const novelRoots = useMemo(() => noteList.rows.filter(row => row.entity.category === '小说' && row.entity.parentId == null), [noteList.rows])
   const mapEntries = useMemo(() => noteList.rows.filter(row => row.entity.category === '地图'), [noteList.rows])
   const note = noteList.rows.find(row => row.entityId === selectedId && isCodexEntry(row.entity))
@@ -565,7 +564,10 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
       {section === 'category' && activeCategory && <WorkspaceNoteTree key={activeCategory.id}
         entries={notes.filter(row=>row.category===activeCategory.name)}
         selectedId={categoryNote?.entity.id} loading={noteList.loading}
-        error={noteList.error} busy={busy} onSelect={id=>navigate('world',id)}
+        error={noteList.error} busy={busy} onSelect={id=>{
+          const found=noteList.rows.find(row=>row.entity.id===id)
+          if(found)select(found.entityId,'category')
+        }}
         onCreate={canEdit?()=>createNote(null,activeCategory):undefined}/>}
       {section === 'category' && activeCategory && categoryNote &&
         <OriginalNoteEditor key={categoryNote.entityId} snapshot={categoryNote} adapter={noteAdapter}
