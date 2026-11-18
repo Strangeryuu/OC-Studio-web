@@ -39,7 +39,7 @@ export function validMapFields(kind: string, content: unknown): boolean {
   if (mapId && position == null) return false
 
   if (kind !== 'worldEntry') return true
-  const ownMapFields = ['mapImage', 'mapWidth', 'mapHeight', 'mapSeed', 'mapParams', 'mapMode', 'mapAnnotations']
+  const ownMapFields = ['mapImage', 'mapWidth', 'mapHeight', 'mapSeed', 'mapParams', 'mapMode', 'mapAnnotations', 'mapViews']
   const isMap = record.category === MAP_CATEGORY
   if (!isMap) return ownMapFields.every(key => record[key] == null)
   const image = record.mapImage
@@ -49,6 +49,13 @@ export function validMapFields(kind: string, content: unknown): boolean {
     if (value != null && (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0 || value > 50000)) return false
   }
   if (image && (record.mapWidth == null || record.mapHeight == null)) return false
+  if (record.mapViews != null) {
+    if (typeof record.mapViews !== 'object' || Array.isArray(record.mapViews)) return false
+    const views = Object.entries(record.mapViews)
+    if (views.length > 6 || views.some(([name, url]) =>
+      !['terrain','contour','temperature','moisture','biome','political'].includes(name) ||
+      typeof url !== 'string' || cloudMediaUrlId(url) === null)) return false
+  }
   if (record.mapSeed != null && (typeof record.mapSeed !== 'number' || !Number.isFinite(record.mapSeed))) return false
   if (record.mapParams != null && (typeof record.mapParams !== 'string' || record.mapParams.length > 200_000)) return false
   if (record.mapMode != null && (typeof record.mapMode !== 'string' || record.mapMode.length > 40)) return false

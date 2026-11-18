@@ -27,6 +27,16 @@ export function characterMediaIds(kind: unknown, content: unknown): string[] | n
     if (id === null) return null
     ids.push(id)
   }
+  if (kind === 'worldEntry' && record.mapViews != null) {
+    if (typeof record.mapViews !== 'object' || Array.isArray(record.mapViews)) return null
+    const views = Object.entries(record.mapViews)
+    if (views.length > 6) return null
+    for (const [key, url] of views) {
+      if (!['terrain','contour','temperature','moisture','biome','political'].includes(key) ||
+        typeof url !== 'string' || cloudMediaUrlId(url) === null) return null
+      ids.push(cloudMediaUrlId(url)!)
+    }
+  }
   const galleryKeys = kind === 'character' ? ['avatars', 'gallery'] : kind === 'event' ? ['images'] : ['gallery']
   for (const key of galleryKeys) {
     const images = record[key]

@@ -12,12 +12,13 @@ export type OriginalNotePatch = Partial<Pick<WorldFormData,
   mapPosition?: GraphPosition | null
   mapId?: string | null
   mapImage?: string | null
+  mapViews?: Record<string, string> | null
   mapWidth?: number
   mapHeight?: number
   mapAnnotations?: string | null
-  mapSeed?: number
-  mapParams?: string
-  mapMode?: string
+  mapSeed?: number | null
+  mapParams?: string | null
+  mapMode?: string | null
 }
 
 function readNote(id: number, data: RecordValue, title: unknown): WorldEntry {

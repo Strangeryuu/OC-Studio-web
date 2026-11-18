@@ -246,6 +246,8 @@ export interface WorldEntry {
   mapMode?: string
   /** 政治标注（国界 / 道路）：JSON 字符串，坐标归一化 0–1（`features/map/annotations.ts`） */
   mapAnnotations?: string
+  /** 网页端私有媒体：每一生成视图对应一张资料库内图片。 */
+  mapViews?: Record<string, string>
   /** 章节：大纲 / 备注（一行说明，不是正文） */
   chapterOutline?: string
   /**

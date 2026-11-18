@@ -24,6 +24,12 @@ describe('cloud maps: persisted data boundary', () => {
     expect(validMapFields('worldEntry', { category: '笔记', mapAnnotations: '[]' })).toBe(false)
     expect(validMapFields('worldEntry', { category: '笔记', mapPosition: { x: 0.2, y: 0.7 }, mapId: '大陆' })).toBe(true)
   })
+  it('validates private generated-map views', () => {
+    expect(validMapFields('worldEntry', { category: '地图', mapViews: { terrain: image } })).toBe(true)
+    expect(validMapFields('worldEntry', { category: '地图', mapViews: { unknown: image } })).toBe(false)
+    expect(validMapFields('worldEntry', { category: '地图', mapViews: { terrain: '/uploads/map.png' } })).toBe(false)
+    expect(characterMediaIds('worldEntry', { category: '地图', mapViews: { terrain: image } })).toEqual([image.split('/').pop()])
+  })
   it('validates political lines and polygons', () => {
     const border = [{ id: 'b1', kind: 'border', points: [{x:0,y:0},{x:1,y:0},{x:0.5,y:1}] }]
     expect(validMapFields('worldEntry', { category: '地图', mapAnnotations: JSON.stringify(border) })).toBe(true)
