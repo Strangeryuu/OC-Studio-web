@@ -32,7 +32,7 @@ export async function listCountryEvents(countryId: number): Promise<Event[]> {
   return rows.sort((a, b) => (a.time ?? '').localeCompare(b.time ?? '', 'zh'))
 }
 
-function buildDefaultCountry(data: CountryFormData, overrides: Partial<Country> = {}): Omit<Country, 'id'> {
+export function buildDefaultCountry(data: CountryFormData, overrides: Partial<Country> = {}): Omit<Country, 'id'> {
   const now = Date.now()
   return {
     name: data.name,

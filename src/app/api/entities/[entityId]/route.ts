@@ -54,7 +54,7 @@ export async function PATCH(request: Request, context: Context) {
     }
     if (!await characterMediaAllowed(client, access.workspaceId, existing.kind, document.data)) {
       await client.query('ROLLBACK')
-      return NextResponse.json({ error: 'INVALID_CHARACTER_MEDIA' }, { status: 400 })
+      return NextResponse.json({ error: existing.kind === 'country' ? 'INVALID_COUNTRY_MEDIA' : 'INVALID_CHARACTER_MEDIA' }, { status: 400 })
     }
     if (!await characterLinksAllowed(client, access.workspaceId, existing.kind, document.data, entityId, existing.content)) {
       await client.query('ROLLBACK')

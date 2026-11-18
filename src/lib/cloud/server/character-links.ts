@@ -26,6 +26,17 @@ export async function characterLinksAllowed(
     if (result.rows.length !== links.tags.length) return false
   }
   if (kind === 'character') {
+    const countryId = (content as Record<string, unknown>).countryId
+    const previousCountryId = (previousContent as Record<string, unknown> | undefined)?.countryId
+    if (countryId != null && countryId !== previousCountryId) {
+      if (typeof countryId !== 'number' || !Number.isSafeInteger(countryId) || countryId <= 0) return false
+      const target = await client.query(
+        `SELECT id FROM entities
+         WHERE workspace_id=$1 AND kind='country' AND local_id=$2 AND deleted_at IS NULL`,
+        [workspaceId, countryId],
+      )
+      if (target.rows.length !== 1) return false
+    }
     const numericLinks = (value: unknown): number[] | null => {
       if (!value || typeof value !== 'object' || Array.isArray(value)) return []
       const relations = (value as Record<string, unknown>).relatedCharacters

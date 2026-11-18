@@ -11,24 +11,27 @@
  */
 import { ComponentEditButton } from '@/components/shared/ComponentEdit'
 import { TimeTrio } from '@/components/shared/TimeTrio'
-import { useFieldConfig } from '@/lib/fields'
+import { useFieldConfig, type FieldDef } from '@/lib/fields'
 import { assembleTime, parseTime } from '@/lib/time-field'
 import { FIELD_GRID, FIELD_INPUT, FIELD_LABEL, FIELD_ROW, SECTION_TITLE } from '@/lib/ui-tokens'
 
 export function CountryInfoSection({
   values,
   onChange,
+  fieldsOverride,
 }: {
   values: Record<string, string>
   onChange: (key: string, value: string) => void
+  fieldsOverride?: FieldDef[]
 }) {
-  const fields = useFieldConfig().country.filter((field) => field.key !== undefined)
+  const config = useFieldConfig()
+  const fields = (fieldsOverride ?? config.country).filter((field) => field.key !== undefined)
 
   return (
     <section className="group">
       <div className="flex items-center justify-between gap-3">
         <h3 className={SECTION_TITLE}>基本信息</h3>
-        <ComponentEditButton componentId="info" />
+        {!fieldsOverride && <ComponentEditButton componentId="info" />}
       </div>
       {fields.length === 0 ? (
         <p className="text-caption text-ink-faint">字段表里还没有字段。</p>

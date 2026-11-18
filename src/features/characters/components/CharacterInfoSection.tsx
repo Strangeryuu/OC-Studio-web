@@ -23,12 +23,14 @@ export function CharacterInfoSection({
   onNavigateToCountry,
   compact = false,
   fieldsOverride,
+  preserveLegacyNationality = false,
 }: {
   form: CharacterForm
   onNavigateToCountry?: (id: number) => void
   /** 三栏中栏的窄容器：字段单列（不依赖 viewport 的 sm 断点） */
   compact?: boolean
   fieldsOverride?: FieldDef[]
+  preserveLegacyNationality?: boolean
 }) {
   const fieldConfig = useFieldConfig()
   const fields = fieldsOverride ?? fieldConfig.character
@@ -69,9 +71,11 @@ export function CharacterInfoSection({
                 maxItems={1}
                 onNavigateItem={onNavigateToCountry}
               />
-            ) : (
+            ) : null}
+            {(form.countries.length === 0 || (preserveLegacyNationality && !form.selectedCountryIds.length && form.nationalityLegacy)) && (
               <input
                 type="text"
+                aria-label={field.label}
                 value={form.nationalityLegacy}
                 onChange={(e) => form.setNationalityLegacy(e.target.value)}
                 className="w-full bg-transparent text-body leading-5 text-ink placeholder:text-ink-faint focus:outline-none"
@@ -132,7 +136,7 @@ export function CharacterInfoSection({
     <section className="group">
       <div className="flex items-center justify-between gap-3">
         <h3 className={SECTION_TITLE}>基本信息</h3>
-        <ComponentEditButton componentId="info" />
+        {!fieldsOverride && <ComponentEditButton componentId="info" />}
       </div>
       {fields.length === 0 ? (
         <p className="text-caption text-ink-faint">字段表里还没有字段。</p>

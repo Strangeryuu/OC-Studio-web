@@ -3,14 +3,18 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { OriginalCharacterSnapshot } from '@/lib/cloud/adapters/original-characters'
 import { buildDefaultCharacter } from '@/features/characters/services'
-import { newCharacterData } from '@/lib/entity-defaults'
+import { newCharacterData, newCountryData } from '@/lib/entity-defaults'
 import * as characters from '@/features/characters/services'
 import * as countries from '@/features/countries/services'
+import type { OriginalCountrySnapshot, OriginalCountryPatch } from '@/lib/cloud/adapters/original-countries'
 import * as world from '@/features/world/services'
 import type { Editor } from '@tiptap/core'
 import { flushPendingSaves } from '@/lib/pending-saves'
 
-const fake = vi.hoisted(() => ({ list: vi.fn(), save: vi.fn(), create: vi.fn() }))
+const fake = vi.hoisted(() => ({ list: vi.fn(), save: vi.fn(), create: vi.fn(), countries: vi.fn(), saveCountry: vi.fn() }))
+vi.mock('@/lib/cloud/adapters/original-countries', () => ({
+  OriginalCountriesCloudAdapter: class { list = fake.countries; save = fake.saveCountry },
+}))
 vi.mock('@/lib/cloud/adapters/original-characters', () => ({
   OriginalCharactersCloudAdapter: class {
     list = fake.list
@@ -25,7 +29,8 @@ vi.mock('@/components/shared/ImageCropper', async () => {
     open ? React.createElement('button', { type: 'button', onClick: () => onComplete(new Blob(['test'], { type: 'image/png' })) }, '完成裁剪') : null }
 })
 
-import { WorkspaceCharacters, editablePatch, hasNewBodyImages } from '@/features/characters/cloud/WorkspaceCharacters'
+import { hasNewBodyImages } from '@/lib/cloud/character-media'
+import { WorkspaceCharacters, editablePatch } from '@/features/characters/cloud/WorkspaceCharacters'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 const workspaceId = '11111111-1111-4111-8111-111111111111'
@@ -59,6 +64,7 @@ async function inputText(input: HTMLInputElement, value: string) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  fake.countries.mockResolvedValue([])
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
@@ -71,6 +77,55 @@ afterEach(async () => {
 })
 
 describe('original character information in cloud workspace', () => {
+  it('selects a cloud nationality and opens the original country form from the character', async () => {
+    const country: OriginalCountrySnapshot = {
+      entityId: '00000000-0000-4000-8000-000000000004', workspaceId, version: 1,
+      entity: { ...countries.buildDefaultCountry({ ...newCountryData(), name: '晨曦共和国' }), id: 4 },
+    }
+    fake.countries.mockResolvedValue([country])
+    fake.saveCountry.mockImplementation(async (row: OriginalCountrySnapshot, patch: OriginalCountryPatch) => ({
+      ...row, version: row.version + 1, entity: { ...row.entity, ...patch },
+    }))
+    fake.list.mockResolvedValue([fixture(1, '国籍测试角色')])
+    fake.save.mockImplementation(async (row: OriginalCharacterSnapshot, patch: Record<string, unknown>) => ({
+      ...row, version: row.version + 1, character: { ...row.character, ...patch },
+    }))
+    await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' })); await Promise.resolve() })
+    await click(button('国籍测试角色'))
+    await click(button('选择'))
+    const picker = container.querySelector('input[placeholder="搜索国家..."]')!.parentElement!
+    await click(picker.querySelector('button')!)
+    await click(button('保存'))
+    expect(fake.save.mock.calls[0][1]).toEqual({ countryId: 4 })
+
+    await click(container.querySelector('button[title="晨曦共和国"]')!)
+    const name = container.querySelector<HTMLInputElement>('input[aria-label="国家名称"]')!
+    expect(name.value).toBe('晨曦共和国')
+    expect([...container.querySelectorAll('section')].find(section =>
+      section.querySelector('h3')?.textContent === '相关角色')?.textContent).toContain('国籍测试角色')
+    await inputText(name, '晨曦联邦')
+    await click(button('保存'))
+    expect(fake.saveCountry.mock.calls[0][1]).toEqual({ name: '晨曦联邦' })
+
+    const imageUrl = '/api/media/33333333-3333-4333-8333-333333333333'
+    const upload = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ asset: { url: imageUrl } }), { status: 201 }))
+    vi.stubGlobal('fetch', upload)
+    const flagInput = container.querySelectorAll<HTMLInputElement>('input[type="file"]')[1]
+    Object.defineProperty(flagInput, 'files', { configurable: true, value: [new File(['image'], 'flag.png', { type: 'image/png' })] })
+    await act(async () => { flagInput.dispatchEvent(new Event('change', { bubbles: true })); await Promise.resolve() })
+    await click(button('完成裁剪'))
+    await click(button('保存'))
+    expect(fake.saveCountry.mock.calls[1][1]).toEqual({ flagUrl: imageUrl })
+
+    const bodyInput = container.querySelector<HTMLInputElement>('input[aria-label="上传正文图片"]')!
+    Object.defineProperty(bodyInput, 'files', { configurable: true, value: [new File(['image'], 'body.png', { type: 'image/png' })] })
+    await act(async () => { bodyInput.dispatchEvent(new Event('change', { bubbles: true })); await Promise.resolve() })
+    await click(button('保存'))
+    expect(upload).toHaveBeenCalledTimes(2)
+    expect(upload).toHaveBeenCalledWith(`/api/workspaces/${workspaceId}/media`, expect.objectContaining({ method: 'POST' }))
+    expect(JSON.stringify(fake.saveCountry.mock.calls[2][1].document)).toContain(imageUrl)
+  })
+
   it('adds a relationship using the original picker and saves the original fields', async () => {
     fake.list.mockResolvedValue([fixture(1, '关系甲'), fixture(2, '关系乙')])
     fake.save.mockImplementation(async (snapshot: OriginalCharacterSnapshot, patch: Record<string, unknown>) => ({

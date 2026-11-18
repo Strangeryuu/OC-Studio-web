@@ -6,7 +6,10 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
 import { OriginalCharactersCloudAdapter, CloudCharacterError } from '@/lib/cloud/adapters/original-characters'
 import { buildDefaultCharacter } from '@/features/characters/services'
-import { newCharacterData } from '@/lib/entity-defaults'
+import { newCharacterData, newCountryData } from '@/lib/entity-defaults'
+
+import { OriginalCountriesCloudAdapter } from '@/lib/cloud/adapters/original-countries'
+import { buildDefaultCountry } from '@/features/countries/services'
 
 const state = vi.hoisted(() => ({ db: null as PGlite | null, userId: 'owner' as string | null }))
 vi.mock('server-only', () => ({}))
@@ -156,6 +159,41 @@ describe('original character adapter against PostgreSQL', () => {
     expect((await revisions.json()).revisions.map((item: { version: number }) => item.version)).toEqual([3, 2, 1])
   })
 
+  it('saves original countries and validates nationality changes within the workspace', async () => {
+    state.userId = 'owner'
+    const countries = new OriginalCountriesCloudAdapter(workspaceA, apiFetch)
+    const homeland = await countries.create(buildDefaultCountry({ ...newCountryData(), name: '故乡' }))
+    const updated = await countries.save(homeland, { name: '王国', custom: { 首都: '都城' } })
+    expect((await countries.list()).find(row => row.entityId === homeland.entityId)?.entity.custom).toEqual({ 首都: '都城' })
+    await expect(countries.save(homeland, { name: '过期编辑' })).rejects.toMatchObject({ status: 409 })
+    const history = await revisionRoute.GET(new Request('http://localhost:3000'), ctxEntity(updated.entityId))
+    expect((await history.json()).revisions.map((row: { version: number }) => row.version)).toEqual([2, 1])
+
+    state.userId = 'outsider'
+    const external = await new OriginalCountriesCloudAdapter(workspaceB, apiFetch)
+      .create(buildDefaultCountry({ ...newCountryData(), name: '另一个资料库' }))
+    state.userId = 'viewer'
+    expect((await countries.list()).map(row => row.entityId)).toContain(homeland.entityId)
+    expect((await countries.list()).map(row => row.entityId)).not.toContain(external.entityId)
+    await expect(countries.save(updated, { name: '访客编辑' })).rejects.toMatchObject({ status: 404 })
+
+    state.userId = 'owner'
+    const characters = new OriginalCharactersCloudAdapter(workspaceA, apiFetch)
+    const character = await characters.create(buildDefaultCharacter({ ...newCharacterData(), name: '居民', nationalityLegacy: '旧国籍' }))
+    await expect(characters.save(character, { countryId: external.entity.id })).rejects.toMatchObject({
+      status: 400, code: 'INVALID_CHARACTER_LINKS',
+    })
+    await expect(characters.save(character, { countryId: character.character.id })).rejects.toMatchObject({
+      status: 400, code: 'INVALID_CHARACTER_LINKS',
+    })
+    const linked = await characters.save(character, { countryId: homeland.entity.id, nationalityLegacy: '' })
+    expect(linked.character.countryId).toBe(homeland.entity.id)
+    await characters.save(linked, { countryId: null, nationalityLegacy: '' })
+    const cleared = (await characters.list()).find(row => row.entityId === character.entityId)!
+    expect(cleared.character.countryId).toBeUndefined()
+    expect(cleared.character.nationalityLegacy).toBe('')
+  })
+
   it('accepts body images only from the character workspace', async () => {
     state.userId = 'owner'
     const own = '33333333-3333-4333-8333-333333333333'
@@ -163,6 +201,12 @@ describe('original character adapter against PostgreSQL', () => {
     await state.db!.query(`INSERT INTO media_assets(id,workspace_id,uploaded_by,storage_key,mime_type,byte_size,content_sha256)
       VALUES ($1,$3,'owner','own.png','image/png',1,'own'),($2,$4,'outsider','other.png','image/png',1,'other')`,
     [own, other, workspaceA, workspaceB])
+    const countries = new OriginalCountriesCloudAdapter(workspaceA, apiFetch)
+    const country = await countries.create(buildDefaultCountry(newCountryData()))
+    await expect(countries.save(country, { flagUrl: `/api/media/${other}` }))
+      .rejects.toMatchObject({ status: 400, code: 'INVALID_COUNTRY_MEDIA' })
+    const withFlag = await countries.save(country, { flagUrl: `/api/media/${own}` })
+    expect(withFlag.entity.flagUrl).toBe(`/api/media/${own}`)
     const adapter = new OriginalCharactersCloudAdapter(workspaceA, apiFetch)
     const initial = await adapter.create(buildDefaultCharacter({ ...newCharacterData(), name: '图片角色' }))
     const doc = (id: string) => ({ type: 'doc', content: [{ type: 'imageBlock', attrs: { src: `/api/media/${id}` } }] })

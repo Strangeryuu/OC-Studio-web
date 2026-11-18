@@ -15,7 +15,7 @@ function makeEventKey(id: number | null) {
   return ['event', id]
 }
 
-export function useEventList(): {
+export function useEventList(enabled = true): {
   events: Event[]
   loading: boolean
   error: string | null
@@ -24,23 +24,25 @@ export function useEventList(): {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: LIST_KEY,
     queryFn: () => eventService.getEvents(),
+    enabled,
     staleTime: 30_000,
   })
 
   const refresh = useCallback(() => {
-    void refetch()
-  }, [refetch])
+    if (enabled) void refetch()
+  }, [enabled, refetch])
 
   useEffect(() => {
+    if (!enabled) return
     const handler = () => {
       void refetch()
     }
     window.addEventListener(DATA_UPDATED_EVENT, handler)
     return () => window.removeEventListener(DATA_UPDATED_EVENT, handler)
-  }, [refetch])
+  }, [enabled, refetch])
 
   return {
-    events: data ?? [],
+    events: enabled ? data ?? [] : [],
     loading: isLoading,
     error: error instanceof Error ? error.message : null,
     refresh,

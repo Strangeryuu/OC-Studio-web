@@ -2,7 +2,7 @@ import 'server-only'
 import type { PoolClient } from 'pg'
 import { characterMediaIds } from '@/lib/cloud/character-media'
 
-/** A character may only reference media physically owned by its workspace.
+/** An entity may only reference media owned by its workspace.
  * Always use this inside the same transaction as the entity write.
  */
 export async function characterMediaAllowed(

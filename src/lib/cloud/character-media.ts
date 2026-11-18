@@ -1,4 +1,4 @@
-/** Pure validation for media identifiers used inside cloud character JSON.
+/** Pure validation for media identifiers used inside original entity JSON.
  * The owning-workspace check is performed in the server database.
  */
 import { collectBodyImageRefs } from '@/lib/image-refs'
@@ -12,11 +12,11 @@ export function cloudMediaUrlId(value: string): string | null {
 }
 
 export function characterMediaIds(kind: unknown, content: unknown): string[] | null {
-  if (kind !== 'character') return []
+  if (kind !== 'character' && kind !== 'country') return []
   if (!content || typeof content !== 'object' || Array.isArray(content)) return null
   const record = content as Record<string, unknown>
   const ids: string[] = []
-  for (const key of ['avatarUrl', 'headerUrl']) {
+  for (const key of [kind === 'country' ? 'flagUrl' : 'avatarUrl', 'headerUrl']) {
     const value = record[key]
     if (typeof value !== 'string' || !value.startsWith('/api/media/')) continue
     const id = cloudMediaUrlId(value)
@@ -35,9 +35,12 @@ export function characterMediaIds(kind: unknown, content: unknown): string[] | n
     }
   }
   for (const src of collectBodyImageRefs(readStoredBody(record.document))) {
+    if (!src.startsWith('/api/media/')) continue
     const id = cloudMediaUrlId(src)
-    if (id) ids.push(id)
+    if (id === null) return null
+    ids.push(id)
   }
+  if (kind === 'country') return [...new Set(ids)]
   for (const key of ['avatarMediaId', 'headerMediaId']) {
     const value = record[key]
     if (value === undefined || value === null || value === '') continue
@@ -61,4 +64,9 @@ export function characterMediaIds(kind: unknown, content: unknown): string[] | n
     if (new Set(cloudTags.map(item => item.trim().toLocaleLowerCase('zh-CN'))).size !== cloudTags.length) return null
   }
   return [...new Set(ids)]
+}
+
+export function hasNewBodyImages(original: unknown, next: unknown): boolean {
+  const originalImages = new Set(collectBodyImageRefs(readStoredBody(original)))
+  return collectBodyImageRefs(next).some(src => !originalImages.has(src) && cloudMediaUrlId(src) === null)
 }

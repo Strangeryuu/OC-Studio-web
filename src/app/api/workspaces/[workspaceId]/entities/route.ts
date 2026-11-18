@@ -47,7 +47,7 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
     await client.query('BEGIN')
     if (!await characterMediaAllowed(client, workspaceId, body.kind as string, doc.data)) {
       await client.query('ROLLBACK')
-      return NextResponse.json({ error: 'INVALID_CHARACTER_MEDIA' }, { status: 400 })
+      return NextResponse.json({ error: body.kind === 'country' ? 'INVALID_COUNTRY_MEDIA' : 'INVALID_CHARACTER_MEDIA' }, { status: 400 })
     }
     if (!await characterLinksAllowed(client, workspaceId, body.kind as string, doc.data)) {
       await client.query('ROLLBACK')

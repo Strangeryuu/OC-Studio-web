@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { currentCloudUser, authorizedWorkspace } from '@/lib/cloud/server/authorization'
 import { pool } from '@/lib/cloud/server/db'
+import { isEntityKind } from '@/lib/cloud/entity-input'
 import { parseOriginalId } from '@/lib/cloud/original-ids'
 
 export const runtime = 'nodejs'
@@ -15,15 +16,19 @@ export async function GET(request: Request, context: { params: Promise<{ workspa
   if (!await authorizedWorkspace(user, workspaceId, 'entity:read')) {
     return NextResponse.json({ error: 'NOT_FOUND' }, { status: 404 })
   }
-  const cursor = parseOriginalId(new URL(request.url).searchParams.get('after') ?? '0', true)
+  const search = new URL(request.url).searchParams
+  const kind = search.get('kind')
+  if (kind !== null && !isEntityKind(kind)) return NextResponse.json({ error: 'INVALID_KIND' }, { status: 400 })
+  const cursor = parseOriginalId(search.get('after') ?? '0', true)
   if (cursor === null) return NextResponse.json({ error: 'INVALID_CURSOR' }, { status: 400 })
   const result = await pool.query<{
     id: string; local_id: string; kind: string; title: string; content: unknown
     version: number; updated_at: Date; deleted_at: Date | null
   }>(
     `SELECT id,local_id,kind,title,content,version,updated_at,deleted_at FROM entities
-     WHERE workspace_id=$1 AND local_id > $2 ORDER BY local_id ASC LIMIT $3`,
-    [workspaceId, cursor, PAGE_SIZE + 1],
+     WHERE workspace_id=$1 AND local_id > $2 AND ($4::text IS NULL OR kind=$4)
+     ORDER BY local_id ASC LIMIT $3`,
+    [workspaceId, cursor, PAGE_SIZE + 1, kind],
   )
   const hasMore = result.rows.length > PAGE_SIZE
   const rows = result.rows.slice(0, PAGE_SIZE)
