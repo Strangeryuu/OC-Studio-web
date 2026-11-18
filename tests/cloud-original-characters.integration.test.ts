@@ -562,7 +562,7 @@ describe('original entity adapters against PostgreSQL', () => {
     const remaining = await notes.list()
     for (const deletedId of [root.entityId, chapter.entityId, subchapter.entityId]) {
       expect(remaining.some(row => row.entityId === deletedId)).toBe(false)
-      const revisions = await state.db!.query(
+      const revisions = await state.db!.query<{ action: string }>(
         "SELECT action FROM entity_revisions WHERE entity_id=$1 ORDER BY version DESC LIMIT 1", [deletedId])
       expect(revisions.rows[0]?.action).toBe('delete')
     }
