@@ -39,6 +39,7 @@ import * as mediaRoute from '@/app/api/media/[assetId]/route'
 import * as cloudMaps from '@/app/api/workspaces/[workspaceId]/maps/[mapEntityId]/route'
 import * as cloudNovels from '@/app/api/workspaces/[workspaceId]/novels/[entryId]/route'
 import * as novelReorder from '@/app/api/workspaces/[workspaceId]/novels/[entryId]/reorder/route'
+import * as tableDelete from '@/app/api/workspaces/[workspaceId]/table/[entityId]/route'
 import * as workspaceCover from '@/app/api/workspaces/[workspaceId]/cover/route'
 
 import StudioEntry from '@/app/(studio)/studio/page'
@@ -615,6 +616,80 @@ describe('original entity adapters against PostgreSQL', () => {
     expect(final.map(row=>row.entity.title)).toEqual(['B 章','C 章','A 章'])
     const history=await revisionRoute.GET(new Request('http://localhost:3000'),ctxEntity(third.entityId))
     expect((await history.json()).revisions.length).toBeGreaterThanOrEqual(3)
+  })
+
+  it('deletes original country rows transactionally, promoting children and cleaning memberships', async () => {
+    state.userId = 'owner'
+    const countries = new OriginalCountriesCloudAdapter(workspaceA, apiFetch)
+    const characters = new OriginalCharactersCloudAdapter(workspaceA, apiFetch)
+    const events = new OriginalEventsCloudAdapter(workspaceA, apiFetch)
+    const target = await countries.create(buildDefaultCountry({
+      ...newCountryData(), name: '表格父国家',
+    }))
+    const child = await countries.create(buildDefaultCountry({
+      ...newCountryData(), name: '表格子国家', parentId: target.entity.id,
+    }))
+    const member = await characters.create(buildDefaultCharacter({
+      ...newCharacterData(), name: '表格国家角色', countryId: target.entity.id,
+    }))
+    const event = await events.create(buildDefaultEvent({
+      ...newEventData(), title: '表格国家事件', countries: [target.entity.id],
+    }))
+    const versions = Object.fromEntries([target,child,member,event].map(row => [row.entityId,row.version]))
+    const context = { params: Promise.resolve({workspaceId:workspaceA,entityId:target.entityId}) }
+    const request = (expectedVersion:number, expectedVersions:Record<string,number>) =>
+      new Request('http://localhost:3000',{
+        method:'DELETE', headers:{Origin:'http://localhost:3000','Content-Type':'application/json'},
+        body:JSON.stringify({expectedVersion,expectedVersions}),
+      })
+    state.userId='viewer'
+    expect((await tableDelete.DELETE(request(1,versions),context)).status).toBe(404)
+    state.userId='editor'
+    expect((await tableDelete.DELETE(request(1,versions),context)).status).toBe(404)
+    state.userId='owner'
+    expect((await tableDelete.DELETE(request(2,versions),context)).status).toBe(409)
+    const missing = { ...versions }
+    delete missing[member.entityId]
+    expect((await tableDelete.DELETE(request(1,missing),context)).status).toBe(409)
+    const response = await tableDelete.DELETE(request(1,versions),context)
+    expect(response.status).toBe(200)
+    expect((await response.json()).promotedOrUnlinked).toBe(3)
+    const newCountryRows = await countries.list()
+    expect(newCountryRows.find(row=>row.entityId===target.entityId)).toBeUndefined()
+    const promoted = newCountryRows.find(row=>row.entityId===child.entityId)
+    expect(promoted?.entity.parentId).toBeNull()
+    expect(promoted?.version).toBe(2)
+    const detached = (await characters.list()).find(row=>row.entityId===member.entityId)
+    expect(detached?.character.countryId).toBeNull()
+    expect(detached?.version).toBe(2)
+    const cleaned = (await events.list()).find(row=>row.entityId===event.entityId)
+    expect(cleaned?.entity.countries).toEqual([])
+    expect(cleaned?.version).toBe(2)
+    const history=await revisionRoute.GET(new Request('http://localhost:3000'),ctxEntity(child.entityId))
+    expect((await history.json()).revisions.map((row:{version:number})=>row.version)).toEqual([2,1])
+  })
+
+  it('promotes original note children while keeping grandchild hierarchy and other books isolated', async () => {
+    state.userId='owner'
+    const notes=new OriginalNotesCloudAdapter(workspaceA,apiFetch)
+    const make=(title:string,parentId:number|null) =>
+      buildDefaultEntry({...newWorldEntryData(),title,parentId})
+    const parent=await notes.create(make('表格设定父项',null))
+    const child=await notes.create(make('表格设定子项',parent.entity.id))
+    const grand=await notes.create(make('表格设定孙项',child.entity.id))
+    const versions=Object.fromEntries([parent,child,grand].map(row=>[row.entityId,row.version]))
+    const ctx={params:Promise.resolve({workspaceId:workspaceA,entityId:parent.entityId})}
+    const request=new Request('http://localhost:3000',{
+      method:'DELETE',headers:{Origin:'http://localhost:3000','Content-Type':'application/json'},
+      body:JSON.stringify({expectedVersion:1,expectedVersions:versions}),
+    })
+    const response=await tableDelete.DELETE(request,ctx)
+    expect(response.status).toBe(200)
+    expect((await response.json()).promotedOrUnlinked).toBe(1)
+    const remaining=await notes.list()
+    expect(remaining.find(row=>row.entityId===parent.entityId)).toBeUndefined()
+    expect(remaining.find(row=>row.entityId===child.entityId)?.entity.parentId).toBeNull()
+    expect(remaining.find(row=>row.entityId===grand.entityId)?.entity.parentId).toBe(child.entity.id)
   })
 
   it('versions private world covers and enforces workspace update permissions', async () => {
