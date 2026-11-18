@@ -486,7 +486,10 @@ async function run() {
     const response = await fetch(BASE + '/api/workspaces', {
       method: 'POST', headers: mapHeaders, body: JSON.stringify({ name }),
     })
-    assert(response.status === 201, 'Advanced acceptance workspace creation failed: ' + await response.text())
+    if (response.status !== 201) {
+      throw new Error('Advanced acceptance workspace creation failed HTTP ' +
+        response.status + ': ' + await response.text())
+    }
     return (await response.json()).workspace.id
   }
   const sourceWorld = await makeWorld('CI Advanced Source')
