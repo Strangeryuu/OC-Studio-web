@@ -47,7 +47,7 @@ export function parsePortableBackup(raw:unknown):PortableBackup|null{
         if(!obj(item)||!validVersion(item.version)||!['create','update','restore','delete'].includes(String(item.action))||
           !obj(item.content)||!readEntityDocument(item.content)||
           (item.createdAt!==undefined&&(typeof item.createdAt!=='string'||
-            !/^\\d{4}-\\d{2}-\\d{2}T/.test(item.createdAt)||
+            !/^\d{4}-\d{2}-\d{2}T/.test(item.createdAt)||
             Number.isNaN(Date.parse(item.createdAt)))))return null
         history.push({version:item.version,action:item.action as PortableEntity['history'][number]['action'],
           summary:typeof item.summary==='string'?item.summary:null,
