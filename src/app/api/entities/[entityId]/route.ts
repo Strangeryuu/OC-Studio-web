@@ -12,6 +12,7 @@ import { cloudMapAllowed } from '@/lib/cloud/map-fields'
 import { cloudNovelAllowed } from '@/lib/cloud/novel-fields'
 import { NOVEL_CATEGORY } from '@/lib/entry-kinds'
 import { MAP_CATEGORY } from '@/lib/entry-kinds'
+import { parseOriginalId } from '@/lib/cloud/original-ids'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -22,12 +23,13 @@ export async function GET(_req: Request, context: Context) {
   const access = await entityAccess(entityId, 'entity:read')
   if (access.status !== 200) return NextResponse.json({ error: access.status === 401 ? 'UNAUTHORIZED' : 'NOT_FOUND' }, { status: access.status })
   const result = await pool.query(
-    `SELECT id,workspace_id,kind,title,content,version,updated_at
+    `SELECT id,local_id,workspace_id,kind,title,content,version,updated_at
        FROM entities WHERE id=$1 AND workspace_id=$2 AND deleted_at IS NULL`,
     [entityId, access.workspaceId],
   )
   if (!result.rows[0]) return NextResponse.json({ error: 'NOT_FOUND' }, { status: 404 })
-  return NextResponse.json({ entity: result.rows[0] })
+  return NextResponse.json({ entity: { ...result.rows[0],
+    local_id: parseOriginalId(String(result.rows[0].local_id)) } })
 }
 
 export async function PATCH(request: Request, context: Context) {

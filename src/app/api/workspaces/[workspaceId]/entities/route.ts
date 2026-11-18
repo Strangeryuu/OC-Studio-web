@@ -22,11 +22,12 @@ export async function GET(_request: Request, context: { params: Promise<{ worksp
     return NextResponse.json({ error: 'NOT_FOUND' }, { status: 404 })
   }
   const result = await pool.query(
-    `SELECT id,kind,title,version,updated_at FROM entities
+    `SELECT id,local_id,kind,title,version,updated_at FROM entities
       WHERE workspace_id=$1 AND deleted_at IS NULL
       ORDER BY updated_at DESC LIMIT 200`, [workspaceId],
   )
-  return NextResponse.json({ entities: result.rows })
+  return NextResponse.json({ entities: result.rows.map(row => ({ ...row,
+    local_id: parseOriginalId(String(row.local_id)) })) })
 }
 
 export async function POST(request: Request, context: { params: Promise<{ workspaceId: string }> }) {
