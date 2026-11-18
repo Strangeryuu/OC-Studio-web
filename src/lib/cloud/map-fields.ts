@@ -2,6 +2,7 @@ import type { PoolClient } from 'pg'
 import { MAP_CATEGORY } from '@/lib/entry-kinds'
 import { cloudMediaUrlId } from '@/lib/cloud/character-media'
 import { minPoints, type AnnotationKind } from '@/features/map/annotations'
+import { normalizeRelationColor } from '@/lib/relation-colors'
 import type { MapAnchor } from '@/features/map/types'
 
 /** Validate map data before it enters a versioned cloud entity. */
@@ -18,13 +19,18 @@ function validAnnotations(raw: string): boolean {
   let parsed: unknown
   try { parsed = JSON.parse(raw) } catch { return false }
   if (!Array.isArray(parsed) || parsed.length > 400) return false
+  const ids = new Set<string>()
   return parsed.every(item => {
     if (!item || typeof item !== 'object' || Array.isArray(item)) return false
     const entry = item as Record<string, unknown>
     const kind: AnnotationKind | null = entry.kind === 'border' || entry.kind === 'road' ? entry.kind : null
-    return kind !== null && typeof entry.id === 'string' && entry.id.length > 0 && entry.id.length < 100 &&
-      Array.isArray(entry.points) && entry.points.length >= minPoints(kind) && entry.points.length <= 1000 &&
-      entry.points.every(point => normalizeMapAnchor(point) !== null)
+    if (kind === null || typeof entry.id !== 'string' || entry.id.trim().length === 0 ||
+      entry.id.length >= 100 || ids.has(entry.id)) return false
+    ids.add(entry.id)
+    if (entry.color != null && normalizeRelationColor(entry.color) !== entry.color) return false
+    if (entry.fill != null && (kind !== 'border' || normalizeRelationColor(entry.fill) !== entry.fill)) return false
+    return Array.isArray(entry.points) && entry.points.length >= minPoints(kind) &&
+      entry.points.length <= 1000 && entry.points.every(point => normalizeMapAnchor(point) !== null)
   })
 }
 

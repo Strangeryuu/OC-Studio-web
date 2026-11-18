@@ -35,5 +35,18 @@ describe('cloud maps: persisted data boundary', () => {
     expect(validMapFields('worldEntry', { category: '地图', mapAnnotations: JSON.stringify(border) })).toBe(true)
     expect(validMapFields('worldEntry', { category: '地图', mapAnnotations: JSON.stringify([{...border[0], points: border[0].points.slice(0,2)}]) })).toBe(false)
     expect(validMapFields('worldEntry', { category: '地图', mapAnnotations: '{' })).toBe(false)
+    expect(validMapFields('worldEntry', {
+      category: '地图', mapAnnotations: JSON.stringify([{ ...border[0], color: '赤陶', fill: '苔绿' }]),
+    })).toBe(true)
+    expect(validMapFields('worldEntry', {
+      category: '地图', mapAnnotations: JSON.stringify([{ ...border[0], color: 'untrusted-css' }]),
+    })).toBe(false)
+    expect(validMapFields('worldEntry', {
+      category: '地图', mapAnnotations: JSON.stringify([border[0], border[0]]),
+    })).toBe(false)
+    expect(validMapFields('worldEntry', {
+      category: '地图', mapAnnotations: JSON.stringify([{ ...border[0], kind: 'road', fill: '苔绿' }]),
+    })).toBe(false)
+
   })
 })
