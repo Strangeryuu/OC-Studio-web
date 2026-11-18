@@ -22,6 +22,7 @@ import { NodeTypeIcon, NODE_TYPE_LABELS } from './node-type-icon'
 interface RelationTopBarProps {
   /** 全部节点（不是过滤后的）：定位要能找见被筛掉的那一类 */
   nodes: GraphNode[]
+  worldLabel?: string
   edgeCount: number
   /** 正在看某节点的关系时给它名字，这朵条就变成面包屑 */
   focusLabel: string | null
@@ -61,7 +62,7 @@ function NodeThumb({ type, src }: { type: RelationNodeType; src: string }) {
   )
 }
 
-export function RelationTopBar({ nodes, edgeCount, focusLabel, onExitFocus, onLocate }: RelationTopBarProps) {
+export function RelationTopBar({ nodes, worldLabel = NODE_TYPE_LABELS.world, edgeCount, focusLabel, onExitFocus, onLocate }: RelationTopBarProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
@@ -222,7 +223,7 @@ export function RelationTopBar({ nodes, edgeCount, focusLabel, onExitFocus, onLo
                   {item.subtitle ? (
                     <span className="shrink-0 text-micro text-ink-faint">{item.subtitle}</span>
                   ) : null}
-                  <span className="sr-only">{NODE_TYPE_LABELS[item.type]}</span>
+                  <span className="sr-only">{item.type === 'world' ? worldLabel : NODE_TYPE_LABELS[item.type]}</span>
                 </button>
               ))}
             </div>

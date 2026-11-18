@@ -1,11 +1,11 @@
-import type { Country } from '@/types'
+import type { Country, GraphPosition } from '@/types'
 import type { CountryFormData } from '@/features/countries/types'
 import { buildDefaultCountry } from '@/features/countries/services'
 import { newCountryData } from '@/lib/entity-defaults'
 import { OriginalEntityCloudAdapter, type Fetcher, type OriginalSnapshot, type RecordValue } from './original-entities'
 
 export type OriginalCountrySnapshot = OriginalSnapshot<Country>
-export type OriginalCountryPatch = Partial<Pick<CountryFormData, 'name' | 'description' | 'custom' | 'document' | 'flagUrl' | 'headerUrl' | 'gallery'>>
+export type OriginalCountryPatch = Partial<Pick<CountryFormData, 'name' | 'description' | 'custom' | 'document' | 'flagUrl' | 'headerUrl' | 'gallery'>> & { graphPosition?: GraphPosition }
 
 function readCountry(id: number, data: RecordValue, title: unknown): Country {
   const defaults = buildDefaultCountry(newCountryData(), { createdAt: 0, updatedAt: 0, _lastModified: 0 })

@@ -1,4 +1,4 @@
-import type { WorldEntry } from '@/types'
+import type { WorldEntry, GraphPosition } from '@/types'
 import type { WorldFormData } from '@/features/world/types'
 import { buildDefaultEntry } from '@/features/world/services'
 import { newWorldEntryData } from '@/lib/entity-defaults'
@@ -7,7 +7,7 @@ import { OriginalEntityCloudAdapter, type Fetcher, type OriginalSnapshot, type R
 export type OriginalNoteSnapshot = OriginalSnapshot<WorldEntry>
 export type OriginalNotePatch = Partial<Pick<WorldFormData,
   'title' | 'summary' | 'cover' | 'gallery' | 'relations' | 'parentId' | 'document' | 'content'
->>
+>> & { graphPosition?: GraphPosition }
 
 function readNote(id: number, data: RecordValue, title: unknown): WorldEntry {
   const defaults = buildDefaultEntry(newWorldEntryData(), { createdAt: 0, updatedAt: 0, _lastModified: 0 })

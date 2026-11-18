@@ -12,7 +12,7 @@ export interface RefreshOptions {
   silent?: boolean
 }
 
-export function useGraphData() {
+export function useGraphData(enabled = true) {
   const [nodes, setNodes] = useState<GraphNode[]>([])
   const [edges, setEdges] = useState<GraphEdge[]>([])
   const [loading, setLoading] = useState(true)
@@ -25,7 +25,7 @@ export function useGraphData() {
   }, [])
 
   const refresh = useCallback(async (options?: RefreshOptions) => {
-    if (!aliveRef.current) return
+    if (!enabled || !aliveRef.current) return
     if (!options?.silent) setLoading(true)
     setError(null)
     try {
@@ -39,10 +39,11 @@ export function useGraphData() {
     } finally {
       if (aliveRef.current && !options?.silent) setLoading(false)
     }
-  }, [])
+  }, [enabled])
 
   // 首屏：`loading` 初值就是 true，这里只取数据 —— 所有 setState 都在 await 之后
   useEffect(() => {
+    if (!enabled) return
     let cancelled = false
     void (async () => {
       try {
@@ -58,7 +59,7 @@ export function useGraphData() {
       }
     })()
     return () => { cancelled = true }
-  }, [])
+  }, [enabled])
 
   return { nodes, edges, loading, error, refresh }
 }

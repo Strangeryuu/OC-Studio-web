@@ -1,8 +1,11 @@
 import { db } from '@/lib/db'
 import { logOperation, pendingStamp } from '@/lib/sync'
 import { isCodexEntry } from '@/lib/entry-kinds'
-import type { Character } from '@/types'
-import type { GraphEdgeKind, GraphNode, GraphEdge, RelationEndpoint, RelationNodeType } from './types'
+import { collectRefs, type DocNode } from '@/lib/reference-labels'
+import { worldBodyOf } from '@/lib/world-body'
+import { parseOriginalId } from '@/lib/cloud/original-ids'
+import type { Character, Country, Event, WorldEntry } from '@/types'
+import type { GraphEdgeKind, GraphNode, GraphNodeData, GraphEdge, RelationEndpoint, RelationNodeType } from './types'
 import {
   patchCharacterEdge,
   patchCharacterNoteEdge,
@@ -27,16 +30,28 @@ export async function buildGraphData(): Promise<{ nodes: GraphNode[]; edges: Gra
     db.worldEntries.toArray(),
   ])
 
-  const characters = charactersRaw.filter((c) => !c.deleted)
-  const events = eventsRaw.filter((e) => !e.deleted)
-  const countries = countriesRaw.filter((c) => !c.deleted)
+  return projectGraphData({ characters: charactersRaw, events: eventsRaw, countries: countriesRaw, notes: worldsRaw })
+}
+
+export interface GraphEntities {
+  characters: Character[]
+  events: Event[]
+  countries: Country[]
+  notes: WorldEntry[]
+}
+
+/** Project a library's entities without reading its storage. */
+export function projectGraphData(source: GraphEntities, includeNotes = false) {
+  const characters = source.characters.filter((c) => !c.deleted)
+  const events = source.events.filter((e) => !e.deleted)
+  const countries = source.countries.filter((c) => !c.deleted)
   // 分类条目（宠物 / 武器 / 自定义分类）**全部进图**，不管有没有连线：
   // 「图里看得见分类」是这里的唯一口径 —— 以前只收「有边 / 有引用」的，新建的条目
   // 一个都进不来，用户看到的就是「关系图里没有自定义分类」。
   // 没有连线的那些是孤岛，由画布的「孤立节点」开关（默认开）决定显不显示，
   // 那本来就是那个开关的活。小说 / 地图笔记不算分类条目（`isCodexEntry`）。
-  const categoryEntries = worldsRaw.filter(
-    (entry) => !entry.deleted && (entry.category ?? '').trim() !== '' && isCodexEntry(entry),
+  const notes = source.notes.filter(
+    (entry) => !entry.deleted && isCodexEntry(entry) && (includeNotes || (entry.category ?? '').trim() !== ''),
   )
 
   const nodes: GraphNode[] = []
@@ -51,17 +66,19 @@ export async function buildGraphData(): Promise<{ nodes: GraphNode[]; edges: Gra
     entityId: number,
     subtitle?: string,
     position?: { x: number; y: number },
+    image?: Pick<GraphNodeData, 'avatarUrl' | 'flagUrl' | 'imageUrl'>,
   ) {
     if (nodeIds.has(id)) return
     nodeIds.add(id)
+    const positioned = position != null && Number.isFinite(position.x) && Number.isFinite(position.y)
     nodes.push({
       id,
       type: `${type}Node`,
       // 实体里存过坐标就用它；没有就交给力导向布局（见 layout.ts）
-      position: position ?? { x: 0, y: 0 },
+      position: positioned ? position : { x: 0, y: 0 },
       // `group`：连线手柄靠它做「悬停节点才显形」（见 NODE_HANDLE）
       className: 'group',
-      data: { id, label, entityType: type, entityId, subtitle },
+      data: { id, label, entityType: type, entityId, subtitle, positioned, ...image },
     })
   }
 
@@ -107,38 +124,17 @@ export async function buildGraphData(): Promise<{ nodes: GraphNode[]; edges: Gra
   // 成员关系只有一份（阶段二·一）：边永远完整，没有「只写了一半」的状态要对齐。
 
   for (const c of characters) {
-    const id = `character-${c.id}`
     const subtitle = c.aliases?.length > 0 ? c.aliases.join('、') : undefined
-    addNode(id, c.name, 'character', c.id, subtitle, c.graphPosition)
-    const node = nodes.find((n) => n.id === id)
-    if (node) {
-      const data = node.data as Record<string, unknown>
-      data.avatarUrl = c.avatarUrl
-    }
+    addNode(`character-${c.id}`, c.name, 'character', c.id, subtitle, c.graphPosition, { avatarUrl: c.avatarUrl })
   }
-
   for (const e of events) {
-    addNode(`event-${e.id}`, e.title, 'event', e.id, e.time, e.graphPosition)
-    const node = nodes.find((n) => n.id === `event-${e.id}`)
-    if (node) {
-      ;(node.data as Record<string, unknown>).imageUrl = e.headerUrl ?? ''
-    }
+    addNode(`event-${e.id}`, e.title, 'event', e.id, e.time, e.graphPosition, { imageUrl: e.headerUrl ?? '' })
   }
-
   for (const c of countries) {
-    addNode(`country-${c.id}`, c.name, 'country', c.id, undefined, c.graphPosition)
-    const node = nodes.find((n) => n.id === `country-${c.id}`)
-    if (node) {
-      ;(node.data as Record<string, unknown>).flagUrl = c.flagUrl ?? ''
-    }
+    addNode(`country-${c.id}`, c.name, 'country', c.id, undefined, c.graphPosition, { flagUrl: c.flagUrl ?? '' })
   }
-
-  for (const entry of categoryEntries) {
-    addNode(`world-${entry.id}`, entry.title, 'world', entry.id, entry.category, entry.graphPosition)
-    const node = nodes.find((n) => n.id === `world-${entry.id}`)
-    if (node) {
-      ;(node.data as Record<string, unknown>).flagUrl = entry.cover ?? ''
-    }
+  for (const note of notes) {
+    addNode(`world-${note.id}`, note.title, 'world', note.id, note.category, note.graphPosition, { flagUrl: note.cover ?? '' })
   }
 
   for (const c of characters) {
@@ -184,7 +180,7 @@ export async function buildGraphData(): Promise<{ nodes: GraphNode[]; edges: Gra
   }
 
   // 分类条目之间的命名关系（关系块「添加」写的就是这个字段）
-  for (const entry of categoryEntries) {
+  for (const entry of notes) {
     const sourceId = `world-${entry.id}`
     for (const relation of entry.relations ?? []) {
       if (relation.targetId === undefined) continue
@@ -198,10 +194,20 @@ export async function buildGraphData(): Promise<{ nodes: GraphNode[]; edges: Gra
   }
 
   // 分类条目 → 被引用实体（@ 引用 / [[内链]] 落在 references 上）
-  for (const entry of categoryEntries) {
+  for (const entry of notes) {
     const sourceId = `world-${entry.id}`
-    for (const reference of entry.references ?? []) {
+    const doc = includeNotes ? worldBodyOf(entry) : null
+    const references = doc && typeof doc === 'object'
+      ? collectRefs(doc as DocNode).flatMap(ref => {
+        const targetId = parseOriginalId(ref.id)
+        return targetId === null ? [] : [{ targetType: ref.entityType, targetId }]
+      })
+      : entry.references ?? []
+    const named = new Set((entry.relations ?? []).map(relation => relation.targetId))
+    for (const reference of references) {
+      if (includeNotes && reference.targetType === 'world' && named.has(reference.targetId)) continue
       const targetId = `${reference.targetType}-${reference.targetId}`
+      if (includeNotes && targetId === sourceId) continue
       if (reference.targetType !== 'world' && reference.targetType !== 'character' && reference.targetType !== 'event' && reference.targetType !== 'country') continue
       if (nodeIds.has(targetId)) {
         addEdge(sourceId, targetId, '引用', {

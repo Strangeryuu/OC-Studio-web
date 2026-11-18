@@ -1,4 +1,4 @@
-import type { Event } from '@/types'
+import type { Event, GraphPosition } from '@/types'
 import type { EventFormData } from '@/features/events/types'
 import { buildDefaultEvent } from '@/features/events/services'
 import { newEventData } from '@/lib/entity-defaults'
@@ -8,7 +8,7 @@ export type OriginalEventSnapshot = OriginalSnapshot<Event>
 export type OriginalEventPatch = Partial<Pick<EventFormData,
   'title' | 'time' | 'endTime' | 'location' | 'summary' | 'isMajor' | 'headerUrl' |
   'images' | 'characters' | 'countries' | 'relations' | 'document'
->>
+>> & { graphPosition?: GraphPosition }
 
 function readEvent(id: number, data: RecordValue, title: unknown): Event {
   const defaults = buildDefaultEvent(newEventData(), { createdAt: 0, updatedAt: 0, _lastModified: 0 })

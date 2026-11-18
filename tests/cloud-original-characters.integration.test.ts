@@ -15,6 +15,9 @@ import { buildDefaultEntry } from '@/features/world/services'
 import { buildDefaultEvent } from '@/features/events/services'
 import { buildDefaultCountry } from '@/features/countries/services'
 
+import { resolveGraphPositions } from '@/features/relations/layout'
+import { projectGraphData } from '@/features/relations/services'
+
 const state = vi.hoisted(() => ({ db: null as PGlite | null, userId: 'owner' as string | null }))
 vi.mock('server-only', () => ({}))
 vi.mock('next/headers', () => ({ headers: async () => new Headers() }))
@@ -294,6 +297,50 @@ describe('original entity adapters against PostgreSQL', () => {
     await expect(notes.save(saved, { title: '访客编辑' })).rejects.toMatchObject({ status: 404 })
     const history = await revisionRoute.GET(new Request('http://localhost:3000'), ctxEntity(child.entityId))
     expect((await history.json()).revisions.map((row: { version: number }) => row.version)).toEqual([2, 1])
+  })
+
+  it('projects cloud notes and relations and saves graph positions with version checks', async () => {
+    state.userId = 'owner'
+    const notes = new OriginalNotesCloudAdapter(workspaceA, apiFetch)
+    const characters = new OriginalCharactersCloudAdapter(workspaceA, apiFetch)
+    const country = await new OriginalCountriesCloudAdapter(workspaceA, apiFetch)
+      .create(buildDefaultCountry(newCountryData()))
+    const character = await characters.create(buildDefaultCharacter({
+      ...newCharacterData(), name: '记录者', countryId: country.entity.id,
+    }))
+    const target = await notes.create(buildDefaultEntry({ ...newWorldEntryData(), title: '年鉴' }))
+    const note = await notes.create({
+      ...buildDefaultEntry({ ...newWorldEntryData(), title: '普通笔记' }),
+      relations: [{ targetId: target.entity.id, name: '年鉴', relation: '沿袭', arrow: 'forward' }],
+      document: {
+        type: 'doc', content: [{ type: 'paragraph', content: [
+          { type: 'wikiLink', attrs: { id: String(target.entity.id), label: '年鉴' } },
+          { type: 'mention', attrs: { id: String(character.character.id), label: '记录者', entityType: 'character' } },
+        ] }],
+      },
+    })
+    state.userId = 'editor'
+    const moved = await notes.save(note, { graphPosition: { x: 0, y: 0 } })
+    expect(moved.version).toBe(2)
+    await expect(notes.save(note, { graphPosition: { x: 80, y: 104 } })).rejects.toMatchObject({ status: 409 })
+    const invalid = await apiFetch(`/api/entities/${note.entityId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: note.entity.title, expectedVersion: 2, data: { graphPosition: { x: '80', y: 104 } } }),
+    })
+    expect(invalid.status).toBe(400)
+
+    state.userId = 'viewer'
+    const reopened = (await notes.list()).find(row => row.entityId === note.entityId)!
+    const graph = projectGraphData({
+      characters: [character.character], notes: [reopened.entity, target.entity], countries: [country.entity], events: [],
+    }, true)
+    const positioned = resolveGraphPositions(graph.nodes, graph.edges)
+    expect(positioned.find(node => node.id === `world-${note.entity.id}`)?.position).toEqual({ x: 0, y: 0 })
+    expect(graph.edges.map(edge => [edge.data?.kind, edge.data?.relation])).toEqual([
+      ['relation', '沿袭'], ['reference', '引用'], ['member', '属于'],
+    ])
+    await expect(notes.save(reopened, { graphPosition: { x: 120, y: 160 } })).rejects.toMatchObject({ status: 404 })
+    state.userId = 'owner'
   })
 
   it('accepts body images only from the character workspace', async () => {

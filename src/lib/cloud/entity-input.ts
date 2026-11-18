@@ -18,6 +18,12 @@ export function readEntityDocument(value: unknown): EntityDocument | null {
   if (obj.data === undefined || obj.data === null || typeof obj.data !== 'object' || Array.isArray(obj.data)) {
     return null
   }
+  const position = (obj.data as Record<string, unknown>).graphPosition
+  if (position != null) {
+    if (typeof position !== 'object' || Array.isArray(position)) return null
+    const { x, y } = position as Record<string, unknown>
+    if (typeof x !== 'number' || typeof y !== 'number' || !Number.isFinite(x) || !Number.isFinite(y)) return null
+  }
   try {
     const text = JSON.stringify(obj.data)
     if (text.length > 1_000_000) return null

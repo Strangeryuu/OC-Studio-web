@@ -20,6 +20,7 @@ import type { RelationNodeType } from '../types'
 import { NodeTypeIcon, NODE_TYPE_LABELS, NODE_TYPE_ORDER } from './node-type-icon'
 
 interface RelationControlBarProps {
+  worldLabel?: string
   counts: Record<RelationNodeType, number>
   visible: Record<RelationNodeType, boolean>
   onToggleType: (type: RelationNodeType) => void
@@ -63,6 +64,7 @@ function ToggleRow({
 
 export function RelationControlBar({
   counts,
+  worldLabel = NODE_TYPE_LABELS.world,
   visible,
   onToggleType,
   showIsolated,
@@ -99,7 +101,7 @@ export function RelationControlBar({
                 <span className="shrink-0 text-ink-faint" aria-hidden>
                   <NodeTypeIcon type={type} size={12} />
                 </span>
-                <span className="min-w-0 flex-1 truncate">{NODE_TYPE_LABELS[type]}</span>
+                <span className="min-w-0 flex-1 truncate">{type === 'world' ? worldLabel : NODE_TYPE_LABELS[type]}</span>
               </ToggleRow>
             ))}
             <ToggleRow checked={showIsolated} onToggle={onToggleIsolated}>
@@ -175,7 +177,7 @@ export function RelationControlBar({
               }`}
             >
               <NodeTypeIcon type={type} size={12} />
-              {NODE_TYPE_LABELS[type]}
+              {type === 'world' ? worldLabel : NODE_TYPE_LABELS[type]}
             </button>
           ))}
         </div>

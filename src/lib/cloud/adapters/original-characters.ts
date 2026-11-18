@@ -1,10 +1,10 @@
-import type { Character } from '@/types'
+import type { Character, GraphPosition } from '@/types'
 import type { CharacterFormData } from '@/features/characters/types'
 import { CloudEntityError, OriginalEntityCloudAdapter, type Fetcher, type OriginalSnapshot, type RecordValue } from './original-entities'
 
 export { CloudEntityError as CloudCharacterError }
 
-export type OriginalCharacterPatch = Omit<Partial<CharacterFormData>, 'countryId'> & { countryId?: number | null }
+export type OriginalCharacterPatch = Omit<Partial<CharacterFormData>, 'countryId'> & { countryId?: number | null; graphPosition?: GraphPosition }
 export interface OriginalCharacterSnapshot extends Omit<OriginalSnapshot<Character>, 'entity'> {
   readonly character: Character
 }

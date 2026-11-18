@@ -100,6 +100,29 @@ afterEach(async () => {
 })
 
 describe('original character information in cloud workspace', () => {
+  it('opens the cloud relation graph and finds a normal note in the original search', async () => {
+    fake.list.mockResolvedValue([fixture(1, '角色图节点')])
+    fake.notes.mockResolvedValue([{
+      workspaceId, entityId: '00000000-0000-4000-8000-000000000006', version: 1,
+      entity: { ...world.buildDefaultEntry({ ...newWorldEntryData(), title: '普通笔记节点' }), id: 6 },
+    } satisfies OriginalNoteSnapshot])
+    const database = await import('@/lib/db')
+    const localReads = vi.spyOn(database.db.characters, 'toArray')
+    await act(async () => {
+      root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'viewer' }))
+    })
+    await click(sectionButton('关系图'))
+    await act(async () => { await import('@/features/relations/components/RelationGraph') })
+    await vi.waitFor(() => expect(container.querySelector('button[aria-label="定位条目"]')).toBeTruthy())
+    await click(container.querySelector<HTMLButtonElement>('button[aria-label="定位条目"]')!)
+    await inputText(container.querySelector<HTMLInputElement>('input[aria-label="定位条目"]')!, '普通笔记')
+    const found = container.querySelector<HTMLButtonElement>('[role="option"]')!
+    expect(found.textContent).toContain('普通笔记节点')
+    expect(found.textContent).toContain('笔记')
+    expect(sectionButton('关系图').getAttribute('aria-current')).toBe('page')
+    expect(localReads).not.toHaveBeenCalled()
+  })
+
   it('keeps a failed draft in its section and opens member tools after a successful retry', async () => {
     fake.list.mockResolvedValue([fixture(1, '初始角色')])
     fake.save.mockRejectedValue(new Error('版本冲突'))

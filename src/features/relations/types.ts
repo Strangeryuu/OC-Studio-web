@@ -7,6 +7,8 @@ export interface GraphNodeData extends Record<string, unknown> {
   entityType: 'character' | 'event' | 'country' | 'world'
   entityId: number
   subtitle?: string
+  /** Distinguish a stored origin from an unplaced node. */
+  positioned?: boolean
   avatarUrl?: string
   /** 国家旗帜（服务端筛出来的 `country.flagUrl`，导出与画布共用） */
   flagUrl?: string

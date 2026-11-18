@@ -120,7 +120,7 @@ export interface ForceLayoutOptions {
 export function resolveGraphPositions<T extends Node>(nodes: T[], edges: Edge[]): T[] {
   const pinned = new Map<string, { x: number; y: number }>()
   for (const node of nodes) {
-    if (node.position.x !== 0 || node.position.y !== 0) pinned.set(node.id, node.position)
+    if (node.data?.positioned === true || node.position.x !== 0 || node.position.y !== 0) pinned.set(node.id, node.position)
   }
   // 全都有坐标（用户摆过 / 整理过）：原样返回，不要再跑一遍布局把构图挪走
   if (pinned.size === nodes.length) return nodes

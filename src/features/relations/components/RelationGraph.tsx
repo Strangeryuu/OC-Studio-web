@@ -42,7 +42,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { MediaContextMenu, type MediaMenuItem } from '@/components/shared/MediaContextMenu'
 import { CENTER_STATE } from '@/lib/ui-tokens'
-import { useGraphData } from '../hooks/useGraphData'
+import { useGraphData, type RefreshOptions } from '../hooks/useGraphData'
 import {
   deleteGraphNode,
   deleteRelationBetween,
@@ -52,7 +52,7 @@ import {
   updateEdgeStyle,
 } from '../services'
 import { EdgeStylePanel, type EdgeStylePatchInput, type EdgeStyleSelection } from './EdgeStylePanel'
-import { useExportCenter } from '@/components/shared/export/ExportCenterHost'
+import { useOptionalExportCenter } from '@/components/shared/export/ExportCenterHost'
 import { computeForceLayout, NODE_SIZE, resolveGraphPositions } from '../layout'
 import { nodeRect } from './floating-edge'
 import { FitViewOnLoad, ZoomReader } from './RelationGraphHelpers'
@@ -71,7 +71,16 @@ import {
   routeEdges,
   type RelationDraft,
 } from './relation-graph-utils'
-import type { GraphEdgeData, GraphNode, GraphNodeData, RelationEdgeType, RelationNodeType } from '../types'
+import type { GraphEdge, GraphEdgeData, GraphNode, GraphNodeData, RelationEdgeType, RelationNodeType } from '../types'
+
+interface WorkspaceGraphSource {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+  loading: boolean
+  error: string | null
+  refresh: (options?: RefreshOptions) => Promise<void>
+  savePosition?: (type: RelationNodeType, id: number, x: number, y: number) => Promise<void>
+}
 
 interface RelationGraphProps {
   onNavigateToCharacter?: (id: number) => void
@@ -79,6 +88,7 @@ interface RelationGraphProps {
   onNavigateToCountry?: (id: number) => void
   onNavigateToWorld?: (id: number) => void
   visible?: boolean
+  workspace?: WorkspaceGraphSource
 }
 
 /** 无序节点对：同一对节点在图里只有一条边（与 services.buildGraphData 的去重口径一致） */
@@ -111,12 +121,18 @@ export function RelationGraph({
   onNavigateToCountry,
   onNavigateToWorld,
   visible,
+  workspace,
 }: RelationGraphProps) {
-  const { nodes: rawNodes, edges: rawEdges, loading, error, refresh } = useGraphData()
+  const local = useGraphData(!workspace)
+  const { nodes: rawNodes, edges: rawEdges, loading, error, refresh } = workspace ?? local
+  const canMutateGraph = workspace === undefined
   const { settings, updateSetting } = useSettings()
   const { isMobile } = useDevice()
   const mouseMode = settings.mouseMode
-  const edgeStyle = settings.edgeStyle
+  const [workspaceEdgeStyle, setWorkspaceEdgeStyle] = useState(settings.edgeStyle)
+  const edgeStyle = workspace ? workspaceEdgeStyle : settings.edgeStyle
+  const persistPosition = workspace ? workspace.savePosition : saveNodePosition
+  const canDrag = Boolean(persistPosition) && !isMobile
   const prevVisible = useRef(false)
 
   /* ── 显示开关（不落盘：与地图的图层开关同一口径，重开回到默认） ── */
@@ -138,7 +154,7 @@ export function RelationGraph({
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null)
   const [draft, setDraft] = useState<RelationDraft | null>(null)
   const [savingRelation, setSavingRelation] = useState(false)
-  const openExportCenter = useExportCenter()
+  const openExportCenter = useOptionalExportCenter()
   const [edgePanel, setEdgePanel] = useState<{
     selection: EdgeStyleSelection
     anchor: { x: number; y: number }
@@ -183,8 +199,8 @@ export function RelationGraph({
   }, [])
 
   useEffect(() => {
-    const isVisible = visible ?? false
-    if (isVisible && !prevVisible.current) {
+    const isVisible = visible ?? !canMutateGraph
+    if (canMutateGraph && isVisible && !prevVisible.current) {
       void refresh()
     }
     // 离开关系图时把浮层收掉：面板 Portal 在 #overlay-root，不随画布卸载，
@@ -197,7 +213,7 @@ export function RelationGraph({
       setCreateOpen(false)
     }
     prevVisible.current = isVisible
-  }, [visible, refresh])
+  }, [visible, refresh, canMutateGraph])
 
   /* ── 派生：计数 / 邻接 / 过滤 ─────────────────────────────── */
 
@@ -320,6 +336,7 @@ export function RelationGraph({
    * 所以两者打开的永远是同一个面板、同一套数据。
    */
   const openEdgePanel = useCallback((edge: Edge, point: { x: number; y: number }) => {
+    if (!canMutateGraph) return
     const [sourceType, sourceIdRaw] = edge.source.split('-')
     const [targetType, targetIdRaw] = edge.target.split('-')
     if (!isEdgeNodeType(sourceType) || !isEdgeNodeType(targetType)) return
@@ -342,7 +359,7 @@ export function RelationGraph({
       },
       anchor: point,
     })
-  }, [])
+  }, [canMutateGraph])
 
   /* ── 导航 / 节点动作 ─────────────────────────────────────── */
 
@@ -437,16 +454,20 @@ export function RelationGraph({
     setDragGhost(null)
     const entityType = node.data?.entityType as RelationNodeType | undefined
     const entityId = node.data?.entityId as number | undefined
-    if (!entityType || entityId === undefined) return
-    // 写失败要说出来：否则「摆好了、重开又跳回原位」，用户只会以为布局不保存
-    void saveNodePosition(entityType, entityId, node.position.x, node.position.y).catch(
+    if (!entityType || entityId === undefined || !persistPosition) return
+    void persistPosition(entityType, entityId, node.position.x, node.position.y).catch(
       (error: unknown) => {
+        if (workspace) {
+          const previous = layoutedNodes.find(item => item.id === node.id)
+          if (previous) setNodes(current => current.map(item =>
+            item.id === node.id ? { ...item, position: previous.position } : item))
+        }
         toast.error('保存节点位置失败', {
           description: error instanceof Error ? error.message : String(error),
         })
       },
     )
-  }, [])
+  }, [workspace, persistPosition, layoutedNodes, setNodes])
 
   /** 拖拽时跟着指针走的「名字浮尘」：缩得很小时节点名看不见，跟着手反而看得清 */
   const dragPoint = (event: ReactMouseEvent): { x: number; y: number } => ({
@@ -577,8 +598,11 @@ export function RelationGraph({
 
 
   const handleEdgeStyleChange = useCallback(
-    (value: EdgeStyle) => updateSetting('edgeStyle', value),
-    [updateSetting],
+    (value: EdgeStyle) => {
+      if (workspace) setWorkspaceEdgeStyle(value)
+      else updateSetting('edgeStyle', value)
+    },
+    [workspace, updateSetting],
   )
 
   /* ── 建关系（拖拽连线） ──────────────────────────────────── */
@@ -836,21 +860,21 @@ export function RelationGraph({
   /* ── 菜单 ─────────────────────────────────────────────── */
 
   const moreItems: MediaMenuItem[] = [
-    {
+    ...(canMutateGraph ? [{
       label: '重排全部',
       icon: <LayoutGrid size={13} strokeWidth={2} />,
       onSelect: handleRelayout,
-    },
+    }] : []),
     {
       label: '刷新',
       icon: <RefreshCw size={13} strokeWidth={2} />,
       onSelect: () => void refresh(),
     },
-    {
+    ...(canMutateGraph && openExportCenter ? [{
       label: '导出图片…',
       icon: <ImageDown size={13} strokeWidth={2} />,
       onSelect: () => openExportCenter({ tab: 'graph' }),
-    },
+    }] : []),
   ]
 
   const menuNode = nodeMenu ? rawNodes.find((node) => node.id === nodeMenu.nodeId) : undefined
@@ -866,7 +890,7 @@ export function RelationGraph({
           icon: <Focus size={13} strokeWidth={2} />,
           onSelect: () => setFocusNodeId(menuNode.id === focusNodeId ? null : menuNode.id),
         },
-        {
+        ...(canMutateGraph ? [{
           label: '更换图片',
           icon: <ImageIcon size={13} strokeWidth={2} />,
           onSelect: () => {
@@ -884,7 +908,7 @@ export function RelationGraph({
               nodeId: menuNode.id,
               label: String(menuNode.data.label ?? ''),
             }),
-        },
+        }] : []),
       ]
     : []
 
@@ -952,20 +976,20 @@ export function RelationGraph({
           event.preventDefault()
           setNodeMenu({ at: { x: event.clientX, y: event.clientY }, nodeId: node.id })
         }}
-        onNodeDragStart={(event, node) =>
+        onNodeDragStart={canDrag ? (event, node) =>
           setDragGhost({ label: String(node.data?.label ?? ''), ...dragPoint(event) })
-        }
-        onNodeDrag={!isMobile ? handleNodeDrag : undefined}
-        onNodeDragStop={handleNodeDragStop}
+        : undefined}
+        onNodeDrag={canDrag ? handleNodeDrag : undefined}
+        onNodeDragStop={canDrag ? handleNodeDragStop : undefined}
         onNodeMouseEnter={(_event, node) => setHoveredNodeId(node.id)}
         onNodeMouseLeave={() => setHoveredNodeId(null)}
         onEdgeMouseEnter={(_event, edge) => setHoveredEdgeId(edge.id)}
         onEdgeMouseLeave={() => setHoveredEdgeId(null)}
         onMove={handleMove}
-        onConnect={handleConnect}
+        onConnect={canMutateGraph ? handleConnect : undefined}
         // 移动端只读（docs/关系图.md）：禁拖、禁连、禁框选；点节点就是打开
-        nodesDraggable={!isMobile}
-        nodesConnectable={!isMobile}
+        nodesDraggable={canDrag}
+        nodesConnectable={canMutateGraph && !isMobile}
         // 双击是「打开条目」，不能再让画布顺手放大一次
         zoomOnDoubleClick={false}
         elementsSelectable={!isMobile}
@@ -975,7 +999,7 @@ export function RelationGraph({
         selectionMode={SelectionMode.Partial}
         selectionKeyCode={!isMobile && mouseMode === 'left-pan' ? 'Shift' : null}
         // 手摆精修：8px 网格吸附（docs/关系图.md §3）
-        snapToGrid={!isMobile}
+        snapToGrid={canDrag}
         snapGrid={SNAP_GRID}
         // 删除只能走 ⋯ / 右键菜单（软删除 + 二次确认），画布上的 Backspace 只删本地状态
         deleteKeyCode={null}
@@ -1076,17 +1100,19 @@ export function RelationGraph({
           <RelationTopBar
             nodes={rawNodes}
             edgeCount={rawEdges.length}
+            worldLabel={workspace ? '笔记' : undefined}
             focusLabel={focusLabel}
             onExitFocus={() => setFocusNodeId(null)}
             onLocate={handleLocate}
           />
         </div>
         <div className="absolute right-3 top-3">
-          <RelationToolsBar onCreate={() => setCreateOpen(true)} onMore={setMoreMenu} />
+          <RelationToolsBar onCreate={canMutateGraph ? () => setCreateOpen(true) : undefined} onMore={setMoreMenu} />
         </div>
         <div className="absolute bottom-3 left-3">
           <RelationControlBar
             counts={counts}
+            worldLabel={workspace ? '笔记' : undefined}
             visible={visibleTypes}
             onToggleType={(type) => setVisibleTypes((current) => ({ ...current, [type]: !current[type] }))}
             showIsolated={showIsolated}

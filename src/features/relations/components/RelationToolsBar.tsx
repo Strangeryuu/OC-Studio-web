@@ -15,15 +15,15 @@ export function RelationToolsBar({
   onCreate,
   onMore,
 }: {
-  onCreate: () => void
+  onCreate?: () => void
   onMore: (at: { x: number; y: number }) => void
 }) {
   return (
     <div className={`pointer-events-auto ${FLOAT_BAR}`}>
-      <button type="button" onClick={onCreate} className={FLOAT_BAR_TEXT}>
+      {onCreate && <button type="button" onClick={onCreate} className={FLOAT_BAR_TEXT}>
         <Plus size={13} strokeWidth={2} />
         新建
-      </button>
+      </button>}
       <Tip label="更多">
         <button
           type="button"

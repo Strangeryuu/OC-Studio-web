@@ -1,5 +1,7 @@
 'use client'
 
+import dynamic from 'next/dynamic'
+
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Providers } from '@/app/providers'
 import { SaveStatusProvider, useSaveStatus } from '@/components/layout/SaveStatusContext'
@@ -11,7 +13,7 @@ import { buildDefaultCharacter } from '@/features/characters/services'
 import type { CharacterFormData } from '@/features/characters/types'
 import { newCharacterData, newCountryData, newEventData, newWorldEntryData } from '@/lib/entity-defaults'
 import { BUILTIN_FIELDS } from '@/lib/fields'
-import { flushPendingSaves } from '@/lib/pending-saves'
+import { flushPendingSaves, registerPendingSave } from '@/lib/pending-saves'
 import { BTN_PRIMARY, BTN_QUIET, TITLE_INPUT } from '@/lib/ui-tokens'
 import { OriginalCharactersCloudAdapter, type OriginalCharacterSnapshot, type OriginalCharacterPatch } from '@/lib/cloud/adapters/original-characters'
 import type { WorkspaceRole } from '@/lib/cloud/permissions'
@@ -43,6 +45,15 @@ import { WorkspaceNoteTree } from '@/features/world/cloud/WorkspaceNoteTree'
 import { buildDefaultEntry } from '@/features/world/services'
 import { isCodexEntry } from '@/lib/entry-kinds'
 import type { ReferableEntity } from '@/lib/reference-registry'
+
+import { projectGraphData } from '@/features/relations/services'
+import type { RelationNodeType } from '@/features/relations/types'
+import { TooltipProvider } from '@/components/ui/tooltip'
+
+const RelationGraph = dynamic(
+  () => import('@/features/relations/components/RelationGraph').then(module => module.RelationGraph),
+  { ssr: false },
+)
 
 const CLOUD_FIELDS = BUILTIN_FIELDS.character
 const EDITABLE_KEYS = [
@@ -111,10 +122,10 @@ interface WorkspaceProps {
 }
 
 export function WorkspaceCharacters(props: WorkspaceProps) {
-  return <Providers><ActiveEditorProvider><SaveStatusProvider>
+  return <Providers><TooltipProvider><ActiveEditorProvider><SaveStatusProvider>
     <CharacterWorkspace key={props.workspaceId} {...props} />
     <Toaster />
-  </SaveStatusProvider></ActiveEditorProvider></Providers>
+  </SaveStatusProvider></ActiveEditorProvider></TooltipProvider></Providers>
 }
 
 function useWorkspaceRows<T extends { entityId: string }>(adapter: { list: () => Promise<T[]> }, label: string) {
@@ -136,7 +147,12 @@ function useWorkspaceRows<T extends { entityId: string }>(adapter: { list: () =>
   const replace = useCallback((row: T) => {
     setRows(current => current.map(item => item.entityId === row.entityId ? row : item))
   }, [])
-  return { rows, loading, error, append, replace }
+  const reset = useCallback((result: T[]) => {
+    setRows(result)
+    setError(null)
+    setLoading(false)
+  }, [])
+  return { rows, loading, error, append, replace, reset }
 }
 
 function WorkspaceEntryList<T extends { entityId: string }>({ label, rows, getLabel, selectedId, loading,
@@ -181,6 +197,9 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
   const [section, setSection] = useState<WorkspaceSection>('character')
   const [leaving, setLeaving] = useState(false)
   const transition = useRef(false)
+  const pendingGraphWrite = useRef<Promise<void> | null>(null)
+  const [graphError, setGraphError] = useState<string | null>(null)
+  useEffect(() => registerPendingSave(() => pendingGraphWrite.current ?? undefined), [])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -194,6 +213,10 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
 
   const notes = useMemo(() => noteList.rows.map(row => row.entity).filter(isCodexEntry), [noteList.rows])
   const note = noteList.rows.find(row => row.entityId === selectedId && isCodexEntry(row.entity))
+  const graph = useMemo(
+    () => section === 'relations' ? projectGraphData({ characters, countries, events, notes }, true) : null,
+    [section, characters, countries, events, notes],
+  )
   const references = useMemo<ReferableEntity[]>(() => {
     return [
       ...characters.map(row => ({ type: 'character', id: String(row.id), name: row.name, keywords: row.aliases, avatarUrl: row.avatarUrl })),
@@ -261,6 +284,58 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
     }
   }
 
+  async function refreshGraph() {
+    if (busy || transition.current || pendingGraphWrite.current) return
+    transition.current = true
+    setBusy(true)
+    try {
+      const [nextCharacters, nextCountries, nextEvents, nextNotes] = await Promise.all([
+        characterAdapter.list(), countryAdapter.list(), eventAdapter.list(), noteAdapter.list(),
+      ])
+      characterList.reset(nextCharacters)
+      countryList.reset(nextCountries)
+      eventList.reset(nextEvents)
+      noteList.reset(nextNotes)
+      setGraphError(null)
+    } catch (cause) {
+      setGraphError(cause instanceof Error ? cause.message : '图谱刷新失败')
+    } finally {
+      transition.current = false
+      setBusy(false)
+    }
+  }
+
+  async function writeGraphPosition(type: RelationNodeType, id: number, position: { x: number; y: number }) {
+    const patch = { graphPosition: position }
+    if (type === 'character') {
+      const current = characterList.rows.find(row => row.character.id === id)
+      if (current) { characterList.replace(await characterAdapter.save(current, patch)); return }
+    } else if (type === 'country') {
+      const current = countryList.rows.find(row => row.entity.id === id)
+      if (current) { countryList.replace(await countryAdapter.save(current, patch)); return }
+    } else if (type === 'event') {
+      const current = eventList.rows.find(row => row.entity.id === id)
+      if (current) { eventList.replace(await eventAdapter.save(current, patch)); return }
+    } else {
+      const current = noteList.rows.find(row => row.entity.id === id && isCodexEntry(row.entity))
+      if (current) { noteList.replace(await noteAdapter.save(current, patch)); return }
+    }
+    throw new Error('条目未找到，请刷新关系图')
+  }
+
+  async function saveGraphPosition(type: RelationNodeType, id: number, x: number, y: number) {
+    if (busy || !canEdit || pendingGraphWrite.current) throw new Error('当前无法保存节点位置')
+    setBusy(true)
+    const write = writeGraphPosition(type, id, { x, y })
+    pendingGraphWrite.current = write
+    try {
+      await write
+    } finally {
+      pendingGraphWrite.current = null
+      setBusy(false)
+    }
+  }
+
   return <div className="grid min-w-0 gap-5 md:grid-cols-[10rem_minmax(0,1fr)]">
     {workspaceName && <header className="md:col-span-2">
       <h1 className="text-lg font-semibold">{workspaceName}</h1>
@@ -310,6 +385,19 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
           onSelectCharacter={id => navigate('character', id)}
           onSelectCountry={id => navigate('country', id)}
           onSelectEvent={id => navigate('event', id)} />
+      </div>}
+      {graph && <div className="h-[70vh] min-h-96 rounded-panel border border-line">
+        <RelationGraph workspace={{
+          ...graph,
+          loading: characterList.loading || countryList.loading || eventList.loading || noteList.loading,
+          error: graphError || characterList.error || countryList.error || eventList.error || noteList.error,
+          refresh: refreshGraph,
+          savePosition: canEdit && !busy ? saveGraphPosition : undefined,
+        }}
+          onNavigateToCharacter={id => navigate('character', id)}
+          onNavigateToCountry={id => navigate('country', id)}
+          onNavigateToEvent={id => navigate('event', id)}
+          onNavigateToWorld={id => navigate('world', id)} />
       </div>}
       {section === 'character' && character && <OriginalCharacterEditor key={character.entityId} snapshot={character} adapter={characterAdapter}
         characters={characters} countries={countries} countriesReady={!countryList.loading && !countryList.error}

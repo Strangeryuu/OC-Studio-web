@@ -5,7 +5,7 @@ import type { LucideIcon } from 'lucide-react'
 import { NAV_GROUPS } from '@/lib/nav-sections'
 
 const WORKSPACE_SECTIONS = {
-  角色: 'character', 国家: 'country', 事件: 'event', 世界观: 'world', 时间线: 'timeline',
+  角色: 'character', 国家: 'country', 事件: 'event', 世界观: 'world', 时间线: 'timeline', 关系图: 'relations',
 } as const
 
 export type WorkspaceSection = (typeof WORKSPACE_SECTIONS)[keyof typeof WORKSPACE_SECTIONS] | 'members'
