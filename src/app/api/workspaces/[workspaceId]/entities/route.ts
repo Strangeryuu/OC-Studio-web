@@ -48,6 +48,7 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
+    await client.query('SELECT id FROM workspaces WHERE id=$1 FOR NO KEY UPDATE', [workspaceId])
     if (!await characterMediaAllowed(client, workspaceId, body.kind as string, doc.data)) {
       await client.query('ROLLBACK')
       return NextResponse.json({ error: body.kind === 'worldEntry' ? 'INVALID_NOTE_MEDIA' : body.kind === 'event' ? 'INVALID_EVENT_MEDIA' : body.kind === 'country' ? 'INVALID_COUNTRY_MEDIA' : 'INVALID_CHARACTER_MEDIA' }, { status: 400 })

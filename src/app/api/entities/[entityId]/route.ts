@@ -9,6 +9,7 @@ import { characterLinksAllowed } from '@/lib/cloud/server/character-links'
 import { eventLinksAllowed } from '@/lib/cloud/server/original-links'
 import { worldLinksAllowed } from '@/lib/cloud/server/world-links'
 import { cloudMapAllowed } from '@/lib/cloud/map-fields'
+import { MAP_CATEGORY } from '@/lib/entry-kinds'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -45,6 +46,7 @@ export async function PATCH(request: Request, context: Context) {
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
+    await client.query('SELECT id FROM workspaces WHERE id=$1 FOR NO KEY UPDATE', [access.workspaceId])
     const found = await client.query<{ version: number; title: string; content: JsonValue; kind: string }>(
       `SELECT kind,version,title,content FROM entities
        WHERE id=$1 AND workspace_id=$2 AND deleted_at IS NULL FOR UPDATE`,
@@ -54,6 +56,14 @@ export async function PATCH(request: Request, context: Context) {
     if (!existing) {
       await client.query('ROLLBACK')
       return NextResponse.json({ error: 'NOT_FOUND' }, { status: 404 })
+    }
+    const previousMap = existing.kind === 'worldEntry' &&
+      (existing.content as Record<string, unknown>).category === MAP_CATEGORY
+    const updatedContent = document.data as Record<string, unknown>
+    if (previousMap && (document.title !== existing.title || updatedContent.category !== MAP_CATEGORY ||
+      updatedContent.title !== existing.title)) {
+      await client.query('ROLLBACK')
+      return NextResponse.json({ error: 'MAP_MANAGEMENT_REQUIRED' }, { status: 400 })
     }
     if (!await characterMediaAllowed(client, access.workspaceId, existing.kind, document.data)) {
       await client.query('ROLLBACK')
@@ -128,12 +138,16 @@ export async function DELETE(request: Request, context: Context) {
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
-    const result = await client.query<{ version: number; title: string; content: JsonValue }>(
-      `SELECT version,title,content FROM entities
+    const result = await client.query<{ version: number; title: string; content: JsonValue; kind: string }>(
+      `SELECT kind,version,title,content FROM entities
        WHERE id=$1 AND workspace_id=$2 AND deleted_at IS NULL FOR UPDATE`, [entityId, access.workspaceId],
     )
     const row = result.rows[0]
     if (!row) { await client.query('ROLLBACK'); return NextResponse.json({ error: 'NOT_FOUND' }, { status: 404 }) }
+    if (row.kind === 'worldEntry' && (row.content as Record<string, unknown>).category === MAP_CATEGORY) {
+      await client.query('ROLLBACK')
+      return NextResponse.json({ error: 'MAP_MANAGEMENT_REQUIRED' }, { status: 400 })
+    }
     if (expected !== row.version) { await client.query('ROLLBACK'); return NextResponse.json({ error: 'VERSION_CONFLICT', actualVersion: row.version }, { status: 409 }) }
     const nextVersion = row.version + 1
     await client.query(

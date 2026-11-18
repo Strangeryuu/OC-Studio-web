@@ -65,6 +65,7 @@ export async function cloudMapAllowed(
   if (kind !== 'country' && kind !== 'event' && kind !== 'worldEntry') return true
   const record = content as Record<string, unknown>
   if (kind === 'worldEntry' && record.category === MAP_CATEGORY) {
+    if (record.title !== title) return false
     const duplicate = await client.query(
       `SELECT 1 FROM entities
        WHERE workspace_id=$1 AND kind='worldEntry' AND content->>'category'=$2
