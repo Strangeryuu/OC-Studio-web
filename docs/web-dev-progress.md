@@ -149,3 +149,38 @@
 - 全局相册移动端长按动作和各高级筛选控件仍有精细适配工作，独立的分类管理、模板与个性化设置需要云端数据接口。世界封面使用 `workspace_settings` 版本及审计历史，与实体逐版本历史采用不同存储模型。
 - 其他原版高级能力：表格事务删除、角色卡片/画廊多视图、全局快捷搜索、灵感、回收站 UI、完整导入导出、`.ocbak`、插件与 AI 助手、实时协同编辑，以及全库备份/恢复验证。
 - 自动化验证已包含独立 PostgreSQL 的真实 HTTP 调用，仍需在真实浏览器完成小说章节编辑/阅读/Word 下载、封面上传、相册图片与移动端、地图拖动、多人并发等验收，再部署 VPS 正式使用。
+
+
+## 2026-11-19：原版高级功能逐项移植与验收（第七阶段）
+
+本轮沿用 `web-dev` 的原版组件/纯函数以及独立资料库实体快照；`main` 保留原状态。
+
+### A. 小说 · 原版章节拖拽（已开发 / 自动化验收）
+
+- 原版 `TreeRow`、`dnd-kit` 的 Pointer/Keyboard sensors、`SortableContext` 和 `src/lib/tree-order.ts:computeReorder` 现用于云端小说树。支持同书内移动章节、跨层级排序、折叠子树、搜索时禁用拖拽、只有 editor 及以上显示拖拽手柄。
+- `src/lib/cloud/novel-reorder.ts` 按书根检查待移动章节/目标均属于同一小说，拒绝跨书与子孙循环父级。新增 `PATCH /api/workspaces/[workspaceId]/novels/[entryId]/reorder`，在同一事务里锁住资料库与有关小说条目、检查每个受影响实体的乐观版本，并同步写入旧层/新层兄弟序号、实体历史及变更记录；冲突返回 409。
+- `tests/cloud-novel-album.test.ts` 与 `tests/cloud-original-characters.integration.test.ts` 增加重排规划、跨书拒绝、版本冲突、viewer/editor 权限、排序结果与历史记录的 PGlite 集成测试；`scripts/cloud-http-smoke.cjs` 增加真实 PostgreSQL HTTP 重排与旧版本拒绝验证。
+
+### B. 小说 · 原版高级分页排版（已开发 / 构建验收）
+
+- 继续复用原版 `NovelReader`、`NOVEL_LAYOUT_PRESETS`、`normalizeNovelLayout`、`toPaginateOptions` 和 `resolveNovelBackground`。云端分页预览提供书页/章首/极简/信笺四预设及字体、字号、行距、页边距、标题位置、页码、章节分页、作品扉页和纸张背景。
+- 阅读偏好按资料库 + 小说 ID 存储在**当前浏览器本地**，不改写正文或云端版本。TXT/Markdown/Word 仍沿用原版独立导出逻辑；Word 排版和图片分页的高级参数需后续进一步衔接。
+
+### C. 全局相册 · 原版移动交互和私有图片下载（已开发 / 自动化验收）
+
+- `WorkspaceAlbum` 使用原版 `useDevice`、`AlbumCard` 长按手势与 `MobileActionSheet`：支持“查看大图 / 保存到… / 跳转来源”，移动端同时保留分类抽屉、来源/标签筛选及排序。
+- 修复 `src/lib/media-download.ts` 的云端图片字节下载：对严格限定的 `/api/media/<uuid>` 地址经同源登录会话抓取图片，依响应 MIME 给文件附 png/jpg/webp/gif 后缀，安全净化文件名；原有 Tauri/Capacitor/普通文件下载分支保持不变。
+- 新增 `tests/cloud-private-media-download.test.ts`，验证授权失败、同源会话、图片格式/文件名和浏览器下载行为。上传/读取媒体的已有独立 PostgreSQL 测试继续覆盖跨库隔离。
+
+### D. 树形表格 · 事务式安全删除（已开发 / 自动化验收）
+
+- `WorkspaceTreeTable` 恢复原版 `DeleteButton` 的删除入口；只有 owner/admin 可以操作，editor/viewer 继续可执行各自权限内的功能。删除按钮依据请求结果决定是否提示已移入回收站。
+- 新增 `DELETE /api/workspaces/[workspaceId]/table/[entityId]`：删除国家或普通词条时，直接子项自动提升到被删条目的父级；删除国家时同步解绑角色国籍与事件相关国家；删除角色时同步清理角色关系表与事件参与者。所有更新、删除、版本历史和 change events 在单一事务中完成，检查受影响条目的 `expectedVersions`，有并发修改时返回 409。
+- `tests/cloud-original-characters.integration.test.ts` 增加 PGlite 权限、版本冲突、父子提升、国籍/事件关联与历史测试；`scripts/cloud-http-smoke.cjs` 增加真实 PostgreSQL HTTP 子项提升与引用清理检查。小说、地图继续由各自特化的生命周期接口处理。
+
+### 验证与尚待完成项
+
+- 新增代码提交包括 `e4d4e21`、`0bca17f`、`5db1e6e`、`05af203`、`750e1de`、`4e02480`、`e7f9360`、`5ecf720`、`4eb951e`、`908836b`、`69c4815`、`205bdf1`、`237935b`、`917e830`。中途的 TypeScript 类型收敛、测试空国籍表示已修复。
+- `205bdf1` 的完整 GitHub Actions 已通过，包含类型、lint、单元/PGlite 测试、自检、Next.js 生产构建及独立 PostgreSQL。针对 `917e830` 新增的真实 HTTP 高级操作，**独立 PostgreSQL 业务迁移自检作业已确认成功**；最新完整 Web 作业以 Actions 最终运行结论为准。
+- **浏览器手动验收待办**：实际拖动嵌套章节、移动端长按/下载、深色主题的分页预览、真实多成员同时调整章节、资源文件可用性、备份恢复演练。GitHub Actions 的 HTTP/组件测试和生产构建属于自动化验证。
+- **后续高级功能**：世界观/国家/事件/角色编辑器与表格的一致删除入口；云端回收站界面与整树恢复；模板/组件/分类在线设置；全局搜索与聚合浏览；旧数据与整库 `.ocbak` 的安全导入/导出；AI 插件、本地扩展与实时协同，以及部署安全与实际多浏览器验收。
