@@ -90,10 +90,10 @@ export function parsePortableBackup(raw:unknown):PortableBackup|null{
       const content={...row}
       delete content.id
       const title=kind==='character'||kind==='country'?row.name:row.title
-      const doc=readEntityDocument({title,data:content})
-      if(!doc)return null
-      records.push({kind,sourceId:kind+':'+row.id,localId:row.id,title:doc.title,
-        content:doc.data as Record<string,unknown>,version:1,deletedAt:null,history:[]})
+      if(typeof title!=='string'||!title.trim()||title.length>200||
+        JSON.stringify(content).length>25_000_000)return null
+      records.push({kind,sourceId:kind+':'+row.id,localId:row.id,title:title.trim(),
+        content,version:1,deletedAt:null,history:[]})
     }
   }
   if(records.length>3000||new Set(records.map(r=>r.sourceId)).size!==records.length)return null
@@ -125,8 +125,13 @@ export type ImportIdMaps = {
 }
 /** Map old IDs into fresh target identities. Never preserve source workspace IDs. */
 export function remapPortableContent(kind:string,content:Record<string,unknown>,maps:ImportIdMaps):Record<string,unknown>{
-  const local=(type:string,id:unknown)=>typeof id==='number'?
-    (maps.local.get(type+':'+id)??id):id
+  const local=(type:string,id:unknown)=>{
+    if(id===null||id===undefined)return id
+    if(typeof id!=='number'||!Number.isSafeInteger(id))throw new Error('BACKUP_REFERENCE_INVALID')
+    const mapped=maps.local.get(type+':'+id)
+    if(mapped===undefined)throw new Error('BACKUP_REFERENCE_MISSING')
+    return mapped
+  }
   const replace=(value:unknown,key:string,parent:string):unknown=>{
     if(typeof value==='string'){
       const mediaUrl=/^\/api\/media\/([a-fA-F0-9-]{36})$/.exec(value)
@@ -135,9 +140,17 @@ export function remapPortableContent(kind:string,content:Record<string,unknown>,
         if(!next)throw new Error('BACKUP_MEDIA_MISSING')
         return '/api/media/'+next
       }
-      return maps.uuid.get(value)??maps.media.get(value)??maps.tags.get(value)??value
+      const rewritten=maps.uuid.get(value)??maps.media.get(value)??maps.tags.get(value)
+      if(rewritten)return rewritten
+      if((key==='targetId'||key==='avatarMediaId'||key==='headerMediaId') &&
+        /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(value))throw new Error('BACKUP_REFERENCE_MISSING')
+      return value
     }
     if(Array.isArray(value)){
+      if(key==='cloudTagIds')return value.map(id=>{
+        if(typeof id!=='string'||!maps.tags.has(id))throw new Error('BACKUP_TAG_MISSING')
+        return maps.tags.get(id)!
+      })
       if(key==='characters'&&kind==='event')return value.map(id=>local('character',id))
       if(key==='countries'&&kind==='event')return value.map(id=>local('country',id))
       return value.map(item=>replace(item,'',key))
