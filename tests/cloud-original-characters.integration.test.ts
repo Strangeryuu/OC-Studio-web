@@ -34,6 +34,10 @@ import * as restoreRoute from '@/app/api/entities/[entityId]/restore/route'
 import * as uploadRoute from '@/app/api/workspaces/[workspaceId]/media/route'
 import * as mediaRoute from '@/app/api/media/[assetId]/route'
 
+import StudioEntry from '@/app/(studio)/studio/page'
+import StudioWorkspace from '@/app/(studio)/studio/[workspaceId]/page'
+import WorkspaceRedirect from '@/app/(studio)/workspaces/[workspaceId]/page'
+
 const workspaceA = '11111111-1111-4111-8111-111111111111'
 const workspaceB = '22222222-2222-4222-8222-222222222222'
 const ctxWorkspace = (workspaceId: string) => ({ params: Promise.resolve({ workspaceId }) })
@@ -75,6 +79,22 @@ describe('original entity adapters against PostgreSQL', () => {
       [workspaceA, 'viewer', 'viewer'])
   }, 30000)
   afterAll(async () => { await state.db?.close(); rmSync(mediaRoot, { recursive: true, force: true }) })
+
+  it('opens the authenticated workbench and preserves its legacy route', async () => {
+    const redirectsTo = (path: string) => ({ digest: expect.stringContaining(`NEXT_REDIRECT;replace;${path};307`) })
+    state.userId = null
+    await expect(StudioEntry()).rejects.toMatchObject(redirectsTo('/login'))
+    await expect(StudioWorkspace(ctxWorkspace(workspaceA))).rejects.toMatchObject(redirectsTo('/login'))
+
+    state.userId = 'outsider'
+    await expect(StudioWorkspace(ctxWorkspace(workspaceA))).rejects.toMatchObject({ digest: 'NEXT_HTTP_ERROR_FALLBACK;404' })
+    state.userId = 'viewer'
+    await expect(StudioEntry()).rejects.toMatchObject(redirectsTo(`/studio/${workspaceA}`))
+    await expect(WorkspaceRedirect(ctxWorkspace(workspaceA))).rejects.toMatchObject(redirectsTo(`/studio/${workspaceA}`))
+    const editor = await StudioWorkspace(ctxWorkspace(workspaceA))
+    expect(editor.props).toMatchObject({ role: 'viewer', workspaceId: workspaceA, workspaceName: 'A' })
+    state.userId = 'owner'
+  })
 
   it('saves original character fields, rejects stale edits, and restores history', async () => {
     const adapter = new OriginalCharactersCloudAdapter(workspaceA, apiFetch)

@@ -60,13 +60,12 @@ export function WorkspaceDashboard({ initialWorkspaces, userName }: {
       {workspaces.length === 0
         ? <p className="rounded-panel border border-dashed border-[var(--oc-line)] p-8 text-center text-sm opacity-70">还没有世界观，创建一个或通过邀请码加入项目。</p>
         : <ul className="grid gap-3 sm:grid-cols-2">{workspaces.map(w => <li key={w.id}>
-          <a href={'/workspaces/' + w.id} className="block rounded-panel border border-[var(--oc-line)] p-5 hover:opacity-80">
+          <a href={'/studio/' + w.id} className="block rounded-panel border border-[var(--oc-line)] p-5 hover:opacity-80">
             <div className="flex items-center gap-2"><BookOpen size={18} /><span className="font-medium">{w.name}</span></div>
             <p className="mt-2 text-sm opacity-70">{w.description || '暂无简介'}</p>
             <p className="mt-4 flex items-center gap-1 text-xs opacity-60"><Users size={13}/>{w.role}</p>
           </a>
         </li>)}</ul>}
     </section>
-    <p className="text-xs opacity-60">角色基本信息可在资料库中编辑，更多原版功能正在接入。</p>
   </div>
 }

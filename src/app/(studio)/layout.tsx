@@ -3,6 +3,7 @@ import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { auth } from '@/lib/cloud/server/auth'
+import { OverlayRoot } from '@/components/layout/OverlayRoot'
 import { SignOutButton } from '@/components/cloud/SignOutButton'
 import { THEME_BOOT_SCRIPT } from '@/lib/theme/boot'
 import '../globals.css'
@@ -20,7 +21,7 @@ export default async function StudioLayout({ children }: { children: React.React
       <head><script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} /></head>
       <body className="min-h-screen bg-[var(--oc-paper)] text-[var(--oc-ink)]">
         <header className="border-b border-[var(--oc-line)] px-5 py-3">
-          <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
             <Link href="/" className="font-semibold">OC Studio Cloud</Link>
             <nav className="flex items-center gap-4 text-sm">
               <a href="/join" className="opacity-80 hover:opacity-100">接受邀请</a>
@@ -30,7 +31,8 @@ export default async function StudioLayout({ children }: { children: React.React
             </nav>
           </div>
         </header>
-        <main className="mx-auto max-w-5xl px-5 py-8">{children}</main>
+        <main className="mx-auto max-w-7xl px-4 py-6 sm:px-5">{children}</main>
+        <OverlayRoot />
       </body>
     </html>
   )

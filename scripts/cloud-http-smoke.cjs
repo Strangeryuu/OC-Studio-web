@@ -268,12 +268,20 @@ async function run() {
   })
   assert(selfRelation.status === 400, 'Self-referencing relationship should be rejected')
 
-  const graph = await fetch(BASE + '/workspaces/' + workspaceId + '/relations', {
-    headers: { Cookie: cookie },
+  const workbenchPath = '/studio/' + workspaceId
+  const workbench = await fetch(BASE + workbenchPath, { headers: { Cookie: cookie } })
+  assert(workbench.status === 200, 'Private workbench did not open')
+  const workbenchHtml = await workbench.text()
+  assert(workbenchHtml.includes('CI Private World') && workbenchHtml.includes('工作台板块'),
+    'Workbench is missing its workspace title or section navigation')
+  const legacyWorkbench = await fetch(BASE + '/workspaces/' + workspaceId, {
+    headers: { Cookie: cookie }, redirect: 'manual',
   })
-  assert(graph.status === 200, 'Private workspace graph route failed')
-  const guestGraph = await fetch(BASE + '/workspaces/' + workspaceId + '/relations', { redirect: 'manual' })
-  assert([302, 303, 307, 308].includes(guestGraph.status), 'Guest graph route must redirect to login')
+  assert([302, 303, 307, 308].includes(legacyWorkbench.status) &&
+    legacyWorkbench.headers.get('location') === workbenchPath, 'Legacy workbench address did not redirect')
+  const guestWorkbench = await fetch(BASE + workbenchPath, { redirect: 'manual' })
+  assert([302, 303, 307, 308].includes(guestWorkbench.status) &&
+    guestWorkbench.headers.get('location') === '/login', 'Private workbench must redirect guests to login')
 
   const forbiddenOrigin = await fetch(BASE + '/api/workspaces', {
     method: 'POST',

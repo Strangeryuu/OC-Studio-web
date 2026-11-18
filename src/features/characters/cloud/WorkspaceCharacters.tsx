@@ -33,6 +33,7 @@ import { OriginalEventsCloudAdapter } from '@/lib/cloud/adapters/original-events
 import { TimelineView } from '@/features/timeline/components/TimelineView'
 import { useDelayedFlag } from '@/lib/use-delayed-flag'
 import { buildDefaultCountry } from '@/features/countries/services'
+import { WorkspaceNavigation, type WorkspaceSection } from '@/components/cloud/WorkspaceNavigation'
 import { WorkspaceEntityHistory } from '@/components/cloud/WorkspaceEntityHistory'
 import { insertWorkspaceBodyImage, useWorkspaceDraftGuard, useWorkspaceImageUpload } from '@/components/cloud/workspace-editor-guards'
 
@@ -101,9 +102,17 @@ export function editablePatch(character: Character, values: Partial<CharacterFor
   return result
 }
 
-export function WorkspaceCharacters({ workspaceId, role }: { workspaceId: string; role: WorkspaceRole }) {
+interface WorkspaceProps {
+  workspaceId: string
+  role: WorkspaceRole
+  workspaceName?: string
+  workspaceDescription?: string | null
+  membersPanel?: ReactNode
+}
+
+export function WorkspaceCharacters(props: WorkspaceProps) {
   return <Providers><ActiveEditorProvider><SaveStatusProvider>
-    <CharacterWorkspace key={workspaceId} workspaceId={workspaceId} role={role} />
+    <CharacterWorkspace key={props.workspaceId} {...props} />
     <Toaster />
   </SaveStatusProvider></ActiveEditorProvider></Providers>
 }
@@ -131,7 +140,7 @@ function useWorkspaceRows<T extends { entityId: string }>(adapter: { list: () =>
 }
 
 function WorkspaceEntryList<T extends { entityId: string }>({ label, rows, getLabel, selectedId, loading,
-  error, busy, onCreate, onSelect, actions }: {
+  error, busy, onCreate, onSelect }: {
   label: string
   rows: T[]
   getLabel: (row: T) => string
@@ -140,18 +149,14 @@ function WorkspaceEntryList<T extends { entityId: string }>({ label, rows, getLa
   error: string | null
   busy: boolean
   onCreate?: () => void
-  actions?: ReactNode
   onSelect: (entityId: string) => void
 }) {
   const showLoading = useDelayedFlag(loading)
   return <section className="flex flex-col gap-4 border-t border-line pt-5">
     <div className="flex items-center justify-between gap-3">
       <h2 className="text-reading font-semibold">{label}</h2>
-      {(onCreate || actions) && <div className="flex items-center gap-2">
-        {actions}
-        {onCreate && <button type="button" className={BTN_QUIET} disabled={busy || loading || error !== null}
-          onClick={onCreate}>新建{label}</button>}
-      </div>}
+      {onCreate && <button type="button" className={BTN_QUIET} disabled={busy || loading || error !== null}
+        onClick={onCreate}>新建{label}</button>}
     </div>
     {error && <p role="alert" className="text-ui text-error">{error}</p>}
     {showLoading && <p className="text-ui text-ink-muted">正在读取{label}…</p>}
@@ -164,7 +169,7 @@ function WorkspaceEntryList<T extends { entityId: string }>({ label, rows, getLa
   </section>
 }
 
-function CharacterWorkspace({ workspaceId, role }: { workspaceId: string; role: WorkspaceRole }) {
+function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescription, membersPanel }: WorkspaceProps) {
   const characterAdapter = useMemo(() => new OriginalCharactersCloudAdapter(workspaceId), [workspaceId])
   const countryAdapter = useMemo(() => new OriginalCountriesCloudAdapter(workspaceId), [workspaceId])
   const eventAdapter = useMemo(() => new OriginalEventsCloudAdapter(workspaceId), [workspaceId])
@@ -173,6 +178,9 @@ function CharacterWorkspace({ workspaceId, role }: { workspaceId: string; role: 
   const characterList = useWorkspaceRows(characterAdapter, '角色')
   const countryList = useWorkspaceRows(countryAdapter, '国家')
   const eventList = useWorkspaceRows(eventAdapter, '事件')
+  const [section, setSection] = useState<WorkspaceSection>('character')
+  const [leaving, setLeaving] = useState(false)
+  const transition = useRef(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -195,37 +203,44 @@ function CharacterWorkspace({ workspaceId, role }: { workspaceId: string; role: 
     ]
   }, [characters, countries, events, notes])
 
-  async function openAfterSaving(next: () => Promise<string>) {
-    if (busy) return
+  useEffect(() => {
+    if (leaving) window.location.assign('/')
+  }, [leaving])
+
+  async function openAfterSaving(nextSection: WorkspaceSection, next: () => Promise<string | null>) {
+    if (busy || transition.current) return
+    transition.current = true
     setBusy(true)
     setError(null)
     try {
-      // 切换前等待原版保存流水线，失败时保留当前编辑器。
       await flushPendingSaves()
-      setSelectedId(await next())
+      const nextId = await next()
+      setSelectedId(nextId)
+      setSection(nextSection)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '无法打开条目')
     } finally {
+      transition.current = false
       setBusy(false)
     }
   }
 
-  function select(entityId: string) {
-    if (entityId !== selectedId) void openAfterSaving(async () => entityId)
+  function select(entityId: string, nextSection: WorkspaceSection) {
+    if (entityId !== selectedId) void openAfterSaving(nextSection, async () => entityId)
   }
 
   function navigate(kind: RelationTargetKind, id: number) {
+    if (kind !== 'character' && kind !== 'country' && kind !== 'event' && kind !== 'world') return
     const target = kind === 'character' ? characterList.rows.find(row => row.character.id === id)
       : kind === 'country' ? countryList.rows.find(row => row.entity.id === id)
       : kind === 'event' ? eventList.rows.find(row => row.entity.id === id)
-      : kind === 'world' ? noteList.rows.find(row => row.entity.id === id && isCodexEntry(row.entity))
-      : undefined
-    if (target) select(target.entityId)
+      : noteList.rows.find(row => row.entity.id === id && isCodexEntry(row.entity))
+    if (target) select(target.entityId, kind)
   }
 
   function createNote(parentId: number | null) {
     if (!canEdit) return
-    void openAfterSaving(async () => {
+    void openAfterSaving('world', async () => {
       const draft = buildDefaultEntry({ ...newWorldEntryData(), parentId })
       const row = await noteAdapter.create(draft)
       noteList.append(row)
@@ -246,60 +261,75 @@ function CharacterWorkspace({ workspaceId, role }: { workspaceId: string; role: 
     }
   }
 
-  return <div className="flex flex-col gap-4">
-    <WorkspaceEntryList label="角色" rows={characterList.rows} loading={characterList.loading} error={characterList.error}
-      getLabel={row => row.character.name} selectedId={selectedId} busy={busy} onSelect={select}
-      onCreate={canEdit ? () => void openAfterSaving(async () => {
-        const row = await characterAdapter.create(buildDefaultCharacter(newCharacterData()))
-        characterList.append(row)
-        return row.entityId
-      }) : undefined} />
-    <WorkspaceEntryList label="国家" rows={countryList.rows} loading={countryList.loading} error={countryList.error}
-      getLabel={row => row.entity.name} selectedId={selectedId} busy={busy} onSelect={select}
-      onCreate={canEdit ? () => void openAfterSaving(async () => {
-        const row = await countryAdapter.create(buildDefaultCountry(newCountryData()))
-        countryList.append(row)
-        return row.entityId
-      }) : undefined} />
-    <WorkspaceEntryList label="事件" rows={eventList.rows} loading={eventList.loading} error={eventList.error}
-      actions={<button type="button" className={BTN_QUIET} disabled={busy} aria-pressed={selectedId === 'timeline'}
-        onClick={() => select('timeline')}>时间线</button>}
-      getLabel={row => row.entity.title} selectedId={selectedId} busy={busy} onSelect={select}
-      onCreate={canEdit ? () => void openAfterSaving(async () => {
-        const row = await eventAdapter.create(buildDefaultEvent(newEventData()))
-        eventList.append(row)
-        return row.entityId
-      }) : undefined} />
-    <WorkspaceNoteTree entries={notes} selectedId={note?.entity.id} loading={noteList.loading}
-      error={noteList.error} busy={busy} onSelect={id => navigate('world', id)}
-      onCreate={canEdit ? () => createNote(null) : undefined} />
-    {error && <p role="alert" className="text-ui text-error">{error}</p>}
-    {selectedId === 'timeline' && <div className="h-[65vh] min-h-96 rounded-panel border border-line">
-      <TimelineView workspace={{
-        characters, countries, events,
-        loading: eventList.loading || countryList.loading || characterList.loading,
-        error: eventList.error || countryList.error || characterList.error,
-        saveTime: canEdit ? saveTimelineTime : undefined,
+  return <div className="grid min-w-0 gap-5 md:grid-cols-[10rem_minmax(0,1fr)]">
+    {workspaceName && <header className="md:col-span-2">
+      <h1 className="text-lg font-semibold">{workspaceName}</h1>
+      {workspaceDescription && <p className="mt-1 text-ui text-ink-muted">{workspaceDescription}</p>}
+    </header>}
+    <WorkspaceNavigation active={section} busy={busy || leaving} hasMembers={membersPanel !== undefined}
+      onSelect={next => {
+        if (next !== section) void openAfterSaving(next, async () => null)
       }}
-        onSelectCharacter={id => navigate('character', id)}
-        onSelectCountry={id => navigate('country', id)}
-        onSelectEvent={id => navigate('event', id)} />
-    </div>}
-    {character && <OriginalCharacterEditor key={character.entityId} snapshot={character} adapter={characterAdapter}
-      characters={characters} countries={countries} countriesReady={!countryList.loading && !countryList.error}
-      notes={notes} onNavigateRelation={navigate}
-      onNavigateCountry={id => navigate('country', id)}
-      canEdit={canEdit} disabled={busy} onUploadBusy={setBusy} onSaved={characterList.replace} />}
-    {country && <OriginalCountryEditor key={country.entityId} snapshot={country} adapter={countryAdapter}
-      characters={characters} events={events} canEdit={canEdit} disabled={busy}
-      onSaved={countryList.replace} onUploadBusy={setBusy} onNavigate={navigate} />}
-    {event && <OriginalEventEditor key={event.entityId} snapshot={event} adapter={eventAdapter}
-      lookups={{ characters, countries, events }} canEdit={canEdit} disabled={busy}
-      onSaved={eventList.replace} onUploadBusy={setBusy} onNavigate={navigate} />}
-    {note && <OriginalNoteEditor key={note.entityId} snapshot={note} adapter={noteAdapter}
-      notes={notes} characters={characters} references={references} canEdit={canEdit} disabled={busy}
-      onSaved={noteList.replace} onUploadBusy={setBusy} onNavigate={navigate}
-      onCreateChild={() => createNote(note.entity.id)} />}
+      onSwitchWorkspace={workspaceName ? () => void openAfterSaving(section, async () => {
+        setLeaving(true)
+        return null
+      }) : undefined} />
+    <div className="flex min-w-0 flex-col gap-4">
+      {error && <p role="alert" className="text-ui text-error">{error}</p>}
+      {section === 'character' && <WorkspaceEntryList label="角色" rows={characterList.rows} loading={characterList.loading} error={characterList.error}
+        getLabel={row => row.character.name} selectedId={selectedId} busy={busy} onSelect={id => select(id, 'character')}
+        onCreate={canEdit ? () => void openAfterSaving('character', async () => {
+          const row = await characterAdapter.create(buildDefaultCharacter(newCharacterData()))
+          characterList.append(row)
+          return row.entityId
+        }) : undefined} />}
+      {section === 'country' && <WorkspaceEntryList label="国家" rows={countryList.rows} loading={countryList.loading} error={countryList.error}
+        getLabel={row => row.entity.name} selectedId={selectedId} busy={busy} onSelect={id => select(id, 'country')}
+        onCreate={canEdit ? () => void openAfterSaving('country', async () => {
+          const row = await countryAdapter.create(buildDefaultCountry(newCountryData()))
+          countryList.append(row)
+          return row.entityId
+        }) : undefined} />}
+      {section === 'event' && <WorkspaceEntryList label="事件" rows={eventList.rows} loading={eventList.loading} error={eventList.error}
+        getLabel={row => row.entity.title} selectedId={selectedId} busy={busy} onSelect={id => select(id, 'event')}
+        onCreate={canEdit ? () => void openAfterSaving('event', async () => {
+          const row = await eventAdapter.create(buildDefaultEvent(newEventData()))
+          eventList.append(row)
+          return row.entityId
+        }) : undefined} />}
+      {section === 'world' && <WorkspaceNoteTree entries={notes} selectedId={note?.entity.id} loading={noteList.loading}
+        error={noteList.error} busy={busy} onSelect={id => navigate('world', id)}
+        onCreate={canEdit ? () => createNote(null) : undefined} />}
+      {section === 'timeline' && <div className="h-[65vh] min-h-96 rounded-panel border border-line">
+        <TimelineView workspace={{
+          characters, countries, events,
+          loading: eventList.loading || countryList.loading || characterList.loading,
+          error: eventList.error || countryList.error || characterList.error,
+          saveTime: canEdit ? saveTimelineTime : undefined,
+        }}
+          onSelectCharacter={id => navigate('character', id)}
+          onSelectCountry={id => navigate('country', id)}
+          onSelectEvent={id => navigate('event', id)} />
+      </div>}
+      {section === 'character' && character && <OriginalCharacterEditor key={character.entityId} snapshot={character} adapter={characterAdapter}
+        characters={characters} countries={countries} countriesReady={!countryList.loading && !countryList.error}
+        notes={notes} onNavigateRelation={navigate}
+        onNavigateCountry={id => navigate('country', id)}
+        canEdit={canEdit} disabled={busy} onUploadBusy={setBusy} onSaved={characterList.replace} />}
+      {section === 'country' && country && <OriginalCountryEditor key={country.entityId} snapshot={country} adapter={countryAdapter}
+        characters={characters} events={events} canEdit={canEdit} disabled={busy}
+        onSaved={countryList.replace} onUploadBusy={setBusy} onNavigate={navigate} />}
+      {section === 'event' && event && <OriginalEventEditor key={event.entityId} snapshot={event} adapter={eventAdapter}
+        lookups={{ characters, countries, events }} canEdit={canEdit} disabled={busy}
+        onSaved={eventList.replace} onUploadBusy={setBusy} onNavigate={navigate} />}
+      {section === 'world' && note && <OriginalNoteEditor key={note.entityId} snapshot={note} adapter={noteAdapter}
+        notes={notes} characters={characters} references={references} canEdit={canEdit} disabled={busy}
+        onSaved={noteList.replace} onUploadBusy={setBusy} onNavigate={navigate}
+        onCreateChild={() => createNote(note.entity.id)} />}
+      {membersPanel !== undefined && <div hidden={section !== 'members'}>
+        <div className="flex flex-col gap-4">{membersPanel}</div>
+      </div>}
+    </div>
   </div>
 }
 

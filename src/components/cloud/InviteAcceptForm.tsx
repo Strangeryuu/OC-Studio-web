@@ -18,7 +18,7 @@ export function InviteAcceptForm() {
       })
       if (!response.ok) { setError('邀请码无效、过期或与你的账号邮箱不匹配'); return }
       const result: { workspaceId: string } = await response.json()
-      window.location.assign('/workspaces/' + encodeURIComponent(result.workspaceId))
+      window.location.assign('/studio/' + encodeURIComponent(result.workspaceId))
     } catch {
       setError('网络异常，请稍后重试')
     } finally { setBusy(false) }

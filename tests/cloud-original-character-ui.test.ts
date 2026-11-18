@@ -58,8 +58,16 @@ function fixture(id: number, name: string): OriginalCharacterSnapshot {
 }
 
 function button(label: string): HTMLButtonElement {
-  const found = [...container.querySelectorAll('button')].find(element => element.textContent?.trim() === label)
+  const found = [...container.querySelectorAll('button')].find(element =>
+    !element.closest('nav[aria-label="工作台板块"]') && element.textContent?.trim() === label)
   if (!found) throw new Error(`Button not found: ${label}`)
+  return found
+}
+
+function sectionButton(label: string): HTMLButtonElement {
+  const found = [...container.querySelectorAll<HTMLButtonElement>('nav[aria-label="工作台板块"] button')]
+    .find(element => element.textContent?.trim() === label)
+  if (!found) throw new Error(`Section not found: ${label}`)
   return found
 }
 
@@ -92,6 +100,32 @@ afterEach(async () => {
 })
 
 describe('original character information in cloud workspace', () => {
+  it('keeps a failed draft in its section and opens member tools after a successful retry', async () => {
+    fake.list.mockResolvedValue([fixture(1, '初始角色')])
+    fake.save.mockRejectedValue(new Error('版本冲突'))
+    await act(async () => {
+      root.render(React.createElement(WorkspaceCharacters, {
+        workspaceId, role: 'editor', membersPanel: React.createElement('h2', {}, '项目成员'),
+      }))
+    })
+    await click(button('初始角色'))
+    const name = container.querySelector<HTMLInputElement>('input:not([type="file"])')!
+    await inputText(name, '未保存草稿')
+    const members = sectionButton('成员与邀请')
+    await click(members)
+    expect(sectionButton('角色').getAttribute('aria-current')).toBe('page')
+    expect(name.value).toBe('未保存草稿')
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('版本冲突')
+
+    fake.save.mockImplementation(async (row: OriginalCharacterSnapshot, patch: Record<string, unknown>) => ({
+      ...row, version: row.version + 1, character: { ...row.character, ...patch },
+    }))
+    await click(members)
+    expect(members.getAttribute('aria-current')).toBe('page')
+    expect(container.querySelector('input:not([type="file"])')).toBeNull()
+    expect(fake.save).toHaveBeenLastCalledWith(expect.objectContaining({ version: 1 }), { name: '未保存草稿' })
+  })
+
   it('opens the cloud note tree, creates and saves a child, and links it from a character', async () => {
     const rootNote: OriginalNoteSnapshot = {
       workspaceId, entityId: '00000000-0000-4000-8000-000000000006', version: 1,
@@ -109,6 +143,7 @@ describe('original character information in cloud workspace', () => {
       ...row, version: row.version + 1, character: { ...row.character, ...patch },
     }))
     await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' })) })
+    await click(sectionButton('世界观'))
     await click(container.querySelector<HTMLElement>('[role="treeitem"][aria-label="编年史"]')!)
     await click(button('新建子笔记'))
     expect(fake.createNote).toHaveBeenCalledWith(expect.objectContaining({ parentId: 6 }))
@@ -128,6 +163,7 @@ describe('original character information in cloud workspace', () => {
     await click(container.querySelector<HTMLElement>('[data-type="wiki-link"]')!)
     expect(container.querySelector<HTMLInputElement>('input[aria-label="笔记标题"]')?.value).toBe('编年史')
 
+    await click(sectionButton('角色'))
     await click(button('记录者'))
     const relation = [...container.querySelectorAll('section')].find(item => item.querySelector('h3')?.textContent === '角色关系')!
     await click([...relation.querySelectorAll('button')].find(item => item.textContent?.trim() === '添加')!)
@@ -159,6 +195,7 @@ describe('original character information in cloud workspace', () => {
     await act(async () => {
       root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' }))
     })
+    await click(sectionButton('事件'))
     await click(button('新建事件'))
     const title = container.querySelector<HTMLInputElement>('input[aria-label="事件名称"]')!
     await inputText(title, '王国议会')
@@ -184,7 +221,7 @@ describe('original character information in cloud workspace', () => {
     await click([...countryEvents.querySelectorAll('button')].find(item => item.textContent?.trim() === '王国议会')!)
     expect(container.querySelector<HTMLInputElement>('input[aria-label="事件名称"]')?.value).toBe('王国议会')
 
-    await click(button('时间线'))
+    await click(sectionButton('时间线'))
     const editor = container.querySelector<HTMLInputElement>('input[aria-label="事件名称"]')
     expect(editor).toBeNull()
     const timelineEvent = container.querySelector<HTMLButtonElement>('button[aria-label="王国议会"]')!
