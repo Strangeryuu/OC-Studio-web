@@ -30,9 +30,9 @@ async function run() {
     )
     if (authBanned.rowCount !== 1) throw new Error('Better Auth admin banned field is missing')
     const migration = await db.query(
-      'SELECT version FROM oc_cloud_schema_migrations WHERE version IN (1,2,3)',
+      'SELECT version FROM oc_cloud_schema_migrations WHERE version IN (1,2,3,4,5)',
     )
-    if (migration.rowCount !== 3) throw new Error('Business schema migrations were not recorded')
+    if (migration.rowCount !== 5) throw new Error('Business schema migrations were not recorded')
     const settingsVersion = await db.query(
       "SELECT column_name FROM information_schema.columns WHERE table_name='workspace_settings' AND column_name='version'",
     )
@@ -41,6 +41,14 @@ async function run() {
       "SELECT indexname FROM pg_indexes WHERE tablename='workspace_tags' AND indexname='workspace_tags_unique_name_idx'",
     )
     if (tagIndex.rowCount !== 1) throw new Error('Workspace tag unique-name index is missing')
+    const mapIndex = await db.query(
+      "SELECT indexname FROM pg_indexes WHERE tablename='entities' AND indexname='entities_workspace_map_name_unique'",
+    )
+    if (mapIndex.rowCount !== 1) throw new Error('Workspace map unique-name index is missing')
+    const originalIds = await db.query(
+      "SELECT column_name FROM information_schema.columns WHERE table_name='entities' AND column_name='local_id'",
+    )
+    if (originalIds.rowCount !== 1) throw new Error('Original entity local ID is missing')
     process.stdout.write('Cloud database smoke check passed (' + expectedTables.length + ' tables).\n')
   } finally {
     await db.end()

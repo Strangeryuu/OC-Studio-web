@@ -21,3 +21,41 @@ jobs:
       - run: npm run test
       - run: npm run audit
       - run: npm run build:web
+
+  postgres-schema:
+    name: 独立 PostgreSQL 业务迁移自检
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ocstudio_ci
+          POSTGRES_PASSWORD: ci_only_pg_password
+          POSTGRES_DB: ocstudio_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ocstudio_ci -d ocstudio_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://ocstudio_ci:ci_only_pg_password@127.0.0.1:5432/ocstudio_ci
+      BETTER_AUTH_URL: http://localhost:3000
+      BETTER_AUTH_SECRET: ci_testing_only_randomized_secret_for_cloud_maps_2026
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Better Auth 表结构迁移
+        run: npx auth migrate --yes --config ./src/lib/cloud/server/auth.ts
+      - name: 云端业务迁移
+        run: node scripts/cloud-migrate-business.cjs
+      - name: 重复运行迁移（幂等验证）
+        run: node scripts/cloud-migrate-business.cjs
+      - name: 真实 PostgreSQL 结构与地图约束自检
+        run: node scripts/cloud-db-smoke.cjs
