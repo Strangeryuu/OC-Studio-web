@@ -9,6 +9,8 @@ import { characterLinksAllowed } from '@/lib/cloud/server/character-links'
 import { eventLinksAllowed } from '@/lib/cloud/server/original-links'
 import { worldLinksAllowed } from '@/lib/cloud/server/world-links'
 import { cloudMapAllowed } from '@/lib/cloud/map-fields'
+import { cloudNovelAllowed } from '@/lib/cloud/novel-fields'
+import { NOVEL_CATEGORY } from '@/lib/entry-kinds'
 import { MAP_CATEGORY } from '@/lib/entry-kinds'
 
 export const runtime = 'nodejs'
@@ -68,6 +70,10 @@ export async function PATCH(request: Request, context: Context) {
     if (!await characterMediaAllowed(client, access.workspaceId, existing.kind, document.data)) {
       await client.query('ROLLBACK')
       return NextResponse.json({ error: existing.kind === 'worldEntry' ? 'INVALID_NOTE_MEDIA' : existing.kind === 'event' ? 'INVALID_EVENT_MEDIA' : existing.kind === 'country' ? 'INVALID_COUNTRY_MEDIA' : 'INVALID_CHARACTER_MEDIA' }, { status: 400 })
+    }
+    if (!await cloudNovelAllowed(client, access.workspaceId, existing.kind, document.data, existing.content)) {
+      await client.query('ROLLBACK')
+      return NextResponse.json({ error: 'INVALID_NOVEL_FIELDS' }, { status: 400 })
     }
     if (!await cloudMapAllowed(client, access.workspaceId, existing.kind, document.data, document.title, entityId)) {
       await client.query('ROLLBACK')
@@ -147,6 +153,10 @@ export async function DELETE(request: Request, context: Context) {
     if (row.kind === 'worldEntry' && (row.content as Record<string, unknown>).category === MAP_CATEGORY) {
       await client.query('ROLLBACK')
       return NextResponse.json({ error: 'MAP_MANAGEMENT_REQUIRED' }, { status: 400 })
+    }
+    if (row.kind === 'worldEntry' && (row.content as Record<string, unknown>).category === NOVEL_CATEGORY) {
+      await client.query('ROLLBACK')
+      return NextResponse.json({ error: 'NOVEL_MANAGEMENT_REQUIRED' }, { status: 400 })
     }
     if (expected !== row.version) { await client.query('ROLLBACK'); return NextResponse.json({ error: 'VERSION_CONFLICT', actualVersion: row.version }, { status: 409 }) }
     const nextVersion = row.version + 1

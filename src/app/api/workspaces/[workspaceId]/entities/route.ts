@@ -8,6 +8,7 @@ import { characterLinksAllowed } from '@/lib/cloud/server/character-links'
 import { eventLinksAllowed } from '@/lib/cloud/server/original-links'
 import { worldLinksAllowed } from '@/lib/cloud/server/world-links'
 import { cloudMapAllowed } from '@/lib/cloud/map-fields'
+import { cloudNovelAllowed } from '@/lib/cloud/novel-fields'
 import { parseOriginalId } from '@/lib/cloud/original-ids'
 
 export const runtime = 'nodejs'
@@ -52,6 +53,10 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
     if (!await characterMediaAllowed(client, workspaceId, body.kind as string, doc.data)) {
       await client.query('ROLLBACK')
       return NextResponse.json({ error: body.kind === 'worldEntry' ? 'INVALID_NOTE_MEDIA' : body.kind === 'event' ? 'INVALID_EVENT_MEDIA' : body.kind === 'country' ? 'INVALID_COUNTRY_MEDIA' : 'INVALID_CHARACTER_MEDIA' }, { status: 400 })
+    }
+    if (!await cloudNovelAllowed(client, workspaceId, body.kind as string, doc.data)) {
+      await client.query('ROLLBACK')
+      return NextResponse.json({ error: 'INVALID_NOVEL_FIELDS' }, { status: 400 })
     }
     if (!await cloudMapAllowed(client, workspaceId, body.kind as string, doc.data, doc.title)) {
       await client.query('ROLLBACK')
