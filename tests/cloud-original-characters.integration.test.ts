@@ -38,6 +38,7 @@ import * as uploadRoute from '@/app/api/workspaces/[workspaceId]/media/route'
 import * as mediaRoute from '@/app/api/media/[assetId]/route'
 import * as cloudMaps from '@/app/api/workspaces/[workspaceId]/maps/[mapEntityId]/route'
 import * as cloudNovels from '@/app/api/workspaces/[workspaceId]/novels/[entryId]/route'
+import * as novelReorder from '@/app/api/workspaces/[workspaceId]/novels/[entryId]/reorder/route'
 import * as workspaceCover from '@/app/api/workspaces/[workspaceId]/cover/route'
 
 import StudioEntry from '@/app/(studio)/studio/page'
@@ -571,6 +572,49 @@ describe('original entity adapters against PostgreSQL', () => {
     }
     expect(remaining.some(row => row.entityId === separate.entityId)).toBe(true)
     expect(remaining.some(row => row.entityId === ordinary.entityId)).toBe(true)
+  })
+
+  it('reorders novel chapters atomically with role scope and optimistic versions', async () => {
+    state.userId = 'owner'
+    const adapter = new OriginalNotesCloudAdapter(workspaceA, apiFetch)
+    const chapter = (title:string, parentId:number|null, order:number) =>
+      buildDefaultEntry({...newWorldEntryData(), category:'小说',title,parentId,order})
+    const book = await adapter.create(chapter('排序测试小说',null,0))
+    const first = await adapter.create(chapter('A 章',book.entity.id,0))
+    const second = await adapter.create(chapter('B 章',book.entity.id,1))
+    const third = await adapter.create(chapter('C 章',book.entity.id,2))
+    const foreignBook = await adapter.create(chapter('另外一本',null,0))
+    const foreignChapter = await adapter.create(chapter('另外一本的章节',foreignBook.entity.id,0))
+    const ctx={params:Promise.resolve({workspaceId:workspaceA,entryId:book.entityId})}
+    const versions=Object.fromEntries([first,second,third].map(row=>[String(row.entity.id),row.version]))
+    const req=(draggedId:number,overId:number,expectedVersions:Record<string,number>) =>
+      new Request('http://localhost:3000',{method:'PATCH',
+        headers:{Origin:'http://localhost:3000','Content-Type':'application/json'},
+        body:JSON.stringify({draggedId,overId,expectedVersions})})
+    state.userId='viewer'
+    expect((await novelReorder.PATCH(req(third.entity.id,first.entity.id,versions),ctx)).status).toBe(404)
+    state.userId='owner'
+    expect((await novelReorder.PATCH(req(first.entity.id,foreignChapter.entity.id,versions),ctx)).status).toBe(400)
+    const done=await novelReorder.PATCH(req(third.entity.id,first.entity.id,versions),ctx)
+    expect(done.status).toBe(200)
+    expect((await done.json()).updated).toBe(3)
+    const after=await adapter.list()
+    const sorted=after.filter(row=>[first.entity.id,second.entity.id,third.entity.id].includes(row.entity.id))
+      .sort((a,b)=>a.entity.order-b.entity.order)
+    expect(sorted.map(row=>row.entity.title)).toEqual(['C 章','A 章','B 章'])
+    expect(sorted.map(row=>row.version)).toEqual([2,2,2])
+    expect((await novelReorder.PATCH(req(first.entity.id,third.entity.id,versions),ctx)).status).toBe(409)
+    state.userId='editor'
+    const current=Object.fromEntries(sorted.map(row=>[String(row.entity.id),row.version]))
+    const editorMove=await novelReorder.PATCH(req(second.entity.id,third.entity.id,current),ctx)
+    expect(editorMove.status).toBe(200)
+    state.userId='owner'
+    const saved=await adapter.list()
+    const final=saved.filter(row=>[first.entity.id,second.entity.id,third.entity.id].includes(row.entity.id))
+      .sort((a,b)=>a.entity.order-b.entity.order)
+    expect(final.map(row=>row.entity.title)).toEqual(['B 章','C 章','A 章'])
+    const history=await revisionRoute.GET(new Request('http://localhost:3000'),ctxEntity(third.entityId))
+    expect((await history.json()).revisions.length).toBeGreaterThanOrEqual(3)
   })
 
   it('versions private world covers and enforces workspace update permissions', async () => {

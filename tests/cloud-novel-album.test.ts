@@ -8,6 +8,7 @@ import { projectCloudAlbum } from '@/features/album/cloud/cloud-album-projection
 import { cloudNovelBooks, novelSubtree, novelChapterTree, filterCloudNovelTree, safeNovelFileName } from '@/features/novel/cloud/cloud-novel-projection'
 import { flattenNovel, countNovelWords, toMarkdown, toTxt } from '@/features/novel/export'
 import { paginateNovel } from '@/features/novel/pagination'
+import { planCloudNovelReorder } from '@/lib/cloud/novel-reorder'
 
 const asset = (n: number) => '/api/media/00000000-0000-4000-8000-' + String(n).padStart(12,'0')
 const note = (id:number,title:string,parentId:number|null,category='小说',order=id) => ({
@@ -39,6 +40,26 @@ describe('cloud original novel and album projections', () => {
     expect(toMarkdown(flattenNovel([chapterA,sub],{markdown:true}),{title:'第一本'})).toContain('# 第一本')
     expect(paginateNovel(output,'9:16').length).toBeGreaterThanOrEqual(1)
     expect(safeNovelFileName('A/B:书.docx')).toBe('A-B-书.docx')
+  })
+
+  it('plans original nested chapter drags within a single book and prevents cycles', () => {
+    const rows = [
+      note(1,'第一本',null,'小说',0),
+      note(2,'第 1 章',1,'小说',0),
+      note(3,'第 2 章',1,'小说',1),
+      note(4,'第 1 节',2,'小说',0),
+      note(5,'第二本',null,'小说',0),
+      note(6,'第二本第 1 章',5,'小说',0),
+    ]
+    const moved = planCloudNovelReorder(rows,1,3,2)!
+    expect(moved.find(row => row.id===3)).toMatchObject({parentId:1,order:0})
+    expect(moved.find(row => row.id===2)).toMatchObject({parentId:1,order:1})
+    const nested = planCloudNovelReorder(rows,1,3,4)!
+    expect(nested.find(row => row.id===3)?.parentId).toBe(2)
+    expect(planCloudNovelReorder(rows,1,2,4)).toBeNull()
+    expect(planCloudNovelReorder(rows,1,2,6)).toBeNull()
+    expect(planCloudNovelReorder(rows,1,1,2)).toBeNull()
+    expect(planCloudNovelReorder(rows,1,2,2)).toEqual([])
   })
 
   it('includes the original world-cover album category only for private workspace media', () => {
