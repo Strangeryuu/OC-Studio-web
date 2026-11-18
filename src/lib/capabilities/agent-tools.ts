@@ -149,6 +149,7 @@ export const UI_ONLY_FIELDS: Record<EntityKind, Record<string, string>> = {
     mapParams: '界面（地图编辑器）',
     mapMode: '界面（地图编辑器）',
     mapAnnotations: '界面（地图编辑器）',
+    mapViews: '界面（云端地图编辑器：生成视图私有媒体）',
   },
 }
 
