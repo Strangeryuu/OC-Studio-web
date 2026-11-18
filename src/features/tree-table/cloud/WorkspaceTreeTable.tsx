@@ -77,6 +77,7 @@ export function WorkspaceTreeTable(props: WorkspaceTreeTableProps) {
   const [closed, setClosed] = useState<Set<string>>(() => new Set())
   const [editing, setEditing] = useState(0)
   const [cloudTags, setCloudTags] = useState<CloudWorkspaceTag[]>([])
+  const [tagsRefreshKey, setTagsRefreshKey] = useState(0)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const pending = useRef<Promise<void> | null>(null)
@@ -93,7 +94,7 @@ export function WorkspaceTreeTable(props: WorkspaceTreeTableProps) {
       .then(tags => { if (active) setCloudTags(tags) })
       .catch(() => { /* Legacy entity tag names remain visible offline. */ })
     return () => { active = false }
-  }, [props.workspaceId])
+  }, [props.workspaceId, tagsRefreshKey])
 
   const projection = useMemo(() => cloudTableTagProjection(cloudTags, [
     ...props.characters.map(row => row.character),
@@ -266,6 +267,7 @@ export function WorkspaceTreeTable(props: WorkspaceTreeTableProps) {
   }
   const handleRefresh = () => {
     if (locked || editing > 0) return
+    setTagsRefreshKey(current => current + 1)
     void props.onRefresh().catch(cause => setError(description(cause)))
   }
 
