@@ -1,8 +1,15 @@
 'use client'
 
+import dynamic from 'next/dynamic'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { MapCanvas, type AnnotationDraft } from '@/features/map/components/MapCanvas'
 import { MapSwitcher } from '@/features/map/components/MapSwitcher'
+import { MAP_VIEWS, type MapViewRenderer } from '@/features/map/save-generated'
+import { renderMapView } from '@/features/map/render-view'
+import { archiveFileName, archiveImageToBlob, blobToArchiveImage, parseMapArchive,
+  scaleAnnotations, serializeMapArchive, type MapArchive } from '@/features/map/archive'
+import { saveBlobAs } from '@/features/map/export'
+import type { MapView, WorldMapParams } from '@/plugins/map-generator'
 import { useMapViewport } from '@/features/map/hooks/useMapViewport'
 import { DEFAULT_MAP_LAYERS, MAP_LAYER_LABELS, type MapAnchor, type MapLayerKind } from '@/features/map/types'
 import { minPoints, newAnnotationId, parseAnnotations, stringifyAnnotations } from '@/features/map/annotations'
@@ -19,6 +26,12 @@ import { useWorkspaceDraftGuard, useWorkspaceImageUpload } from '@/components/cl
 import { registerPendingSave } from '@/lib/pending-saves'
 import { BTN_PRIMARY, BTN_QUIET } from '@/lib/ui-tokens'
 
+const MapGeneratorPanel = dynamic(
+  () => import('@/features/map/MapGeneratorPanel').then(module => module.MapGeneratorPanel),
+  { ssr: false },
+)
+
+type CloudMap = MapEntity & { mapViews?: Record<string, string> }
 type PinKind = AnchorKind
 type PinRecord = { kind: PinKind; id: number; title: string; position: MapAnchor | null; mapId: string | null }
 type NavigationKind = 'country' | 'event' | 'world'
@@ -43,13 +56,14 @@ type Props = {
   error?: string | null
 }
 
-function toMap(row: OriginalNoteSnapshot): MapEntity {
+function toMap(row: OriginalNoteSnapshot): CloudMap {
   const entity = row.entity
   return {
     id: entity.id, name: entity.title, image: entity.mapImage,
     width: entity.mapWidth, height: entity.mapHeight,
     seed: entity.mapSeed, params: entity.mapParams,
     mode: entity.mapMode, annotations: entity.mapAnnotations,
+    mapViews: entity.mapViews ?? undefined,
     updatedAt: entity.updatedAt,
   }
 }
@@ -80,6 +94,9 @@ export function WorkspaceMaps(props: Props) {
   const [name, setName] = useState('')
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [showDetails, setShowDetails] = useState(false)
+  const [generatorOpen, setGeneratorOpen] = useState(false)
+  const [generatorBusy, setGeneratorBusy] = useState(false)
+  const [archiveWarning, setArchiveWarning] = useState<string | null>(null)
   const [edit, setEdit] = useState(false)
   const [shownLayers, setShownLayers] = useState<MapLayerKind[]>(DEFAULT_MAP_LAYERS.map(item => item.kind))
   const [draft, setDraft] = useState<AnnotationDraft | null>(null)
@@ -90,6 +107,7 @@ export function WorkspaceMaps(props: Props) {
   const [failedDraft, setFailedDraft] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const fileRef = useRef<HTMLInputElement | null>(null)
+  const archiveRef = useRef<HTMLInputElement | null>(null)
   const writing = useRef<Promise<void> | null>(null)
   const viewport = useMapViewport(map?.width && map?.height ? map.width / map.height : 16 / 9, map?.id ?? 0)
   const pins = useMemo(() => makePins(countries, events, rows), [countries, events, rows])
@@ -106,12 +124,13 @@ export function WorkspaceMaps(props: Props) {
     if (failedDraft !== null) throw new Error('地图上次保存失败，未保存的数据仍保留在页面中')
     return writing.current ?? undefined
   }), [draft, failedDraft])
-  useWorkspaceDraftGuard(draft !== null || saving || failedDraft !== null, '地图')
+  useWorkspaceDraftGuard(draft !== null || saving || generatorBusy || failedDraft !== null, '地图')
 
-  const upload = useWorkspaceImageUpload(props.workspaceId, canEdit && !disabled && !saving,
-    setSaving, setError)
+  // The surrounding operation owns the save lock; the upload helper only reports failures.
+  const upload = useWorkspaceImageUpload(props.workspaceId, canEdit && !disabled,
+    () => {}, setError)
 
-  async function execute(job: () => Promise<void>, unsaved?: unknown): Promise<void> {
+  async function execute(job: () => Promise<void>, unsaved?: unknown, propagate = false): Promise<void> {
     if (writing.current || disabled || !canEdit) return
     setError(null)
     setFailedDraft(null)
@@ -124,6 +143,7 @@ export function WorkspaceMaps(props: Props) {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '保存地图失败')
       setFailedDraft(JSON.stringify(unsaved ?? { map: activeName, draft }, null, 2))
+      if (propagate) throw cause
     } finally {
       writing.current = null
       setSaving(false)
@@ -213,6 +233,142 @@ export function WorkspaceMaps(props: Props) {
     }, { title })
   }
 
+  async function uploadMapImage(blob: Blob, fileName: string): Promise<string> {
+    const url = await upload(blob, fileName)
+    if (!url) throw new Error('底图上传失败，请检查网络和图片格式')
+    return url
+  }
+
+  async function generateBackground(
+    blob: Blob, size: { width: number; height: number },
+    seed: number, params: WorldMapParams, view: MapView,
+    onProgress?: (stage: string, value: number) => void,
+    renderView?: MapViewRenderer,
+  ) {
+    if (!selected) throw new Error('请先创建地图')
+    await execute(async () => {
+      const views: Record<string, string> = {}
+      views[view] = await uploadMapImage(blob, `${selected.entity.title}-${view}.png`)
+      const other = MAP_VIEWS.filter(item => item !== view)
+      if (renderView) {
+        for (let index = 0; index < other.length; index += 1) {
+          const next = other[index]
+          onProgress?.('渲染' + next, (index + 1) / (other.length + 1))
+          try {
+            const image = await renderView(next)
+            views[next] = await uploadMapImage(image, `${selected.entity.title}-${next}.png`)
+          } catch (cause) {
+            console.warn('[cloud map] Optional view rendering failed', next, cause)
+          }
+        }
+      }
+      const saved = await noteAdapter.save(selected, {
+        mapImage: views[view], mapWidth: size.width, mapHeight: size.height,
+        mapSeed: seed, mapParams: JSON.stringify(params), mapMode: view, mapViews: views,
+      })
+      props.onMapSaved(saved)
+      setGeneratorOpen(false)
+      onProgress?.('', 1)
+    }, { map: selected.entity.title, seed, view, params }, true)
+  }
+
+  async function switchGeneratedView(view: MapView) {
+    if (!selected || !map || !canModify) return
+    const cached = map.mapViews?.[view]
+    if (cached) {
+      updateMap({ mapImage: cached, mapMode: view })
+      return
+    }
+    if (map.seed === undefined || !map.params) return
+    await execute(async () => {
+      const params = JSON.parse(map.params!) as WorldMapParams
+      const png = await renderMapView({ seed: map.seed!, params, view })
+      const url = await uploadMapImage(png, `${map.name}-${view}.png`)
+      const saved = await noteAdapter.save(selected, {
+        mapImage: url, mapMode: view, mapViews: { ...map.mapViews, [view]: url },
+      })
+      props.onMapSaved(saved)
+    }, { map: map.name, view })
+  }
+
+  async function exportArchive() {
+    if (!map || !canEdit || saving) return
+    setSaving(true)
+    setError(null)
+    try {
+      const image = map.image ? await (async () => {
+        const response = await fetch(map.image!, { cache: 'no-store' })
+        if (!response.ok) throw new Error('无法读取此地图的私有底图')
+        return blobToArchiveImage(await response.blob())
+      })() : undefined
+      let params: Record<string, unknown> | undefined
+      if (map.params) {
+        try {
+          const value: unknown = JSON.parse(map.params)
+          if (value && typeof value === 'object' && !Array.isArray(value)) params = value as Record<string, unknown>
+        } catch { /* Older unparseable snapshots have no reusable params. */ }
+      }
+      const archive: MapArchive = {
+        name: map.name, seed: map.seed, params,
+        view: map.mode, width: map.width, height: map.height,
+        annotations, image,
+      }
+      await saveBlobAs(new Blob([serializeMapArchive(archive)], { type: 'application/json' }),
+        archiveFileName(map.name), { filterName: '地图档案' })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '导出地图失败')
+    } finally { setSaving(false) }
+  }
+
+  async function importArchive(file: File | undefined) {
+    if (!file || !canEdit || saving || disabled) return
+    if (file.size > 20 * 1024 * 1024) { setError('地图档案超过 20 MB'); return }
+    await execute(async () => {
+      const { archive, coordinateSpace, warnings } = parseMapArchive(await file.text())
+      let title = archive.name.trim().slice(0, 190) || '导入地图'
+      const occupied = new Set(maps.map(row => row.entity.title))
+      if (occupied.has(title)) {
+        const base = title.slice(0, 175)
+        let number = 2
+        while (occupied.has(`${base} ${number}`)) number += 1
+        title = `${base} ${number}`
+      }
+
+      let imageUrl: string | undefined
+      let width = archive.width
+      let height = archive.height
+      if (archive.image) {
+        const image = archiveImageToBlob(archive.image)
+        const bitmap = await createImageBitmap(image)
+        width = bitmap.width
+        height = bitmap.height
+        bitmap.close()
+        imageUrl = await uploadMapImage(image, title + '.png')
+      }
+
+      let annotationItems = archive.annotations
+      if (coordinateSpace === 'pixel' && annotationItems.length) {
+        if (width && height) annotationItems = scaleAnnotations(annotationItems, width, height)
+        else {
+          annotationItems = []
+          warnings.push('缺少底图尺寸，已跳过像素坐标标注')
+        }
+      }
+      const view = MAP_VIEWS.find(candidate => candidate === archive.view)
+      const entry = buildDefaultEntry({ ...newWorldEntryData(), title, category: MAP_CATEGORY }, {
+        mapImage: imageUrl, mapWidth: width, mapHeight: height,
+        mapSeed: archive.seed, mapParams: archive.params ? JSON.stringify(archive.params) : undefined,
+        mapMode: view, mapViews: imageUrl && view ? { [view]: imageUrl } : undefined,
+        mapAnnotations: stringifyAnnotations(annotationItems),
+      })
+      const created = await noteAdapter.create(entry)
+      props.onMapCreated(created)
+      setActiveId(created.entity.id)
+      setArchiveWarning(warnings.length ? warnings.join('；') : null)
+      setSwitcherOpen(false)
+    }, { importedFile: file.name }, true).catch(() => undefined)
+  }
+
   async function setBackground(file: File | undefined) {
     if (!file || !selected || !canModify) return
     setError(null)
@@ -226,10 +382,14 @@ export function WorkspaceMaps(props: Props) {
     const width = bitmap.width
     const height = bitmap.height
     bitmap.close()
-    const url = await upload(file, file.name)
-    if (url) {
-      updateMap({ mapImage: url, mapWidth: width, mapHeight: height })
-    }
+    await execute(async () => {
+      const url = await uploadMapImage(file, file.name)
+      const saved = await noteAdapter.save(selected, {
+        mapImage: url, mapWidth: width, mapHeight: height,
+        mapSeed: null, mapParams: null, mapMode: null, mapViews: null,
+      })
+      props.onMapSaved(saved)
+    }, { file: file.name, width, height })
   }
 
   return <section className="flex min-w-0 flex-col gap-3">
@@ -237,7 +397,7 @@ export function WorkspaceMaps(props: Props) {
       <h2 className="mr-2 text-reading font-semibold">地图</h2>
       {maps.length > 0 && <div className="relative">
         <button type="button" aria-expanded={switcherOpen} aria-label="选择地图"
-          disabled={saving || draft !== null}
+          disabled={saving || draft !== null || generatorOpen}
           className={BTN_QUIET} onClick={() => setSwitcherOpen(value => !value)}>
           {map?.name ?? '选择地图'} · 切换
         </button>
@@ -264,6 +424,7 @@ export function WorkspaceMaps(props: Props) {
     </div>
     {props.loading && <p className="text-ui text-ink-muted">正在读取地图…</p>}
     {props.error && <p role="alert" className="text-ui text-error">{props.error}</p>}
+    {archiveWarning && <p role="status" className="text-ui text-ink-muted">{archiveWarning}</p>}
     {error && <div role="alert" className="text-ui text-error">{error}
       {failedDraft && <details><summary>复制未保存数据</summary><textarea readOnly className="w-full" value={failedDraft}/></details>}
     </div>}
@@ -276,10 +437,21 @@ export function WorkspaceMaps(props: Props) {
         <p>尺寸：{map.width ?? '—'} × {map.height ?? '—'} · 标注 {annotations.length} 条 ·
           锚点 {pins.filter(pin => pin.mapId === map.name && pin.position).length} 个</p>
       </div>}
+      <input ref={archiveRef} type="file" accept=".ocmap,application/json"
+        aria-label="导入地图档案" className="sr-only" disabled={!canModify}
+        onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; void importArchive(file) }} />
       <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="sr-only"
         aria-label="上传地图底图" disabled={!canModify}
         onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; void setBackground(file) }} />
-      {edit && canEdit && <div className="flex flex-wrap items-center gap-2 text-ui">
+      {canEdit && <div className="flex flex-wrap items-center gap-2 text-ui">
+        <button type="button" className={BTN_QUIET} disabled={!canModify}
+          onClick={() => archiveRef.current?.click()}>导入 .ocmap</button>
+        <button type="button" className={BTN_QUIET} disabled={saving}
+          onClick={() => void exportArchive()}>导出 .ocmap</button>
+        <button type="button" className={BTN_QUIET} disabled={!canModify || generatorBusy}
+          onClick={() => setGeneratorOpen(current => !current)}>{generatorOpen ? '返回地图' : '地图生成器'}</button>
+      </div>}
+      {edit && canEdit && !generatorOpen && <div className="flex flex-wrap items-center gap-2 text-ui">
         <button type="button" className={BTN_QUIET} onClick={() => fileRef.current?.click()}
           disabled={!canModify}>上传底图</button>
         <label>添加锚点 <select aria-label="选择要标注的条目" value={pick} disabled={!canModify}
@@ -321,7 +493,18 @@ export function WorkspaceMaps(props: Props) {
           disabled={saving || draft.points.length < minPoints(draft.kind)} onClick={finishAnnotation}>完成标注</button>
         <button type="button" className={BTN_QUIET} onClick={() => setDraft(null)}>取消绘制</button>
       </div>}
-      <div className="h-[60vh] min-h-80 overflow-hidden rounded-panel border border-line">
+      {map.seed !== undefined && map.params && !generatorOpen && <div className="flex flex-wrap items-center gap-2 text-ui">
+        <span>生成视图</span>
+        {MAP_VIEWS.map(view => <button key={view} type="button" className={BTN_QUIET}
+          aria-pressed={map.mode === view} disabled={!canModify || map.mode === view}
+          onClick={() => void switchGeneratedView(view)}>{view}</button>)}
+      </div>}
+      {generatorOpen && <div className="h-[70vh] min-h-[400px] overflow-auto rounded-panel border border-line p-3">
+        <MapGeneratorPanel target={{ kind: 'existing', name: map.name }}
+          initialSeed={map.seed} initialParams={map.params}
+          onBusyChange={setGeneratorBusy} onUseAsBackground={generateBackground} />
+      </div>}
+      <div className={`h-[60vh] min-h-80 overflow-hidden rounded-panel border border-line ${generatorOpen ? 'hidden' : ''}`}>
         <MapCanvas map={map} viewport={viewport} points={shown} allLayersOff={shownLayers.length === 0}
           onMoveAnchor={(point, anchor) => setDraftAnchor({ key: mapKey(point.kind, point.id), anchor })}
           onCommitAnchor={(point, anchor) => updatePin(point.kind, point.id, anchor)}
@@ -329,7 +512,7 @@ export function WorkspaceMaps(props: Props) {
           onOpenAnchor={point => props.onNavigate(point.kind === 'worldEntry' ? 'world' : point.kind, point.id)}
           onEnableAllLayers={() => setShownLayers(DEFAULT_MAP_LAYERS.map(layer => layer.kind))}
           onPickBackground={() => { if (canModify) fileRef.current?.click() }}
-          readOnly={!edit || !canModify}
+          readOnly={!edit || !canModify || generatorOpen}
           annotations={annotations} draft={edit && canModify ? draft : null}
           onDraftPoint={anchor => setDraft(current => current ? { ...current, points: [...current.points, anchor] } : null)}
           bleed />
