@@ -1,0 +1,24 @@
+# Only source required for the image build enters the Docker context.
+.git
+.github
+.next
+node_modules
+coverage
+dist
+out
+target
+src-tauri/target
+*.log
+*.tmp
+.DS_Store
+.env
+.env.*
+**/.env
+**/.env.*
+deploy/data
+deploy/backups
+deploy/.update.lock
+data
+backups
+*.dump
+*.sql.gz

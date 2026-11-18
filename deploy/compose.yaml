@@ -1,0 +1,56 @@
+name: ocstudio-web
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ocstudio}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env}
+      POSTGRES_DB: ${POSTGRES_DB:-ocstudio}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ocstudio} -d ${POSTGRES_DB:-ocstudio}"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+  migrate:
+    profiles: ["maintenance"]
+    image: ghcr.io/strangeryuu/oc-studio-web-migrate:${IMAGE_TAG:-dev}
+    restart: "no"
+    environment: &cloud-env
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ocstudio}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env}@db:5432/${POSTGRES_DB:-ocstudio}
+      BETTER_AUTH_URL: ${APP_ORIGIN:?Set APP_ORIGIN to your HTTPS URL}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET in deploy/.env}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    image: ghcr.io/strangeryuu/oc-studio-web:${IMAGE_TAG:-dev}
+    restart: unless-stopped
+    init: true
+    environment:
+      <<: *cloud-env
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+      MEDIA_ROOT: /data/media
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./data/media:/data/media
+    ports:
+      - "127.0.0.1:${HTTP_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  postgres-data:
