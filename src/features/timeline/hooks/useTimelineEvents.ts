@@ -17,6 +17,7 @@ import { useFieldConfig } from '@/lib/fields'
  */
 export function useTimelineEvents(
   filter?: TimelineFilter,
+  enabled = true,
 ): {
   events: TimelineEvent[]
   loading: boolean
@@ -37,19 +38,21 @@ export function useTimelineEvents(
     queryKey: ['timeline-events', filter, countryTimeKey],
     queryFn: () => timelineService.getTimelineEvents(filter),
     staleTime: 0,
+    enabled,
   })
 
   const refresh = useCallback(() => {
-    void refetch()
-  }, [refetch])
+    if (enabled) void refetch()
+  }, [enabled, refetch])
 
   useEffect(() => {
+    if (!enabled) return
     const handler = () => {
       void refetch()
     }
     window.addEventListener(DATA_UPDATED_EVENT, handler)
     return () => window.removeEventListener(DATA_UPDATED_EVENT, handler)
-  }, [refetch])
+  }, [enabled, refetch])
 
   return {
     events: data,

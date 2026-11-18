@@ -3,7 +3,7 @@ import { logOperation, pendingStamp } from '@/lib/sync'
 import { notifyDataUpdated } from '@/lib/data-events'
 import { getFieldConfig } from '@/lib/fields/store'
 import type { FieldDef } from '@/lib/fields/types'
-import type { Country, Event } from '@/types'
+import type { Character, Country, Event } from '@/types'
 import type { TimelineEvent } from './types'
 import { pickTimelineFields } from './types'
 
@@ -62,11 +62,23 @@ export function buildCountryTimelineNodes(
   return nodes
 }
 
-export async function getTimelineEvents(
+export async function getTimelineEvents(filter?: TimelineFilter): Promise<TimelineEvent[]> {
+  const [events, characters, countries] = await Promise.all([
+    db.events.orderBy('time').toArray(),
+    filter?.countryId === undefined ? db.characters.toArray() : [],
+    filter?.characterId === undefined ? db.countries.toArray() : [],
+  ])
+  return buildTimelineEvents(events, characters, countries, getFieldConfig().country, filter)
+}
+
+export function buildTimelineEvents(
+  entities: Event[],
+  characters: Character[],
+  countries: Country[],
+  countryFields: FieldDef[],
   filter?: TimelineFilter,
-): Promise<TimelineEvent[]> {
-  const all = await db.events.orderBy('time').toArray()
-  let alive = all.filter((e) => !e.deleted)
+): TimelineEvent[] {
+  let alive = entities.filter(event => !event.deleted)
 
   if (filter?.characterId !== undefined) {
     alive = alive.filter(
@@ -94,55 +106,27 @@ export async function getTimelineEvents(
     ...withoutTime.map(pickTimelineFields),
   ]
 
-  // 角色生日合成「出生」节点：只有**年份能读出来**才上时间线（「不详」这类自由文本不上）。
-  const [births, countryNodes] = await Promise.all([
-    getBirthNodes(filter),
-    getCountryNodes(filter),
-  ])
-
+  const births = filter?.countryId !== undefined ? [] : characters
+    .filter(character => !character.deleted && parseYear(character.birthday) !== null)
+    .filter(character => filter?.characterId === undefined || character.id === filter.characterId)
+    .map((character): TimelineEvent => ({
+      id: -character.id,
+      title: `${character.name}出生`,
+      time: character.birthday,
+      summary: character.birthday,
+      isMajor: true,
+      kind: 'birth',
+      characterId: character.id,
+    }))
+  const countryNodes = filter?.characterId !== undefined ? [] : buildCountryTimelineNodes(
+    countries.filter(country => !country.deleted && (filter?.countryId === undefined || country.id === filter.countryId)),
+    countryFields,
+  )
   return [...events, ...births, ...countryNodes].sort((a, b) => {
     const aYear = parseYear(a.time) ?? 0
     const bYear = parseYear(b.time) ?? 0
     return aYear - bYear
   })
-}
-
-/**
- * 出生节点。id 取负数，与事件 / 国家节点分属不同空间；分发看 `kind`，不靠 id 符号猜。
- * 按国家筛选时不掺进来：出生没有国家归属。
- */
-async function getBirthNodes(filter?: TimelineFilter): Promise<TimelineEvent[]> {
-  if (filter?.countryId !== undefined) return []
-
-  const characters = await db.characters.toArray()
-  return characters
-    .filter((c) => !c.deleted && parseYear(c.birthday) !== null)
-    .filter((c) => filter?.characterId === undefined || c.id === filter.characterId)
-    .map((c) => ({
-      id: -c.id,
-      title: `${c.name}出生`,
-      time: c.birthday,
-      summary: c.birthday,
-      isMajor: true,
-      kind: 'birth' as const,
-      characterId: c.id,
-    }))
-}
-
-/**
- * 国家时间节点：建立 / 结束时间等 `type: 'time'` 的字段各合成一个只读节点。
- *
- * 字段从字段表读，所以用户改名 / 删除 / 新增时间字段都会跟着变；按角色筛选时不掺进来
- * （国家节点没有角色归属），按国家筛选时只留那一个国家。
- */
-async function getCountryNodes(filter?: TimelineFilter): Promise<TimelineEvent[]> {
-  if (filter?.characterId !== undefined) return []
-
-  const countries = await db.countries.toArray()
-  const visible = countries
-    .filter((country) => !country.deleted)
-    .filter((country) => filter?.countryId === undefined || country.id === filter.countryId)
-  return buildCountryTimelineNodes(visible, getFieldConfig().country)
 }
 
 export async function updateEventTime(

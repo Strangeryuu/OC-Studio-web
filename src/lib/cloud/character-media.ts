@@ -12,18 +12,20 @@ export function cloudMediaUrlId(value: string): string | null {
 }
 
 export function characterMediaIds(kind: unknown, content: unknown): string[] | null {
-  if (kind !== 'character' && kind !== 'country') return []
+  if (kind !== 'character' && kind !== 'country' && kind !== 'event') return []
   if (!content || typeof content !== 'object' || Array.isArray(content)) return null
   const record = content as Record<string, unknown>
   const ids: string[] = []
-  for (const key of [kind === 'country' ? 'flagUrl' : 'avatarUrl', 'headerUrl']) {
+  const coverKeys = kind === 'country' ? ['flagUrl', 'headerUrl'] : kind === 'character' ? ['avatarUrl', 'headerUrl'] : ['headerUrl']
+  for (const key of coverKeys) {
     const value = record[key]
     if (typeof value !== 'string' || !value.startsWith('/api/media/')) continue
     const id = cloudMediaUrlId(value)
     if (id === null) return null
     ids.push(id)
   }
-  for (const key of ['avatars', 'gallery']) {
+  const galleryKeys = kind === 'character' ? ['avatars', 'gallery'] : kind === 'country' ? ['gallery'] : ['images']
+  for (const key of galleryKeys) {
     const images = record[key]
     if (!Array.isArray(images)) continue
     for (const item of images) {
@@ -40,7 +42,7 @@ export function characterMediaIds(kind: unknown, content: unknown): string[] | n
     if (id === null) return null
     ids.push(id)
   }
-  if (kind === 'country') return [...new Set(ids)]
+  if (kind !== 'character') return [...new Set(ids)]
   for (const key of ['avatarMediaId', 'headerMediaId']) {
     const value = record[key]
     if (value === undefined || value === null || value === '') continue

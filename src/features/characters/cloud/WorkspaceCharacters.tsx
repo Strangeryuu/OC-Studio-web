@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Providers } from '@/app/providers'
 import { SaveStatusProvider, useSaveStatus } from '@/components/layout/SaveStatusContext'
 import { Toaster } from '@/components/shared/toaster'
@@ -9,7 +9,7 @@ import { CharacterInfoSection } from '@/features/characters/components/Character
 import { characterFormBaseline, useCharacterForm } from '@/features/characters/hooks/useCharacterForm'
 import { buildDefaultCharacter } from '@/features/characters/services'
 import type { CharacterFormData } from '@/features/characters/types'
-import { newCharacterData, newCountryData } from '@/lib/entity-defaults'
+import { newCharacterData, newCountryData, newEventData } from '@/lib/entity-defaults'
 import { BUILTIN_FIELDS } from '@/lib/fields'
 import { flushPendingSaves } from '@/lib/pending-saves'
 import { BTN_PRIMARY, BTN_QUIET, TITLE_INPUT } from '@/lib/ui-tokens'
@@ -22,10 +22,16 @@ import { ActiveEditorProvider } from '@/lib/editor-context'
 import { legacyBodySections } from '@/lib/body-content'
 import { hasNewBodyImages } from '@/lib/cloud/character-media'
 import { ProfileBannerEditor } from '@/components/shared/ProfileBannerEditor'
+import type { RelationTargetKind } from '@/components/shared/relations/types'
 import { RelationsSection } from '@/components/shared/relations/RelationsSection'
 
-import { OriginalCountriesCloudAdapter, type OriginalCountrySnapshot } from '@/lib/cloud/adapters/original-countries'
+import { OriginalCountriesCloudAdapter } from '@/lib/cloud/adapters/original-countries'
 import { OriginalCountryEditor } from '@/features/countries/cloud/OriginalCountryEditor'
+import { OriginalEventEditor } from '@/features/events/cloud/OriginalEventEditor'
+import { buildDefaultEvent } from '@/features/events/services'
+import { OriginalEventsCloudAdapter } from '@/lib/cloud/adapters/original-events'
+import { TimelineView } from '@/features/timeline/components/TimelineView'
+import { useDelayedFlag } from '@/lib/use-delayed-flag'
 import { buildDefaultCountry } from '@/features/countries/services'
 import { WorkspaceEntityHistory } from '@/components/cloud/WorkspaceEntityHistory'
 import { insertWorkspaceBodyImage, useWorkspaceDraftGuard, useWorkspaceImageUpload } from '@/components/cloud/workspace-editor-guards'
@@ -86,142 +92,167 @@ export function WorkspaceCharacters({ workspaceId, role }: { workspaceId: string
   </SaveStatusProvider></ActiveEditorProvider></Providers>
 }
 
-function CharacterWorkspace({ workspaceId, role }: { workspaceId: string; role: WorkspaceRole }) {
-  const adapter = useMemo(() => new OriginalCharactersCloudAdapter(workspaceId), [workspaceId])
-  const countriesAdapter = useMemo(() => new OriginalCountriesCloudAdapter(workspaceId), [workspaceId])
-  const [rows, setRows] = useState<OriginalCharacterSnapshot[]>([])
-  const [countryRows, setCountryRows] = useState<OriginalCountrySnapshot[]>([])
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const selected = rows.find(row => row.entityId === selectedId)
-  const selectedCountry = countryRows.find(row => row.entityId === selectedId)
-  const characters = useMemo(() => rows.map(row => row.character), [rows])
-  const countries = useMemo(() => countryRows.map(row => row.entity), [countryRows])
+function useWorkspaceRows<T extends { entityId: string }>(adapter: { list: () => Promise<T[]> }, label: string) {
+  const [rows, setRows] = useState<T[]>([])
   const [loading, setLoading] = useState(true)
-  const [countriesLoading, setCountriesLoading] = useState(true)
-  const [countriesError, setCountriesError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const canEdit = role !== 'viewer'
-
   useEffect(() => {
     let current = true
     void adapter.list().then(result => {
       if (current) setRows(result)
     }).catch(cause => {
-      if (current) setError(cause instanceof Error ? cause.message : '角色加载失败')
+      if (current) setError(cause instanceof Error ? cause.message : label + '加载失败')
     }).finally(() => {
       if (current) setLoading(false)
     })
     return () => { current = false }
-  }, [adapter])
+  }, [adapter, label])
+  const append = useCallback((row: T) => setRows(current => [...current, row]), [])
+  const replace = useCallback((row: T) => {
+    setRows(current => current.map(item => item.entityId === row.entityId ? row : item))
+  }, [])
+  return { rows, loading, error, append, replace }
+}
 
-  useEffect(() => {
-    let current = true
-    void countriesAdapter.list().then(result => {
-      if (current) setCountryRows(result)
-    }).catch(cause => {
-      if (current) setCountriesError(cause instanceof Error ? cause.message : '国家加载失败')
-    }).finally(() => {
-      if (current) setCountriesLoading(false)
-    })
-    return () => { current = false }
-  }, [countriesAdapter])
+function WorkspaceEntryList<T extends { entityId: string }>({ label, rows, getLabel, selectedId, loading,
+  error, busy, onCreate, onSelect, actions }: {
+  label: string
+  rows: T[]
+  getLabel: (row: T) => string
+  selectedId: string | null
+  loading: boolean
+  error: string | null
+  busy: boolean
+  onCreate?: () => void
+  actions?: ReactNode
+  onSelect: (entityId: string) => void
+}) {
+  const showLoading = useDelayedFlag(loading)
+  return <section className="flex flex-col gap-4 border-t border-line pt-5">
+    <div className="flex items-center justify-between gap-3">
+      <h2 className="text-reading font-semibold">{label}</h2>
+      {(onCreate || actions) && <div className="flex items-center gap-2">
+        {actions}
+        {onCreate && <button type="button" className={BTN_QUIET} disabled={busy || loading || error !== null}
+          onClick={onCreate}>新建{label}</button>}
+      </div>}
+    </div>
+    {error && <p role="alert" className="text-ui text-error">{error}</p>}
+    {showLoading && <p className="text-ui text-ink-muted">正在读取{label}…</p>}
+    {!loading && <div className="flex flex-wrap gap-2">
+      {rows.map(row => <button type="button" key={row.entityId} className={BTN_QUIET}
+        aria-pressed={selectedId === row.entityId} disabled={busy}
+        onClick={() => onSelect(row.entityId)}>{getLabel(row)}</button>)}
+      {rows.length === 0 && !error && <p className="text-ui text-ink-muted">暂无{label}</p>}
+    </div>}
+  </section>
+}
 
-  const select = useCallback(async (nextId: string) => {
-    if (busy || nextId === selectedId) return
+function CharacterWorkspace({ workspaceId, role }: { workspaceId: string; role: WorkspaceRole }) {
+  const characterAdapter = useMemo(() => new OriginalCharactersCloudAdapter(workspaceId), [workspaceId])
+  const countryAdapter = useMemo(() => new OriginalCountriesCloudAdapter(workspaceId), [workspaceId])
+  const eventAdapter = useMemo(() => new OriginalEventsCloudAdapter(workspaceId), [workspaceId])
+  const characterList = useWorkspaceRows(characterAdapter, '角色')
+  const countryList = useWorkspaceRows(countryAdapter, '国家')
+  const eventList = useWorkspaceRows(eventAdapter, '事件')
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const canEdit = role !== 'viewer'
+  const character = characterList.rows.find(row => row.entityId === selectedId)
+  const country = countryList.rows.find(row => row.entityId === selectedId)
+  const event = eventList.rows.find(row => row.entityId === selectedId)
+  const characters = useMemo(() => characterList.rows.map(row => row.character), [characterList.rows])
+  const countries = useMemo(() => countryList.rows.map(row => row.entity), [countryList.rows])
+  const events = useMemo(() => eventList.rows.map(row => row.entity), [eventList.rows])
+
+  async function openAfterSaving(next: () => Promise<string>) {
+    if (busy) return
     setBusy(true)
     setError(null)
     try {
-      // 原版保存流水线会追上保存期间继续输入的内容；失败时保留当前编辑器。
+      // 切换前等待原版保存流水线，失败时保留当前编辑器。
       await flushPendingSaves()
-      setSelectedId(nextId)
+      setSelectedId(await next())
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '当前草稿保存失败')
-    } finally { setBusy(false) }
-  }, [busy, selectedId])
-
-  async function create() {
-    if (busy || !canEdit) return
-    setBusy(true)
-    setError(null)
-    try {
-      await flushPendingSaves()
-      const next = await adapter.create(buildDefaultCharacter(newCharacterData()))
-      setRows(current => [...current, next])
-      setSelectedId(next.entityId)
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '角色创建失败')
-    } finally { setBusy(false) }
+      setError(cause instanceof Error ? cause.message : '无法打开条目')
+    } finally {
+      setBusy(false)
+    }
   }
 
-  async function createCountry() {
-    if (busy || !canEdit) return
-    setBusy(true)
-    setError(null)
-    try {
-      await flushPendingSaves()
-      const next = await countriesAdapter.create(buildDefaultCountry(newCountryData()))
-      setCountryRows(current => [...current, next])
-      setSelectedId(next.entityId)
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '国家创建失败')
-    } finally { setBusy(false) }
+  function select(entityId: string) {
+    if (entityId !== selectedId) void openAfterSaving(async () => entityId)
   }
 
-  const savedCountry = useCallback((next: OriginalCountrySnapshot) => {
-    setCountryRows(current => current.map(row => row.entityId === next.entityId ? next : row))
-  }, [])
+  function navigate(kind: RelationTargetKind, id: number) {
+    const target = kind === 'character' ? characterList.rows.find(row => row.character.id === id)
+      : kind === 'country' ? countryList.rows.find(row => row.entity.id === id)
+      : kind === 'event' ? eventList.rows.find(row => row.entity.id === id)
+      : undefined
+    if (target) select(target.entityId)
+  }
 
-  const saved = useCallback((next: OriginalCharacterSnapshot) => {
-    setRows(current => current.map(row => row.entityId === next.entityId ? next : row))
-  }, [])
+  async function saveTimelineTime(id: number, time: string, endTime?: string) {
+    if (busy || !canEdit) return
+    const current = eventList.rows.find(row => row.entity.id === id)
+    if (!current) throw new Error('事件未找到')
+    setBusy(true)
+    try {
+      const saved = await eventAdapter.save(current, { time, endTime })
+      eventList.replace(saved)
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return <div className="flex flex-col gap-4">
-    <section className="flex flex-col gap-4 border-t border-line pt-5">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-reading font-semibold">角色</h2>
-        {canEdit && <button type="button" className={BTN_QUIET} disabled={busy || loading} onClick={() => void create()}>新建角色</button>}
-      </div>
-      {loading ? <p className="text-ui text-ink-muted">正在读取角色…</p> : <div className="flex flex-wrap gap-2">
-        {rows.map(row => <button type="button" key={row.entityId} className={BTN_QUIET}
-          aria-pressed={selected?.entityId === row.entityId} disabled={busy}
-          onClick={() => void select(row.entityId)}>{row.character.name}</button>)}
-        {rows.length === 0 && <p className="text-ui text-ink-muted">暂无角色</p>}
-      </div>}
-    </section>
-    <section className="flex flex-col gap-4 border-t border-line pt-5">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-reading font-semibold">国家</h2>
-        {canEdit && <button type="button" className={BTN_QUIET}
-          disabled={busy || countriesLoading || countriesError !== null} onClick={() => void createCountry()}>新建国家</button>}
-      </div>
-      {countriesError && <p role="alert" className="text-ui text-error">{countriesError}</p>}
-      {countriesLoading ? <p className="text-ui text-ink-muted">正在读取国家…</p> : <div className="flex flex-wrap gap-2">
-        {countryRows.map(row => <button type="button" key={row.entityId} className={BTN_QUIET}
-          aria-pressed={selectedId === row.entityId} disabled={busy}
-          onClick={() => void select(row.entityId)}>{row.entity.name}</button>)}
-        {countryRows.length === 0 && !countriesError && <p className="text-ui text-ink-muted">暂无国家</p>}
-      </div>}
-    </section>
+    <WorkspaceEntryList label="角色" rows={characterList.rows} loading={characterList.loading} error={characterList.error}
+      getLabel={row => row.character.name} selectedId={selectedId} busy={busy} onSelect={select}
+      onCreate={canEdit ? () => void openAfterSaving(async () => {
+        const row = await characterAdapter.create(buildDefaultCharacter(newCharacterData()))
+        characterList.append(row)
+        return row.entityId
+      }) : undefined} />
+    <WorkspaceEntryList label="国家" rows={countryList.rows} loading={countryList.loading} error={countryList.error}
+      getLabel={row => row.entity.name} selectedId={selectedId} busy={busy} onSelect={select}
+      onCreate={canEdit ? () => void openAfterSaving(async () => {
+        const row = await countryAdapter.create(buildDefaultCountry(newCountryData()))
+        countryList.append(row)
+        return row.entityId
+      }) : undefined} />
+    <WorkspaceEntryList label="事件" rows={eventList.rows} loading={eventList.loading} error={eventList.error}
+      actions={<button type="button" className={BTN_QUIET} disabled={busy} aria-pressed={selectedId === 'timeline'}
+        onClick={() => select('timeline')}>时间线</button>}
+      getLabel={row => row.entity.title} selectedId={selectedId} busy={busy} onSelect={select}
+      onCreate={canEdit ? () => void openAfterSaving(async () => {
+        const row = await eventAdapter.create(buildDefaultEvent(newEventData()))
+        eventList.append(row)
+        return row.entityId
+      }) : undefined} />
     {error && <p role="alert" className="text-ui text-error">{error}</p>}
-    {selected && <OriginalCharacterEditor key={selected.entityId} snapshot={selected} adapter={adapter}
-      characters={characters} countries={countries} countriesReady={!countriesLoading && !countriesError}
-      onNavigateCharacter={id => {
-        const target = rows.find(row => row.character.id === id)
-        if (target) void select(target.entityId)
+    {selectedId === 'timeline' && <div className="h-[65vh] min-h-96 rounded-panel border border-line">
+      <TimelineView workspace={{
+        characters, countries, events,
+        loading: eventList.loading || countryList.loading || characterList.loading,
+        error: eventList.error || countryList.error || characterList.error,
+        saveTime: canEdit ? saveTimelineTime : undefined,
       }}
-      onNavigateCountry={id => {
-        const target = countryRows.find(row => row.entity.id === id)
-        if (target) void select(target.entityId)
-      }}
-      canEdit={canEdit} disabled={busy} onUploadBusy={setBusy} onSaved={saved} />}
-    {selectedCountry && <OriginalCountryEditor key={selectedCountry.entityId} snapshot={selectedCountry}
-      adapter={countriesAdapter} characters={characters} canEdit={canEdit} disabled={busy}
-      onSaved={savedCountry} onUploadBusy={setBusy}
-      onNavigateCharacter={id => {
-        const target = rows.find(row => row.character.id === id)
-        if (target) void select(target.entityId)
-      }} />}
+        onSelectCharacter={id => navigate('character', id)}
+        onSelectCountry={id => navigate('country', id)}
+        onSelectEvent={id => navigate('event', id)} />
+    </div>}
+    {character && <OriginalCharacterEditor key={character.entityId} snapshot={character} adapter={characterAdapter}
+      characters={characters} countries={countries} countriesReady={!countryList.loading && !countryList.error}
+      onNavigateCharacter={id => navigate('character', id)}
+      onNavigateCountry={id => navigate('country', id)}
+      canEdit={canEdit} disabled={busy} onUploadBusy={setBusy} onSaved={characterList.replace} />}
+    {country && <OriginalCountryEditor key={country.entityId} snapshot={country} adapter={countryAdapter}
+      characters={characters} events={events} canEdit={canEdit} disabled={busy}
+      onSaved={countryList.replace} onUploadBusy={setBusy} onNavigate={navigate} />}
+    {event && <OriginalEventEditor key={event.entityId} snapshot={event} adapter={eventAdapter}
+      lookups={{ characters, countries, events }} canEdit={canEdit} disabled={busy}
+      onSaved={eventList.replace} onUploadBusy={setBusy} onNavigate={navigate} />}
   </div>
 }
 

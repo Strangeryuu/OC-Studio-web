@@ -18,12 +18,15 @@ import type { EventForm } from '../hooks/useEventForm'
 export function EventInfoSection({
   form,
   compact = false,
+  fieldsOverride,
 }: {
   form: EventForm
   /** 三栏中栏的窄容器：字段单列（不依赖 viewport 的 sm 断点） */
   compact?: boolean
+  fieldsOverride?: FieldDef[]
 }) {
-  const fields = useFields('event')
+  const configuredFields = useFields('event')
+  const fields = fieldsOverride ?? configuredFields
 
   const setTimePart = (which: 'start' | 'end', part: TimePart, value: string): void => {
     if (which === 'start') {
@@ -101,7 +104,7 @@ export function EventInfoSection({
     <section className="group">
       <div className="flex items-center justify-between gap-3">
         <h3 className={SECTION_TITLE}>基本信息</h3>
-        <ComponentEditButton componentId="info" />
+        {!fieldsOverride && <ComponentEditButton componentId="info" />}
       </div>
       {fields.length === 0 ? (
         <p className="text-caption text-ink-faint">字段表里还没有字段。</p>

@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useMemo, useEffect, useLayoutEffect } from 'react'
 import type { Editor } from '@tiptap/core'
-import type { Character, Country, GalleryImage } from '@/types'
+import type { Character, Country, Event, GalleryImage } from '@/types'
 import type { CountryFormData } from '../types'
 import { useCharacterList } from '@/features/characters/hooks/useCharacters'
 import { useEventList } from '@/features/events/hooks/useEvents'
@@ -76,7 +76,7 @@ function sameIds(a: readonly number[], b: readonly number[]): boolean {
 export function useCountryForm(
   country: Country,
   onSave: (id: number, data: Partial<CountryFormData>) => Promise<void>,
-  options?: { localLookups?: boolean; characters?: Character[] },
+  options?: { localLookups?: boolean; characters?: Character[]; events?: Event[] },
 ) {
   const [initial] = useState(() => valuesFromEntity(country))
 
@@ -95,7 +95,8 @@ export function useCountryForm(
   const useLocalLookups = options?.localLookups !== false
   const { characters: localCharacters } = useCharacterList(useLocalLookups)
   const allCharacters = options?.characters ?? localCharacters
-  const { events: allEvents } = useEventList(useLocalLookups)
+  const { events: localEvents } = useEventList(useLocalLookups)
+  const allEvents = options?.events ?? localEvents
 
   /**
    * 「相关角色 / 相关事件」= **实体侧的查询结果**（阶段二·一）。

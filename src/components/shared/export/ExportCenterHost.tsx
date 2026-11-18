@@ -62,7 +62,11 @@ export function ExportCenterProvider({ children }: { children: ReactNode }) {
 
 /** 拿到「打开导出」的入口。必须在 `ExportCenterProvider` 里用（AppShell 已经包好了）。 */
 export function useExportCenter(): OpenExport {
-  const open = useContext(ExportRequestContext)
+  const open = useOptionalExportCenter()
   if (open === null) throw new Error('useExportCenter 必须在 ExportCenterProvider 内使用')
   return open
+}
+
+export function useOptionalExportCenter() {
+  return useContext(ExportRequestContext)
 }

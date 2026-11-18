@@ -34,12 +34,13 @@ async function responseJson(response: Response): Promise<RecordValue> {
 }
 
 /** One instance belongs to one authenticated workspace; no cross-workspace cache. */
-export class OriginalEntityCloudAdapter<T extends { id: number; name: string }, Patch extends object> {
+export class OriginalEntityCloudAdapter<T extends { id: number }, Patch extends object> {
   private readonly base: string
   constructor(
     readonly workspaceId: string,
     private readonly kind: string,
     private readonly readEntity: (id: number, data: RecordValue, title: unknown) => T,
+    private readonly getTitle: (data: Omit<T, 'id'>) => string,
     private readonly fetcher: Fetcher,
   ) {
     if (!CLOUD_UUID_RE.test(workspaceId)) throw new Error('Invalid workspace ID')
@@ -83,15 +84,16 @@ export class OriginalEntityCloudAdapter<T extends { id: number; name: string }, 
 
   async create(entity: Omit<T, 'id'>): Promise<OriginalSnapshot<T>> {
     const data = structuredClone(entity)
+    const title = this.getTitle(data)
     const response = await this.fetcher(`${this.base}/entities`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: this.kind, title: data.name, data }),
+      body: JSON.stringify({ kind: this.kind, title, data }),
     })
     const body = await responseJson(response)
     if (!record(body.entity) || body.entity.workspaceId !== this.workspaceId || body.entity.kind !== this.kind) {
       throw new CloudEntityError('INVALID_RESPONSE', 500)
     }
-    return this.snapshot(body.entity.id, body.entity.local_id, body.entity.version, body.entity.data, data.name)
+    return this.snapshot(body.entity.id, body.entity.local_id, body.entity.version, body.entity.data, title)
   }
 
   async save(snapshot: OriginalSnapshot<T>, patch: Patch): Promise<OriginalSnapshot<T>> {
@@ -99,12 +101,13 @@ export class OriginalEntityCloudAdapter<T extends { id: number; name: string }, 
     const { id: localId, ...original } = structuredClone(snapshot.entity)
     const filtered = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined))
     const data = { ...original, ...structuredClone(filtered), updatedAt: Date.now() }
+    const title = this.getTitle(data)
     const response = await this.fetcher(`/api/entities/${snapshot.entityId}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-OC-Workspace-Id': this.workspaceId },
-      body: JSON.stringify({ expectedVersion: snapshot.version, title: data.name, data }),
+      body: JSON.stringify({ expectedVersion: snapshot.version, title, data }),
     })
     const body = await responseJson(response)
-    return this.snapshot(snapshot.entityId, localId, body.version, data, data.name)
+    return this.snapshot(snapshot.entityId, localId, body.version, data, title)
   }
 
   async remove(snapshot: OriginalSnapshot<T>): Promise<void> {

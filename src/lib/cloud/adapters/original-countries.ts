@@ -23,6 +23,6 @@ function readCountry(id: number, data: RecordValue, title: unknown): Country {
 
 export class OriginalCountriesCloudAdapter extends OriginalEntityCloudAdapter<Country, OriginalCountryPatch> {
   constructor(workspaceId: string, fetcher: Fetcher = fetch) {
-    super(workspaceId, 'country', readCountry, fetcher)
+    super(workspaceId, 'country', readCountry, entity => entity.name, fetcher)
   }
 }

@@ -11,8 +11,8 @@ import { usePeriods } from '@/features/periods'
  * 弹窗（`PeriodDialog`）与删除确认（`AlertDialog`）的开关状态也在这里，
  * 调用方只负责渲染。
  */
-export function usePeriodEditor() {
-  const { periods, addPeriod, updatePeriod, removePeriod } = usePeriods()
+export function usePeriodEditor(enabled = true) {
+  const { periods, addPeriod, updatePeriod, removePeriod } = usePeriods(enabled)
   const [periodDialogOpen, setPeriodDialogOpen] = useState(false)
   const [editingPeriod, setEditingPeriod] = useState<Period | undefined>(undefined)
   const [deleteTarget, setDeleteTarget] = useState<Period | null>(null)

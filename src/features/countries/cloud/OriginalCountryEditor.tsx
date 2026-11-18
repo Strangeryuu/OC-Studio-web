@@ -18,19 +18,21 @@ import { snapshotKey } from '@/lib/dirty'
 import { docRevisionChanged } from '@/lib/save-revision'
 import { DEFAULT_CUSTOM_FIELDS } from '@/lib/fields'
 import { BTN_PRIMARY, BTN_QUIET, TITLE_INPUT } from '@/lib/ui-tokens'
-import type { Character } from '@/types'
+import type { RelationTargetKind } from '@/components/shared/relations/types'
+import type { Character, Event } from '@/types'
 
 const COUNTRY_FIELDS = DEFAULT_CUSTOM_FIELDS.country ?? []
 
-export function OriginalCountryEditor({ snapshot, adapter, characters, canEdit, disabled, onSaved, onNavigateCharacter, onUploadBusy }: {
+export function OriginalCountryEditor({ snapshot, adapter, characters, events, canEdit, disabled, onSaved, onNavigate, onUploadBusy }: {
   snapshot: OriginalCountrySnapshot
   adapter: OriginalCountriesCloudAdapter
   characters: Character[]
+  events: Event[]
   canEdit: boolean
   disabled: boolean
   onUploadBusy: (busy: boolean) => void
   onSaved: (next: OriginalCountrySnapshot) => void
-  onNavigateCharacter: (id: number) => void
+  onNavigate: (kind: RelationTargetKind, id: number) => void
 }) {
   const baseline = useRef(snapshot)
   const bodyEditor = useRef<Editor | null>(null)
@@ -66,7 +68,7 @@ export function OriginalCountryEditor({ snapshot, adapter, characters, canEdit, 
       throw cause
     }
   }, [adapter, onSaved])
-  const form = useCountryForm(snapshot.entity, save, { localLookups: false, characters })
+  const form = useCountryForm(snapshot.entity, save, { localLookups: false, characters, events })
   const { handleDocReady, handleDocChange } = form
   const onEditorReady = useCallback((editor: Editor) => {
     bodyEditor.current = editor
@@ -122,8 +124,10 @@ export function OriginalCountryEditor({ snapshot, adapter, characters, canEdit, 
       <CountryInfoSection values={form.custom} onChange={form.setCustomValue} fieldsOverride={COUNTRY_FIELDS} />
       <SummaryBlock value={form.description} onChange={form.setDescription} />
     </fieldset>
-    <RelationsSection title="相关角色" selfName={form.name} rows={form.relationRows}
-      onNavigate={(_kind, id) => { if (!disabled) onNavigateCharacter(id) }} />
+    <RelationsSection title="相关角色" selfName={form.name} rows={form.relationRows.filter(row => row.kind === 'character')}
+      onNavigate={disabled ? undefined : onNavigate} />
+    <RelationsSection title="相关事件" selfName={form.name} rows={form.relationRows.filter(row => row.kind === 'event')}
+      onNavigate={disabled ? undefined : onNavigate} />
     <GalleryBlock title="相册" images={form.gallery.map(image => image.url)}
       onAdd={canModify ? url => form.setGallery(current => [...current, { url, caption: '' }]) : undefined}
       onReplace={canModify ? (index, url) => form.setGallery(current =>

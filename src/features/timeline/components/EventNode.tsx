@@ -146,7 +146,9 @@ export const StaticNode = memo(function StaticNode({
   const isRange = !!event.endTime
   const tall = detail && event.kind === undefined
   return (
-    <div
+    <button
+      type="button"
+      aria-label={event.title}
       className={`touch-feedback absolute flex items-center gap-1.5 rounded-item border bg-[var(--oc-hover)] px-2 py-1 text-body leading-5 text-ink transition-colors ${
         isRange ? 'bg-paper-card' : ''
       } ${selected ? 'border-ink' : 'border-transparent hover:border-line-hover'}`}
@@ -160,6 +162,6 @@ export const StaticNode = memo(function StaticNode({
       onClick={() => onSelect(event.id)}
     >
       <EventNodeContent event={event} detail={detail} participants={participants} />
-    </div>
+    </button>
   )
 })

@@ -28,8 +28,9 @@ import { useTimelineEvents } from '../hooks/useTimelineEvents'
 import { useCharacterList } from '@/features/characters/hooks/useCharacters'
 import { useCountryList } from '@/features/countries/hooks/useCountries'
 import { PeriodDialog } from '@/components/shared/PeriodDialog'
-import { PERIOD_COLORS } from '@/types'
-import type { TimelineFilter } from '../services'
+import { PERIOD_COLORS, type Character, type Country, type Event, type Period } from '@/types'
+import { buildTimelineEvents, type TimelineFilter } from '../services'
+import { DEFAULT_CUSTOM_FIELDS } from '@/lib/fields'
 import { parseYear } from '@/features/events/utils'
 import {
   LEFT_PADDING,
@@ -48,7 +49,7 @@ import { PeriodBar } from './PeriodBar'
 import { EmptyTimeline } from './EmptyTimeline'
 import { BucketView } from './BucketView'
 import { TimelineToolbar } from './TimelineToolbar'
-import { useExportCenter } from '@/components/shared/export/ExportCenterHost'
+import { useOptionalExportCenter } from '@/components/shared/export/ExportCenterHost'
 
 interface TimelineViewProps {
   onSelectEvent: (id: number) => void
@@ -56,13 +57,24 @@ interface TimelineViewProps {
   onSelectCharacter: (id: number) => void
   /** 打开国家（建立 / 结束时间节点点进来时用） */
   onSelectCountry?: (id: number) => void
+  workspace?: {
+    characters: Character[]
+    countries: Country[]
+    events: Event[]
+    loading: boolean
+    error: string | null
+    saveTime?: (id: number, time: string, endTime?: string) => Promise<void>
+  }
 }
 
-export function TimelineView({ onSelectEvent, onSelectCharacter, onSelectCountry }: TimelineViewProps) {
+const NO_PERIODS: Period[] = []
+const CLOUD_COUNTRY_FIELDS = DEFAULT_CUSTOM_FIELDS.country ?? []
+
+export function TimelineView({ onSelectEvent, onSelectCharacter, onSelectCountry, workspace }: TimelineViewProps) {
   const { isMobile } = useDevice()
   const { settings, updateSetting } = useSettings()
   const [editMode, setEditMode] = useState(false)
-  const openExportCenter = useExportCenter()
+  const openExportCenter = useOptionalExportCenter()
   const [filterMajor, setFilterMajor] = useState(false)
   const [characterFilter, setCharacterFilter] = useState<number | 'all'>('all')
   const [countryFilter, setCountryFilter] = useState<number | 'all'>('all')
@@ -77,8 +89,10 @@ export function TimelineView({ onSelectEvent, onSelectCharacter, onSelectCountry
   const detail = settings.timelineDetail === 'detailed'
   const showTracks = settings.timelineShowTracks
 
-  const { characters } = useCharacterList()
-  const { countries } = useCountryList()
+  const { characters: localCharacters } = useCharacterList(!workspace)
+  const { countries: localCountries } = useCountryList(!workspace)
+  const characters = workspace?.characters ?? localCharacters
+  const countries = workspace?.countries ?? localCountries
 
   const characterOptions = useMemo<FilterOption[]>(() => {
     return [
@@ -105,9 +119,15 @@ export function TimelineView({ onSelectEvent, onSelectCharacter, onSelectCountry
     return Object.keys(f).length > 0 ? f : undefined
   }, [characterFilter, countryFilter])
 
-  const { events, loading, error, refresh } = useTimelineEvents(timelineFilter)
-  const periodEditor = usePeriodEditor()
-  const { periods } = periodEditor
+  const localTimeline = useTimelineEvents(timelineFilter, !workspace)
+  const workspaceEvents = workspace?.events
+  const events = useMemo(() => workspaceEvents
+    ? buildTimelineEvents(workspaceEvents, characters, countries, CLOUD_COUNTRY_FIELDS, timelineFilter)
+    : localTimeline.events, [workspaceEvents, characters, countries, timelineFilter, localTimeline.events])
+  const loading = workspace ? workspace.loading : localTimeline.loading
+  const error = workspace ? workspace.error : localTimeline.error
+  const periodEditor = usePeriodEditor(!workspace)
+  const periods = workspace ? NO_PERIODS : periodEditor.periods
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const containerWidth = useTimelineContainerWidth(scrollRef, events)
@@ -116,7 +136,8 @@ export function TimelineView({ onSelectEvent, onSelectCharacter, onSelectCountry
     setEditMode((prev) => !prev)
   }, [])
 
-  const handleDragEnd = useTimelineDrag(refresh)
+  const canEditTimeline = !workspace || workspace.saveTime !== undefined
+  const handleDragEnd = useTimelineDrag(localTimeline.refresh, workspace?.saveTime)
 
   /**
    * 伪节点分发：出生节点打开角色、国家节点打开国家，其余是真事件。
@@ -175,7 +196,7 @@ export function TimelineView({ onSelectEvent, onSelectCharacter, onSelectCountry
   })
 
   const isFiltering = characterFilter !== 'all' || countryFilter !== 'all' || filterMajor
-  const canDrag = editMode && !isMobile && density === 'year'
+  const canDrag = canEditTimeline && editMode && !isMobile && density === 'year'
   const showNav = !isMobile && navTargets.length > 1
   const showZoom = !isMobile && events.length > 0
   const inAggregation = density !== 'year'
@@ -353,7 +374,7 @@ export function TimelineView({ onSelectEvent, onSelectCharacter, onSelectCountry
     filterMajor,
     setFilterMajor,
     editMode,
-    onToggleEdit: toggleEditMode,
+    onToggleEdit: canEditTimeline ? toggleEditMode : undefined,
     // 简 / 详与参与者轨道是**这张图自己的显示档位**，放在工具栏里，不占全局「视图」菜单
     detail,
     onDetailChange: (value: 'simple' | 'detailed') => updateSetting('timelineDetail', value),
@@ -368,8 +389,8 @@ export function TimelineView({ onSelectEvent, onSelectCharacter, onSelectCountry
     countryFilter,
     onCountryFilterChange: setCountryFilter,
     countryOptions,
-    onAddPeriod: periodEditor.openNewPeriodDialog,
-    onExport: () => openExportCenter({ tab: 'timeline' }),
+    onAddPeriod: workspace ? undefined : periodEditor.openNewPeriodDialog,
+    onExport: !workspace && openExportCenter ? () => openExportCenter({ tab: 'timeline' }) : undefined,
   }
 
   /** 空态/全被筛掉时的工具栏：导航与缩放都不展示 */

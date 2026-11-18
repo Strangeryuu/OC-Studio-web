@@ -228,7 +228,7 @@ export function TimelineToolbar({
   filterMajor: boolean
   setFilterMajor: (v: boolean) => void
   editMode: boolean
-  onToggleEdit: () => void
+  onToggleEdit?: () => void
   /** 详模式（第二行显示时间 · 参与者） */
   detail: boolean
   onDetailChange: (value: 'simple' | 'detailed') => void
@@ -413,7 +413,7 @@ export function TimelineToolbar({
                   </button>
                 </Tip>
               ) : null}
-              <Tip label={editMode ? '锁定时间轴' : '解锁时间轴'}>
+              {onToggleEdit && <Tip label={editMode ? '锁定时间轴' : '解锁时间轴'}>
                 <button onClick={onToggleEdit}
                   className={`flex h-8 w-8 items-center justify-center transition-colors hover:bg-[var(--oc-hover)] ${editMode ? 'text-ink' : 'text-ink-muted hover:text-ink'}`}
                   aria-label={editMode ? '锁定时间轴' : '解锁时间轴'}
@@ -421,7 +421,7 @@ export function TimelineToolbar({
                 >
                   {editMode ? <LockOpen size={16} strokeWidth={2} /> : <Lock size={16} strokeWidth={2} />}
                 </button>
-              </Tip>
+              </Tip>}
             </div>
           }
           gap={8}

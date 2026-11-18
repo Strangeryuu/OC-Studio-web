@@ -3,15 +3,23 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { OriginalCharacterSnapshot } from '@/lib/cloud/adapters/original-characters'
 import { buildDefaultCharacter } from '@/features/characters/services'
-import { newCharacterData, newCountryData } from '@/lib/entity-defaults'
+import { newCharacterData, newCountryData, newEventData } from '@/lib/entity-defaults'
 import * as characters from '@/features/characters/services'
 import * as countries from '@/features/countries/services'
 import type { OriginalCountrySnapshot, OriginalCountryPatch } from '@/lib/cloud/adapters/original-countries'
+import { buildDefaultEvent } from '@/features/events/services'
+import type { OriginalEventSnapshot, OriginalEventPatch } from '@/lib/cloud/adapters/original-events'
 import * as world from '@/features/world/services'
 import type { Editor } from '@tiptap/core'
 import { flushPendingSaves } from '@/lib/pending-saves'
 
-const fake = vi.hoisted(() => ({ list: vi.fn(), save: vi.fn(), create: vi.fn(), countries: vi.fn(), saveCountry: vi.fn() }))
+const fake = vi.hoisted(() => ({
+  list: vi.fn(), save: vi.fn(), create: vi.fn(), countries: vi.fn(), saveCountry: vi.fn(),
+  events: vi.fn(), saveEvent: vi.fn(), createEvent: vi.fn(),
+}))
+vi.mock('@/lib/cloud/adapters/original-events', () => ({
+  OriginalEventsCloudAdapter: class { list = fake.events; save = fake.saveEvent; create = fake.createEvent },
+}))
 vi.mock('@/lib/cloud/adapters/original-countries', () => ({
   OriginalCountriesCloudAdapter: class { list = fake.countries; save = fake.saveCountry },
 }))
@@ -65,6 +73,7 @@ async function inputText(input: HTMLInputElement, value: string) {
 beforeEach(() => {
   vi.clearAllMocks()
   fake.countries.mockResolvedValue([])
+  fake.events.mockResolvedValue([])
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
@@ -77,6 +86,57 @@ afterEach(async () => {
 })
 
 describe('original character information in cloud workspace', () => {
+  it('creates an original event, links a country, and opens it from the country relations', async () => {
+    const event: OriginalEventSnapshot = {
+      workspaceId, entityId: '00000000-0000-4000-8000-000000000009', version: 1,
+      entity: { ...buildDefaultEvent(newEventData()), id: 9 },
+    }
+    fake.list.mockResolvedValue([fixture(1, '参与角色')])
+    fake.countries.mockResolvedValue([{
+      workspaceId, entityId: '00000000-0000-4000-8000-000000000004', version: 1,
+      entity: { ...countries.buildDefaultCountry({ ...newCountryData(), name: '活动国家' }), id: 4 },
+    } satisfies OriginalCountrySnapshot])
+    fake.createEvent.mockResolvedValue(event)
+    fake.saveEvent.mockImplementation(async (row: OriginalEventSnapshot, patch: OriginalEventPatch) => ({
+      ...row, version: row.version + 1, entity: { ...row.entity, ...patch },
+    }))
+    await act(async () => {
+      root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' }))
+    })
+    await click(button('新建事件'))
+    const title = container.querySelector<HTMLInputElement>('input[aria-label="事件名称"]')!
+    await inputText(title, '王国议会')
+    const year = container.querySelector<HTMLInputElement>('input[placeholder="年"]')!
+    await inputText(year, '2026')
+
+    const relations = [...container.querySelectorAll('section')].find(section =>
+      section.querySelector('h3')?.textContent === '事件关系')!
+    const add = [...relations.querySelectorAll('button')].find(item => item.textContent?.trim() === '添加')!
+    await click(add)
+    await click([...document.body.querySelectorAll('button')].find(item =>
+      item.textContent?.trim() === '活动国家' && !container.contains(item))!)
+    await click(add)
+    await click([...document.body.querySelectorAll('button')].find(item =>
+      item.textContent?.trim() === '参与角色' && !container.contains(item))!)
+    await click(button('保存'))
+    expect(fake.saveEvent.mock.calls[0][1]).toEqual({ title: '王国议会', time: '2026', characters: [1], countries: [4] })
+
+    await click([...relations.querySelectorAll('button')].find(item => item.textContent?.trim() === '活动国家')!)
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="国家名称"]')?.value).toBe('活动国家')
+    const countryEvents = [...container.querySelectorAll('section')].find(section =>
+      section.querySelector('h3')?.textContent === '相关事件')!
+    await click([...countryEvents.querySelectorAll('button')].find(item => item.textContent?.trim() === '王国议会')!)
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="事件名称"]')?.value).toBe('王国议会')
+
+    await click(button('时间线'))
+    const editor = container.querySelector<HTMLInputElement>('input[aria-label="事件名称"]')
+    expect(editor).toBeNull()
+    const timelineEvent = container.querySelector<HTMLButtonElement>('button[aria-label="王国议会"]')!
+    expect(timelineEvent).toBeTruthy()
+    await click(timelineEvent)
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="事件名称"]')?.value).toBe('王国议会')
+  })
+
   it('selects a cloud nationality and opens the original country form from the character', async () => {
     const country: OriginalCountrySnapshot = {
       entityId: '00000000-0000-4000-8000-000000000004', workspaceId, version: 1,

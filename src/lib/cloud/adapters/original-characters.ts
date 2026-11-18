@@ -27,7 +27,7 @@ export class OriginalCharactersCloudAdapter {
   private readonly entities: OriginalEntityCloudAdapter<Character, OriginalCharacterPatch>
 
   constructor(readonly workspaceId: string, fetcher: Fetcher = fetch) {
-    this.entities = new OriginalEntityCloudAdapter(workspaceId, 'character', readCharacter, fetcher)
+    this.entities = new OriginalEntityCloudAdapter(workspaceId, 'character', readCharacter, entity => entity.name, fetcher)
   }
 
   async list(): Promise<OriginalCharacterSnapshot[]> {

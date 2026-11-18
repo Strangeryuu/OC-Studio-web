@@ -5,6 +5,7 @@ import { pool } from '@/lib/cloud/server/db'
 import { isEntityKind, readEntityDocument } from '@/lib/cloud/entity-input'
 import { characterMediaAllowed } from '@/lib/cloud/server/character-media'
 import { characterLinksAllowed } from '@/lib/cloud/server/character-links'
+import { eventLinksAllowed } from '@/lib/cloud/server/event-links'
 import { parseOriginalId } from '@/lib/cloud/original-ids'
 
 export const runtime = 'nodejs'
@@ -47,7 +48,11 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
     await client.query('BEGIN')
     if (!await characterMediaAllowed(client, workspaceId, body.kind as string, doc.data)) {
       await client.query('ROLLBACK')
-      return NextResponse.json({ error: body.kind === 'country' ? 'INVALID_COUNTRY_MEDIA' : 'INVALID_CHARACTER_MEDIA' }, { status: 400 })
+      return NextResponse.json({ error: body.kind === 'event' ? 'INVALID_EVENT_MEDIA' : body.kind === 'country' ? 'INVALID_COUNTRY_MEDIA' : 'INVALID_CHARACTER_MEDIA' }, { status: 400 })
+    }
+    if (body.kind === 'event' && !await eventLinksAllowed(client, workspaceId, doc.data)) {
+      await client.query('ROLLBACK')
+      return NextResponse.json({ error: 'INVALID_EVENT_LINKS' }, { status: 400 })
     }
     if (!await characterLinksAllowed(client, workspaceId, body.kind as string, doc.data)) {
       await client.query('ROLLBACK')

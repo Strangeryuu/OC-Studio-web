@@ -6,9 +6,11 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
 import { OriginalCharactersCloudAdapter, CloudCharacterError } from '@/lib/cloud/adapters/original-characters'
 import { buildDefaultCharacter } from '@/features/characters/services'
-import { newCharacterData, newCountryData } from '@/lib/entity-defaults'
+import { newCharacterData, newCountryData, newEventData } from '@/lib/entity-defaults'
 
 import { OriginalCountriesCloudAdapter } from '@/lib/cloud/adapters/original-countries'
+import { OriginalEventsCloudAdapter } from '@/lib/cloud/adapters/original-events'
+import { buildDefaultEvent } from '@/features/events/services'
 import { buildDefaultCountry } from '@/features/countries/services'
 
 const state = vi.hoisted(() => ({ db: null as PGlite | null, userId: 'owner' as string | null }))
@@ -49,7 +51,7 @@ async function apiFetch(input: string, init: RequestInit = {}): Promise<Response
   throw new Error(`Unexpected request: ${input}`)
 }
 
-describe('original character adapter against PostgreSQL', () => {
+describe('original entity adapters against PostgreSQL', () => {
   let mediaRoot: string
   beforeAll(async () => {
     process.env.BETTER_AUTH_URL = 'http://localhost:3000'
@@ -194,6 +196,45 @@ describe('original character adapter against PostgreSQL', () => {
     expect(cleared.character.nationalityLegacy).toBe('')
   })
 
+  it('stores original events with scoped participants and relation targets', async () => {
+    state.userId = 'owner'
+    const events = new OriginalEventsCloudAdapter(workspaceA, apiFetch)
+    const event = await events.create(buildDefaultEvent({ ...newEventData(), title: '天文研究会' }))
+    const related = await events.create(buildDefaultEvent({ ...newEventData(), title: '观测计划' }))
+    const character = await new OriginalCharactersCloudAdapter(workspaceA, apiFetch)
+      .create(buildDefaultCharacter(newCharacterData()))
+    const country = await new OriginalCountriesCloudAdapter(workspaceA, apiFetch)
+      .create(buildDefaultCountry(newCountryData()))
+    state.userId = 'outsider'
+    const foreignEvent = await new OriginalEventsCloudAdapter(workspaceB, apiFetch)
+      .create(buildDefaultEvent(newEventData()))
+    state.userId = 'owner'
+
+    const denied = { status: 400, code: 'INVALID_EVENT_LINKS' }
+    await expect(events.save(event, { characters: [country.entity.id] })).rejects.toMatchObject(denied)
+    await expect(events.save(event, { relations: [{ targetId: foreignEvent.entity.id, relation: '起因' }] }))
+      .rejects.toMatchObject(denied)
+    await expect(events.save(event, { relations: [{ targetId: event.entity.id, relation: '起因' }] }))
+      .rejects.toMatchObject(denied)
+    await expect(events.create(buildDefaultEvent({ ...newEventData(), countries: [foreignEvent.entity.id] })))
+      .rejects.toMatchObject(denied)
+
+    state.userId = 'editor'
+    const saved = await events.save(event, {
+      title: '天文观测会议', time: '2026-03', endTime: '2026-04',
+      characters: [character.character.id], countries: [country.entity.id],
+      relations: [{ targetId: related.entity.id, relation: '起因', arrow: 'forward' }],
+    })
+    expect(saved.version).toBe(2)
+    await expect(events.save(event, { title: '过期修改' })).rejects.toMatchObject({ status: 409 })
+    state.userId = 'viewer'
+    const reread = (await events.list()).find(row => row.entityId === event.entityId)!
+    expect(reread.entity).toMatchObject(saved.entity)
+    await expect(events.save(reread, { location: '访客编辑' })).rejects.toMatchObject({ status: 404 })
+    const history = await revisionRoute.GET(new Request('http://localhost:3000'), ctxEntity(event.entityId))
+    expect((await history.json()).revisions.map((row: { version: number }) => row.version)).toEqual([2, 1])
+  })
+
   it('accepts body images only from the character workspace', async () => {
     state.userId = 'owner'
     const own = '33333333-3333-4333-8333-333333333333'
@@ -207,6 +248,12 @@ describe('original character adapter against PostgreSQL', () => {
       .rejects.toMatchObject({ status: 400, code: 'INVALID_COUNTRY_MEDIA' })
     const withFlag = await countries.save(country, { flagUrl: `/api/media/${own}` })
     expect(withFlag.entity.flagUrl).toBe(`/api/media/${own}`)
+    const events = new OriginalEventsCloudAdapter(workspaceA, apiFetch)
+    const gathering = await events.create(buildDefaultEvent(newEventData()))
+    await expect(events.save(gathering, { images: [{ url: `/api/media/${other}`, caption: '' }] }))
+      .rejects.toMatchObject({ status: 400, code: 'INVALID_EVENT_MEDIA' })
+    const withImage = await events.save(gathering, { images: [{ url: `/api/media/${own}`, caption: '会场' }] })
+    expect(withImage.entity.images).toEqual([{ url: `/api/media/${own}`, caption: '会场' }])
     const adapter = new OriginalCharactersCloudAdapter(workspaceA, apiFetch)
     const initial = await adapter.create(buildDefaultCharacter({ ...newCharacterData(), name: '图片角色' }))
     const doc = (id: string) => ({ type: 'doc', content: [{ type: 'imageBlock', attrs: { src: `/api/media/${id}` } }] })

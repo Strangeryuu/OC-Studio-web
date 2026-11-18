@@ -11,7 +11,7 @@ import type { JournalActor } from '@/lib/vault/journal'
 
 const TABLE = 'events'
 
-function buildDefaultEvent(data: EventFormData, overrides: Partial<Event> = {}): Omit<Event, 'id'> {
+export function buildDefaultEvent(data: EventFormData, overrides: Partial<Event> = {}): Omit<Event, 'id'> {
   const now = Date.now()
   return {
     title: data.title,

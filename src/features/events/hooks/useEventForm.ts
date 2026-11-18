@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useMemo, useEffect, useLayoutEffect } fr
 import type { Editor } from '@tiptap/core'
 import { FACT_RELATION, type RelationCandidate, type RelationRow, type RelationTargetKind } from '@/components/shared/relations/types'
 import type { RelationArrow } from '@/lib/relation-colors'
-import type { Event, EventRelation, ImageEntry } from '@/types'
+import type { Character, Country, Event, EventRelation, ImageEntry } from '@/types'
 import type { EventFormData } from '../types'
 import { useCharacterList } from '@/features/characters/hooks/useCharacters'
 import { useCountryList } from '@/features/countries/hooks/useCountries'
@@ -65,6 +65,10 @@ function valuesFromEntity(event: Event): EventValues {
 }
 
 /** 只比**会被保存的东西**，时间用落库形态（`3` 与 `03` 是同一个日期） */
+export function eventFormBaseline(event: Event): Record<string, unknown> {
+  return valuesSnapshot(valuesFromEntity(event))
+}
+
 function valuesSnapshot(values: EventValues): Record<string, unknown> {
   return {
     title: values.title,
@@ -85,11 +89,12 @@ function valuesSnapshot(values: EventValues): Record<string, unknown> {
 
 /**
  * 事件编辑表单：字段状态、外部时间回灌、关联项派生、脏标记与保存。
- * 供 `EventEditor` 的壳与各 section 共用；除实体与保存回调外不接收 props。
+ * 供本地和云端的事件编辑器共用。
  */
 export function useEventForm(
   event: Event,
   onSave: (id: number, data: Partial<EventFormData>) => Promise<void>,
+  lookups?: { characters: Character[]; countries: Country[]; events: Event[] },
 ) {
   const [initial] = useState(() => valuesFromEntity(event))
 
@@ -157,9 +162,12 @@ export function useEventForm(
 
   // 外部改写（时间线拖拽 / 别处保存）后回灌的逻辑在保存流水线之后（它要读 `saving`）。
 
-  const { characters } = useCharacterList()
-  const { countries } = useCountryList()
-  const { events } = useEventList()
+  const { characters: localCharacters } = useCharacterList(!lookups)
+  const { countries: localCountries } = useCountryList(!lookups)
+  const { events: localEvents } = useEventList(!lookups)
+  const characters = lookups?.characters ?? localCharacters
+  const countries = lookups?.countries ?? localCountries
+  const events = lookups?.events ?? localEvents
 
   const characterById = useMemo(() => new Map(characters.map((item) => [item.id, item])), [characters])
   const countryById = useMemo(() => new Map(countries.map((item) => [item.id, item])), [countries])
@@ -177,7 +185,7 @@ export function useEventForm(
       rows.push({
         key: `character-${id}-${index}`,
         kind: 'character',
-        targetId: id,
+        targetId: target ? id : undefined,
         name: target?.name ?? '未命名',
         relation: FACT_RELATION.participates,
         relationEditable: false,
@@ -190,7 +198,7 @@ export function useEventForm(
       rows.push({
         key: `country-${id}-${index}`,
         kind: 'country',
-        targetId: id,
+        targetId: target ? id : undefined,
         name: target?.name ?? '未命名',
         relation: FACT_RELATION.occurredAt,
         relationEditable: false,
@@ -203,7 +211,7 @@ export function useEventForm(
       rows.push({
         key: `event-${relation.targetId}-${index}`,
         kind: 'event',
-        targetId: relation.targetId,
+        targetId: target ? relation.targetId : undefined,
         name: target?.title ?? '未命名',
         relation: relation.relation,
         relationEditable: true,
