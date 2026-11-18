@@ -7,7 +7,8 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Plus, RotateCw, Search, SearchX, Table2 } from 'lucide-react'
-import type { Tag } from '@/types'
+import { cloudTableTagProjection, readCloudWorkspaceTags } from './cloud-table-tags'
+import type { CloudWorkspaceTag } from '@/lib/cloud/shared-tags'
 import { PageToolbar } from '@/components/shared/PageToolbar'
 import { ListEmptyState } from '@/components/shared/ListEmptyState'
 import type { FilterOption } from '@/components/shared/FilterSelect'
@@ -33,11 +34,10 @@ import { useWorkspaceDraftGuard } from '@/components/cloud/workspace-editor-guar
 
 const LABEL: Record<TreeTableTab, string> = { character: '角色', event: '事件', country: '国家', entry: '词条' }
 const EMPTY_EXPANDED = new Set<string>()
-const NO_TAGS = new Map<number, Tag>()
-const tagName = (_ids: number[]): string => ''
 
 type Kind = 'character' | 'event' | 'country' | 'world'
 export interface WorkspaceTreeTableProps {
+  workspaceId: string
   characters: OriginalCharacterSnapshot[]
   countries: OriginalCountrySnapshot[]
   events: OriginalEventSnapshot[]
@@ -76,16 +76,36 @@ export function WorkspaceTreeTable(props: WorkspaceTreeTableProps) {
   const [open, setOpen] = useState<Set<string>>(() => new Set())
   const [closed, setClosed] = useState<Set<string>>(() => new Set())
   const [editing, setEditing] = useState(0)
+  const [cloudTags, setCloudTags] = useState<CloudWorkspaceTag[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const pending = useRef<Promise<void> | null>(null)
   const writable = props.canEdit && !props.disabled && !saving && !props.loading
   const locked = props.disabled || saving || props.loading
 
-  const characters = useMemo(() => props.characters.map(row => row.character), [props.characters])
-  const countries = useMemo(() => props.countries.map(row => row.entity), [props.countries])
-  const events = useMemo(() => props.events.map(row => row.entity), [props.events])
-  const entries = useMemo(() => props.notes.map(row => row.entity).filter(isCodexEntry), [props.notes])
+  useEffect(() => {
+    let active = true
+    void fetch('/api/workspaces/' + props.workspaceId + '/tags', { cache: 'no-store' })
+      .then(async response => {
+        if (!response.ok) throw new Error('无法加载资料库标签')
+        return readCloudWorkspaceTags(await response.json())
+      })
+      .then(tags => { if (active) setCloudTags(tags) })
+      .catch(() => { /* Legacy entity tag names remain visible offline. */ })
+    return () => { active = false }
+  }, [props.workspaceId])
+
+  const projection = useMemo(() => cloudTableTagProjection(cloudTags, [
+    ...props.characters.map(row => row.character),
+    ...props.countries.map(row => row.entity),
+    ...props.events.map(row => row.entity),
+    ...props.notes.map(row => row.entity),
+  ]), [cloudTags, props.characters, props.countries, props.events, props.notes])
+  const characters = useMemo(() => props.characters.map(row => projection.decorate(row.character)), [props.characters, projection])
+  const countries = useMemo(() => props.countries.map(row => projection.decorate(row.entity)), [props.countries, projection])
+  const events = useMemo(() => props.events.map(row => projection.decorate(row.entity)), [props.events, projection])
+  const entries = useMemo(() => props.notes.map(row => projection.decorate(row.entity)).filter(isCodexEntry), [props.notes, projection])
+  const { tagName, tagsById } = projection
   const tree = useMemo(() => buildEntryTree(entries), [entries])
   const countryTree = useMemo(() => buildCountryTree(countries), [countries])
   const query = search.trim().toLowerCase()
@@ -95,7 +115,7 @@ export function WorkspaceTreeTable(props: WorkspaceTreeTableProps) {
     if (tab === 'country') return flattenCountryRows(countryTree, options)
     if (tab === 'character') return flattenCharacterRows(countryTree, characters, options)
     return flattenEventRows(events, options)
-  }, [tab, tree, countryTree, characters, events])
+  }, [tab, tree, countryTree, characters, events, tagName])
   const defaultOpen = useMemo(
     () => new Set(everything.filter(row => row.depth === 0 && row.hasChildren).map(row => row.key)), [everything],
   )
@@ -293,7 +313,7 @@ export function WorkspaceTreeTable(props: WorkspaceTreeTableProps) {
           <th className="w-28 py-2 pr-6 font-normal">更新</th>
         </tr></thead>
         <tbody>{rows.map(row => <TreeTableRow key={row.key} row={row} tab={tab}
-          tagsById={NO_TAGS} countryOptions={countryOptions}
+          tagsById={tagsById} countryOptions={countryOptions}
           busy={locked} readOnly={!props.canEdit} allowDelete={false}
           onEditingChange={active => setEditing(current => Math.max(0, current + (active ? 1 : -1)))}
           handlers={{
