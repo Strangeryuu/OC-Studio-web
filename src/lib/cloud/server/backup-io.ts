@@ -149,6 +149,9 @@ export async function importWorkspaceBackup(workspaceId:string,actorId:string,ra
       if(!matched)throw error('INVALID_BACKUP_MEDIA')
       const id=await writeAsset(new Uint8Array(Buffer.from(matched[2],'base64')),matched[1].toLowerCase())
       inline.set(uri,'/api/media/'+id)
+      // Embedded legacy images have already been uploaded into this workspace.
+      // Retain strict foreign-ID rejection while permitting these newly minted URLs.
+      maps.media.set(id,id)
     }
     const tagNumeric=new Map<number,string>()
     for(const tag of backup.tags){
