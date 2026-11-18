@@ -3,6 +3,7 @@ import { CATEGORY_ICON_NAMES } from '@/lib/categories/icons'
 import { isReservedCategoryName, type Category } from '@/lib/categories/types'
 import { BUILTIN_TEMPLATES } from '@/lib/templates/defaults'
 import { TEMPLATE_COMPONENTS } from '@/lib/templates/registry'
+import { TEMPLATE_PARAM_SCHEMA } from '@/lib/templates/params'
 import { isNoteTemplate } from '@/lib/templates/note'
 import type { TemplateDoc, TemplateComponent } from '@/lib/templates/types'
 
@@ -44,7 +45,7 @@ export function readWorkspaceCustomization(value: unknown): WorkspaceCustomizati
       if(component.params!==undefined){
         if(!object(component.params)||Object.keys(component.params).length>20)return null
         const meta=TEMPLATE_COMPONENTS.find(item=>item.id===component.id)
-        const allowed=new Set(meta?.params??[])
+        const allowed=new Set([...(meta?.params??[]),...(TEMPLATE_PARAM_SCHEMA[component.id as TemplateComponent['id']]??[]).map(def=>def.key)])
         for(const [key,entry] of Object.entries(component.params)){
           if(!allowed.has(key)||
             !(typeof entry==='string'&&entry.length<=500||
