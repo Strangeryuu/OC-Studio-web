@@ -1,8 +1,12 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Images, Menu, RefreshCw, Search } from 'lucide-react'
+import { Download, ExternalLink, Eye, Images, Menu, RefreshCw, Search } from 'lucide-react'
 import { AlbumCard } from '@/components/shared/AlbumCard'
+import { MobileActionSheet, type ActionItem } from '@/components/shared/MobileActionSheet'
+import { useMediaDownload } from '@/lib/use-media-download'
+import { useDevice } from '@/lib/use-device'
+import type { AlbumEntry } from '@/components/shared/useAlbumData'
 import { AlbumTreePanel } from '@/components/shared/AlbumTreePanel'
 import { FullscreenViewer } from '@/components/shared/FullscreenViewer'
 import { FilterSelect } from '@/components/shared/FilterSelect'
@@ -48,6 +52,10 @@ export function WorkspaceAlbum(props: WorkspaceAlbumProps) {
   const [tags, setTags] = useState<CloudWorkspaceTag[]>([])
   const [worldCover, setWorldCover] = useState('')
   const [tagRefresh, setTagRefresh] = useState(0)
+  const { isMobile } = useDevice()
+  const { save, saving } = useMediaDownload()
+  const [actionSheet, setActionSheet] = useState<{open:boolean;title:string;actions:ActionItem[]}>(
+    {open:false,title:'',actions:[]})
 
   useEffect(() => {
     let active = true
@@ -132,6 +140,21 @@ export function WorkspaceAlbum(props: WorkspaceAlbumProps) {
     isMobile={mobile} refreshing={refreshing} onRefresh={() => void refresh()}
     onCloseMobileTree={() => setDrawer(false)} onCollapseTree={() => setCollapsed(true)} />
 
+  function openActionSheet(entry: AlbumEntry, index: number) {
+    const actions: ActionItem[] = [
+      { id: 'view', label: '查看大图', icon: <Eye size={20}/>,
+        onPress: () => setViewerIndex(index) },
+      { id: 'save', label: saving ? '保存中…' : '保存到…',
+        icon: <Download size={20}/>,
+        onPress: () => { void save(entry.url, entry.sourceName) } },
+    ]
+    if (entry.sourceType !== 'world') actions.push({
+      id: 'navigate', label: '跳转到来源', icon: <ExternalLink size={20}/>,
+      onPress: () => navigate(entry.sourceId, entry.sourceType),
+    })
+    setActionSheet({open:true,title:entry.sourceName,actions})
+  }
+
   function navigate(id: number, type: string) {
     if (type === 'worldEntry') props.onNavigate('world', id)
     else if (type === 'character' || type === 'country' || type === 'event') props.onNavigate(type, id)
@@ -153,6 +176,15 @@ export function WorkspaceAlbum(props: WorkspaceAlbumProps) {
             className="min-w-0 flex-1 border-b border-line bg-transparent px-2 py-1 text-ui" />
           <SortSelect sortKey={sortTime ? 'time' : 'default'} onChange={key => setSortTime(key === 'time')}
             options={[{ value: 'default', label: '默认顺序' }, { value: 'time', label: '最近更新' }]} />
+          {sourceType && sources.length > 0 && <FilterSelect value={selectedSource}
+            onChange={setSourceFilter}
+            options={[{ value: 'all', label: '全部来源' },
+              ...sources.map(item => ({value:item.id,label:item.name}))]}
+            fallbackLabel="全部来源" triggerClassName="flex h-8 items-center gap-1 px-2 text-ui text-ink" />}
+          <FilterSelect value={tagFilter} onChange={setTagFilter}
+            options={[{ value: 'all', label: '全部标签' },
+              ...[...tagged.tagsById.values()].map(item => ({value:item.id,label:item.name}))]}
+            fallbackLabel="全部标签" triggerClassName="flex h-8 items-center gap-1 px-2 text-ui text-ink" />
         </div>
         <PageToolbar title={label} leading={<button type="button" className={ICON_BTN_MD}
           aria-label="切换相册目录" onClick={() => {
@@ -188,7 +220,8 @@ export function WorkspaceAlbum(props: WorkspaceAlbumProps) {
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                 {filtered.map((item, index) =>
                   <AlbumCard key={item.sourceType + ':' + item.sourceId + ':' + item.category + ':' + index}
-                    entry={item} isMobile={false} onNavigate={item.sourceType === 'world' ? undefined : navigate}
+                    entry={item} isMobile={isMobile} onNavigate={item.sourceType === 'world' ? undefined : navigate}
+                    onLongPress={() => openActionSheet(item,index)}
                     onViewImage={() => setViewerIndex(index)} />)}
               </div>}
         </div>
@@ -196,5 +229,8 @@ export function WorkspaceAlbum(props: WorkspaceAlbumProps) {
     </div>
     {viewerIndex !== null && <FullscreenViewer images={urls} initialIndex={viewerIndex}
       onClose={() => setViewerIndex(null)} />}
+    <MobileActionSheet open={actionSheet.open}
+      onClose={() => setActionSheet(prev => ({...prev,open:false}))}
+      title={actionSheet.title} actions={actionSheet.actions} />
   </section>
 }
