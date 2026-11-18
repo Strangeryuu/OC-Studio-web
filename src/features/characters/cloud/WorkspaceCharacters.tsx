@@ -50,6 +50,21 @@ import { projectGraphData } from '@/features/relations/services'
 import type { RelationNodeType } from '@/features/relations/types'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
+const DashboardView = dynamic(
+  () => import('@/features/dashboard/components/Dashboard').then(mod => mod.DashboardView),
+  { ssr: false },
+)
+
+const WorkspaceAlbum = dynamic(
+  () => import('@/features/album/cloud/WorkspaceAlbum').then(mod => mod.WorkspaceAlbum),
+  { ssr: false },
+)
+
+const WorkspaceNovel = dynamic(
+  () => import('@/features/novel/cloud/WorkspaceNovel').then(mod => mod.WorkspaceNovel),
+  { ssr: false },
+)
+
 const WorkspaceTreeTable = dynamic(
   () => import('@/features/tree-table/cloud/WorkspaceTreeTable').then(mod => mod.WorkspaceTreeTable),
   { ssr: false },
@@ -222,6 +237,8 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
   const events = useMemo(() => eventList.rows.map(row => row.entity), [eventList.rows])
 
   const notes = useMemo(() => noteList.rows.map(row => row.entity).filter(isCodexEntry), [noteList.rows])
+  const novelRoots = useMemo(() => noteList.rows.filter(row => row.entity.category === '小说' && row.entity.parentId == null), [noteList.rows])
+  const mapEntries = useMemo(() => noteList.rows.filter(row => row.entity.category === '地图'), [noteList.rows])
   const note = noteList.rows.find(row => row.entityId === selectedId && isCodexEntry(row.entity))
   const graph = useMemo(
     () => section === 'relations' ? projectGraphData({ characters, countries, events, notes }, true) : null,
@@ -370,6 +387,46 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
       }) : undefined} />
     <div className="flex min-w-0 flex-col gap-4">
       {error && <p role="alert" className="text-ui text-error">{error}</p>}
+      {section === 'home' && <DashboardView worldName={workspaceName ?? '未命名世界'}
+        tagline={workspaceDescription ?? ''} characters={characters} events={events} countries={countries}
+        entries={notes} novels={novelRoots.length} maps={mapEntries.length}
+        onNavigate={(id, kind) => navigate(kind as RelationTargetKind, id)}
+        onOpenSection={item => {
+          const sections: Record<string, WorkspaceSection> = {
+            '角色': 'character', '事件': 'event', '国家': 'country',
+            '世界观': 'world', '小说': 'novel', '地图': 'map',
+          }
+          const next = sections[item]
+          if (next) void openAfterSaving(next, async () => null)
+        }}
+        onCreate={type => {
+          if (!canEdit) return
+          void openAfterSaving(type, async () => {
+            if (type === 'character') {
+              const row = await characterAdapter.create(buildDefaultCharacter(newCharacterData()))
+              characterList.append(row)
+              return row.entityId
+            }
+            if (type === 'country') {
+              const row = await countryAdapter.create(buildDefaultCountry(newCountryData()))
+              countryList.append(row)
+              return row.entityId
+            }
+            const row = await eventAdapter.create(buildDefaultEvent(newEventData()))
+            eventList.append(row)
+            return row.entityId
+          })
+        }} />}
+      {section === 'album' && <WorkspaceAlbum workspaceId={workspaceId}
+        characters={characterList.rows} countries={countryList.rows}
+        events={eventList.rows} notes={noteList.rows}
+        loading={characterList.loading || countryList.loading || eventList.loading || noteList.loading}
+        error={graphError || characterList.error || countryList.error || eventList.error || noteList.error}
+        onNavigate={(kind,id) => navigate(kind,id)} onRefresh={refreshGraph} />}
+      {section === 'novel' && <WorkspaceNovel workspaceId={workspaceId}
+        notes={noteList.rows} loading={noteList.loading} error={noteList.error}
+        adapter={noteAdapter} canEdit={canEdit} disabled={busy}
+        onCreated={noteList.append} onSaved={noteList.replace} onRefresh={refreshGraph} />}
       {section === 'character' && <WorkspaceEntryList label="角色" rows={characterList.rows} loading={characterList.loading} error={characterList.error}
         getLabel={row => row.character.name} selectedId={selectedId} busy={busy} onSelect={id => select(id, 'character')}
         onCreate={canEdit ? () => void openAfterSaving('character', async () => {
