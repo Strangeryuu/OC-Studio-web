@@ -30,8 +30,10 @@ import { worldBodyOf, worldBodyPatch } from '@/lib/world-body'
 import { flattenNovel, toMarkdown, toTxt, countNovelWords } from '@/features/novel/export'
 import { downloadNovelDocx } from '@/features/novel/docx'
 import { paginateNovel } from '@/features/novel/pagination'
-import { DEFAULT_NOVEL_LAYOUT, toPaginateOptions } from '@/features/novel/layout'
-import { resolveNovelBackground } from '@/features/novel/background'
+import { DEFAULT_NOVEL_LAYOUT, NOVEL_LAYOUT_PRESETS, NOVEL_FONTS, normalizeNovelLayout, presetIdOf,
+  toPaginateOptions, type NovelLayoutParams } from '@/features/novel/layout'
+import { resolveNovelBackground, NOVEL_BACKGROUND_PRESETS,
+  type NovelPresetKind } from '@/features/novel/background'
 import { saveBlobAs } from '@/features/map/export'
 import { cloudNovelBooks, novelChapterTree, novelSubtree, safeNovelFileName, filterCloudNovelTree } from './cloud-novel-projection'
 import { BTN_PRIMARY, BTN_QUIET, FIELD_INPUT, FIELD_LABEL, FIELD_ROW, TITLE_INPUT } from '@/lib/ui-tokens'
@@ -321,6 +323,8 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
   const [query,setQuery]=useState('')
   const [preview,setPreview]=useState(false)
   const [format,setFormat]=useState<'9:16'|'16:9'|'A4'>('9:16')
+  const [readingLayout,setReadingLayout]=useState<NovelLayoutParams>(DEFAULT_NOVEL_LAYOUT)
+  const [readingBackground,setReadingBackground]=useState<NovelPresetKind>('paper')
   const [error,setError]=useState<string|null>(null)
   const [busy,setBusy]=useState(false)
   const [uploading,setUploading]=useState(false)
@@ -331,6 +335,32 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
     useSensor(PointerSensor,{activationConstraint:{distance:5}}),
     useSensor(KeyboardSensor,{coordinateGetter:sortableKeyboardCoordinates}),
   )
+
+  const readingKey=activeBookId===null ? null :
+    'oc-cloud-novel-reading:'+props.workspaceId+':'+activeBookId
+  useEffect(()=>{
+    if(!readingKey)return
+    let settings: unknown = null
+    try { settings=JSON.parse(localStorage.getItem(readingKey)??'null') }
+    catch { /* The default layout is always recoverable. */ }
+    const data = settings && typeof settings==='object' && !Array.isArray(settings)
+      ? settings as Record<string,unknown> : {}
+    setReadingLayout(normalizeNovelLayout(
+      data.layout && typeof data.layout==='object' && !Array.isArray(data.layout)
+        ? data.layout as Partial<NovelLayoutParams> : null))
+    setReadingBackground(data.background==='cream'||data.background==='parchment'
+      ? data.background:'paper')
+    setFormat(data.format==='16:9'||data.format==='A4'?data.format:'9:16')
+  },[readingKey])
+  function saveReading(nextLayout=readingLayout,nextBackground=readingBackground,
+    nextFormat=format) {
+    setReadingLayout(nextLayout)
+    setReadingBackground(nextBackground)
+    setFormat(nextFormat)
+    if(readingKey) localStorage.setItem(readingKey,JSON.stringify({
+      layout:nextLayout,background:nextBackground,format:nextFormat,
+    }))
+  }
 
   const entries=useMemo(()=>props.notes.map(row=>row.entity).filter(row=>row.category===NOVEL_CATEGORY),[props.notes])
   const books=useMemo(()=>cloudNovelBooks(entries),[entries])
@@ -347,8 +377,8 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
   const exported=useMemo(()=>flattenNovel(chapters),[chapters])
   const readingMeta={title:root?.entity.title??'小说',author:root?.entity.novelAuthor??'',
     synopsis:root?.entity.novelSynopsis??''}
-  const pages=useMemo(()=>paginateNovel(exported,toPaginateOptions(DEFAULT_NOVEL_LAYOUT,format,readingMeta)),
-    [exported,format,readingMeta.title,readingMeta.author,readingMeta.synopsis])
+  const pages=useMemo(()=>paginateNovel(exported,toPaginateOptions(readingLayout,format,readingMeta)),
+    [exported,format,readingLayout,readingMeta.title,readingMeta.author,readingMeta.synopsis])
 
   useEffect(()=>registerPendingSave(()=>pending.current??undefined),[])
   useWorkspaceDraftGuard(busy||uploading, '小说')
@@ -530,7 +560,7 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
       <div className="flex flex-wrap items-center gap-1">
         <button type="button" className={BTN_QUIET} onClick={()=>afterSaving(()=>setPreview(value=>!value))}>
           {preview?'返回编辑':'分页预览'}</button>
-        <select aria-label="阅读纸张" value={format} onChange={event=>setFormat(event.target.value as typeof format)}
+        <select aria-label="阅读纸张" value={format} onChange={event=>saveReading(readingLayout,readingBackground,event.target.value as typeof format)}
           className="border-b border-line bg-transparent px-1 text-ui">
           <option value="9:16">9:16</option><option value="16:9">16:9</option><option value="A4">A4</option>
         </select>
@@ -542,9 +572,74 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
       </div>
     </div>
     {error&&<p role="alert" className="text-ui text-error">{error}</p>}
-    {preview?<div className="h-[75vh] min-h-[400px] overflow-hidden rounded-panel border border-line">
-      <NovelReader pages={pages} format={format} layout={DEFAULT_NOVEL_LAYOUT}
-        background={resolveNovelBackground('paper')} meta={readingMeta} />
+    {preview?<div className="flex min-w-0 flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-3 rounded-panel border border-line p-3">
+        <label className="flex items-center gap-1 text-ui">版式
+          <select aria-label="阅读版式" value={presetIdOf(readingLayout)??'custom'}
+            onChange={event=>{
+              const preset=NOVEL_LAYOUT_PRESETS.find(row=>row.id===event.target.value)
+              if(preset)saveReading({...preset.params})
+            }} className={FIELD_INPUT}>
+            {NOVEL_LAYOUT_PRESETS.map(row=><option key={row.id} value={row.id}>{row.label}</option>)}
+            <option value="custom" disabled>自定义</option>
+          </select>
+        </label>
+        <label className="flex items-center gap-1 text-ui">字体
+          <select aria-label="阅读字体" value={readingLayout.font} className={FIELD_INPUT}
+            onChange={event=>saveReading({...readingLayout,font:event.target.value as NovelLayoutParams['font']})}>
+            {Object.entries(NOVEL_FONTS).map(([key,value])=>
+              <option key={key} value={key}>{value.label}</option>)}
+          </select>
+        </label>
+        <label className="flex items-center gap-1 text-ui">字号
+          <input aria-label="阅读字号" type="number" min={10} max={40} value={readingLayout.fontSize}
+            className={'w-16 '+FIELD_INPUT}
+            onChange={event=>saveReading(normalizeNovelLayout({...readingLayout,fontSize:Number(event.target.value)}))}/>
+        </label>
+        <label className="flex items-center gap-1 text-ui">行距
+          <input aria-label="阅读行距" type="number" min={1.2} max={3} step={0.1} value={readingLayout.lineHeight}
+            className={'w-16 '+FIELD_INPUT}
+            onChange={event=>saveReading(normalizeNovelLayout({...readingLayout,lineHeight:Number(event.target.value)}))}/>
+        </label>
+        <label className="flex items-center gap-1 text-ui">页边距
+          <input aria-label="阅读页边距" type="number" min={0} max={180} value={readingLayout.margin}
+            className={'w-16 '+FIELD_INPUT}
+            onChange={event=>saveReading(normalizeNovelLayout({...readingLayout,margin:Number(event.target.value)}))}/>
+        </label>
+        <label className="flex items-center gap-1 text-ui">底纸
+          <select aria-label="阅读背景" value={readingBackground} className={FIELD_INPUT}
+            onChange={event=>saveReading(readingLayout,event.target.value as NovelPresetKind)}>
+            {NOVEL_BACKGROUND_PRESETS.map(option=>
+              <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </label>
+        <label className="flex items-center gap-1 text-ui">章首
+          <select aria-label="章节标题样式" value={readingLayout.titleStyle} className={FIELD_INPUT}
+            onChange={event=>saveReading({...readingLayout,titleStyle:event.target.value as NovelLayoutParams['titleStyle']})}>
+            <option value="center">居中</option><option value="left">左对齐</option>
+            <option value="minimal">极简</option>
+          </select>
+        </label>
+        <label className="flex items-center gap-1 text-ui">页码
+          <select aria-label="阅读页码" value={readingLayout.pageNumber} className={FIELD_INPUT}
+            onChange={event=>saveReading({...readingLayout,pageNumber:event.target.value as NovelLayoutParams['pageNumber']})}>
+            <option value="none">无</option><option value="right">右侧</option>
+            <option value="center">居中</option>
+          </select>
+        </label>
+        <label className="flex items-center gap-1 text-ui">
+          <input type="checkbox" checked={readingLayout.chapterBreak}
+            onChange={event=>saveReading({...readingLayout,chapterBreak:event.target.checked})} />章节另起一页
+        </label>
+        <label className="flex items-center gap-1 text-ui">
+          <input type="checkbox" checked={readingLayout.titlePage}
+            onChange={event=>saveReading({...readingLayout,titlePage:event.target.checked})} />作品扉页
+        </label>
+      </div>
+      <div className="h-[75vh] min-h-[400px] overflow-hidden rounded-panel border border-line">
+        <NovelReader pages={pages} format={format} layout={readingLayout}
+          background={resolveNovelBackground(readingBackground)} meta={readingMeta} />
+      </div>
     </div>:<div className="grid min-w-0 gap-4 lg:grid-cols-[14rem_minmax(0,1fr)]">
       <aside className="min-w-0 rounded-panel border border-line bg-paper-alt p-3">
         <div className="mb-3 flex items-center justify-between">
