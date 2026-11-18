@@ -177,6 +177,90 @@ async function run() {
   assert(foreignMedia.status === 400, 'Character must reject an image from another workspace')
 
 
+  // Map lifecycle through real Better Auth sessions and a standalone PostgreSQL server.
+  const mapHeaders = { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' }
+  const mapTitle = 'CI 地图跨库同名'
+  const newMapPayload = {
+    kind: 'worldEntry', title: mapTitle,
+    data: {
+      title: mapTitle, category: '地图',
+      mapImage: '/api/media/' + asset.id, mapWidth: 1, mapHeight: 1,
+      mapMode: 'terrain', mapViews: { terrain: '/api/media/' + asset.id },
+      mapAnnotations: JSON.stringify([{ id: 'ci-road', kind: 'road',
+        points: [{x:0.1,y:0.2},{x:0.8,y:0.8}], color: '松绿' }]),
+    },
+  }
+  const createMap = await fetch(BASE + '/api/workspaces/' + workspaceId + '/entities', {
+    method: 'POST', headers: mapHeaders, body: JSON.stringify(newMapPayload),
+  })
+  const mapCreateBody = await createMap.json()
+  assert(createMap.status === 201, 'Creating map with current workspace media failed: ' + JSON.stringify(mapCreateBody))
+  const mapEntityId = mapCreateBody.entity?.id
+  assert(mapEntityId, 'Map did not return a versioned entity id')
+
+  const duplicateMap = await fetch(BASE + '/api/workspaces/' + workspaceId + '/entities', {
+    method: 'POST', headers: mapHeaders, body: JSON.stringify(newMapPayload),
+  })
+  assert(duplicateMap.status === 400, 'Duplicate map title within workspace must be rejected')
+
+  const foreignMap = await fetch(BASE + '/api/workspaces/' + otherId + '/entities', {
+    method: 'POST', headers: mapHeaders, body: JSON.stringify({
+      ...newMapPayload, data: { title: mapTitle, category: '地图' },
+    }),
+  })
+  assert(foreignMap.status === 201, 'A second workspace must allow the same map title')
+
+  const pinCreate = await fetch(BASE + '/api/workspaces/' + workspaceId + '/entities', {
+    method: 'POST', headers: mapHeaders, body: JSON.stringify({
+      kind: 'country', title: 'CI 云端国家',
+      data: { name: 'CI 云端国家', mapId: mapTitle, mapPosition: { x: 0.3, y: 0.5 } },
+    }),
+  })
+  const pinBody = await pinCreate.json()
+  assert(pinCreate.status === 201, 'Country map anchor creation failed: ' + JSON.stringify(pinBody))
+  const countryEntityId = pinBody.entity?.id
+  assert(countryEntityId, 'Mapped country returned no entity ID')
+
+  const renamedMapTitle = mapTitle + '-改名'
+  const renameMap = await fetch(BASE + '/api/workspaces/' + workspaceId + '/maps/' + mapEntityId, {
+    method: 'PATCH', headers: mapHeaders,
+    body: JSON.stringify({ expectedVersion: 1, name: renamedMapTitle }),
+  })
+  const renameResult = await renameMap.json()
+  assert(renameMap.status === 200, 'Cloud map rename with pin cascade failed: ' + JSON.stringify(renameResult))
+  assert(renameResult.version === 2 && renameResult.renamedPins === 1,
+    'Map rename must version both the map and the linked country')
+  const staleMap = await fetch(BASE + '/api/workspaces/' + workspaceId + '/maps/' + mapEntityId, {
+    method: 'PATCH', headers: mapHeaders,
+    body: JSON.stringify({ expectedVersion: 1, name: '过期改名' }),
+  })
+  assert(staleMap.status === 409, 'Stale map rename must be rejected')
+
+  const linkedCountry = await fetch(BASE + '/api/entities/' + countryEntityId, {
+    headers: { Cookie: cookie },
+  })
+  assert(linkedCountry.status === 200, 'Renamed map country could not be read')
+  const linkedContent = (await linkedCountry.json()).entity?.content
+  assert(linkedContent?.mapId === renamedMapTitle, 'Map rename did not cascade to country mapId')
+  const linkedHistory = await fetch(BASE + '/api/entities/' + countryEntityId + '/revisions', {
+    headers: { Cookie: cookie },
+  })
+  assert(linkedHistory.status === 200 && (await linkedHistory.json()).revisions.length === 2,
+    'Pin cascade revision missing')
+
+  const removeMap = await fetch(BASE + '/api/workspaces/' + workspaceId + '/maps/' + mapEntityId, {
+    method: 'DELETE', headers: mapHeaders, body: JSON.stringify({ expectedVersion: 2 }),
+  })
+  assert(removeMap.status === 200 && (await removeMap.json()).removedPins === 1,
+    'Map deletion must clear the linked country anchor')
+  const countryAfterDelete = await fetch(BASE + '/api/entities/' + countryEntityId, {
+    headers: { Cookie: cookie },
+  })
+  const cleared = (await countryAfterDelete.json()).entity?.content
+  assert(cleared?.mapId === null && cleared?.mapPosition === null,
+    'Deleting the map left an orphaned country anchor')
+
+
   // Tags have stable UUIDs; renaming one does not require rewriting characters.
   const tagResponse = await fetch(BASE + '/api/workspaces/' + workspaceId + '/tags', {
     method: 'POST', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
