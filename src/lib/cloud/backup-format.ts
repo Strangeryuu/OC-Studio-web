@@ -102,7 +102,7 @@ export function parsePortableBackup(raw:unknown):PortableBackup|null{
     for(const tag of raw.data.tags.slice(0,500)){
       if(obj(tag)&&validId(tag.id)&&typeof tag.name==='string'&&tag.name.trim()&&tag.name.length<=40){
         tags.push({id:'legacy-tag:'+tag.id,name:tag.name,
-          color:typeof tag.color==='string'&&/^#[0-9a-fA-F]{6}$/.test(tag.color)?tag.color:'#64748b',
+          color:typeof tag.color==='string'&&/^#[0-9a-fA-F]{6}$/.test(tag.color)?tag.color:('#' + '64748b'),
           legacyId:tag.id})
       }
     }
