@@ -479,6 +479,165 @@ async function run() {
   })
   assert(selfRelation.status === 400, 'Self-referencing relationship should be rejected')
 
+
+  // Acceptance: real PostgreSQL + logged-in HTTP lifecycle for all four advanced modules.
+  // Independent workspaces ensure backup restore cannot overwrite an existing library.
+  const makeWorld = async name => {
+    const response = await fetch(BASE + '/api/workspaces', {
+      method: 'POST', headers: mapHeaders, body: JSON.stringify({ name }),
+    })
+    assert(response.status === 201, 'Advanced acceptance workspace creation failed: ' + await response.text())
+    return (await response.json()).workspace.id
+  }
+  const sourceWorld = await makeWorld('CI Advanced Source')
+  const restoreWorld = await makeWorld('CI Advanced Restore')
+  const sourceUrl = '/api/workspaces/' + sourceWorld
+  const targetUrl = '/api/workspaces/' + restoreWorld
+  const scoped = (world, path, options = {}) => fetch(BASE + '/api/workspaces/' + world + path, {
+    headers: { Cookie: cookie }, ...options,
+  })
+  const scopedMutation = (world, path, method, body) => scoped(world, path, {
+    method, headers: mapHeaders, body: JSON.stringify(body),
+  })
+  const customize = await scoped(sourceWorld, '/customization')
+  const initialCustom = await customize.json()
+  assert(customize.status === 200 && initialCustom.version === 0,
+    'Original workspace customization was not accessible')
+  const advancedCategories = {
+    ...initialCustom.customization,
+    categories: [...initialCustom.customization.categories,
+      { id: 'cat-ci-acceptance', name: '迁移文物', template: 'entry',
+        icon: 'book', order: 50, enabled: true }],
+  }
+  const changedCustom = await scopedMutation(sourceWorld, '/customization', 'PUT', {
+    expectedVersion: 0, customization: advancedCategories,
+  })
+  assert(changedCustom.status === 200,
+    'Original customization save failed: ' + await changedCustom.text())
+  assert((await scopedMutation(sourceWorld, '/customization', 'PUT', {
+    expectedVersion: 0, customization: advancedCategories,
+  })).status === 409, 'Stale customization revision was accepted')
+  const foreignSettings = await scoped(restoreWorld, '/customization')
+  assert((await foreignSettings.json()).version === 0,
+    'Customization leaked between workspaces')
+
+  const makeEntry = async(kind, title, data) => {
+    const response = await scopedMutation(sourceWorld, '/entities', 'POST', { kind, title, data })
+    const payload = await response.json()
+    assert(response.status === 201,
+      'Advanced acceptance create failed: ' + JSON.stringify({kind,title,payload}))
+    return payload.entity
+  }
+  const sourceCountry = await makeEntry('country', '迁移王国', { name:'迁移王国' })
+  const sourcePictureForm = new FormData()
+  sourcePictureForm.set('file', new Blob([tinyPng], { type:'image/png' }), 'transfer.png')
+  const sourceUpload = await fetch(BASE + sourceUrl + '/media', {
+    method:'POST',headers:{Cookie:cookie,Origin:PUBLIC_ORIGIN},body:sourcePictureForm,
+  })
+  assert(sourceUpload.status === 201, 'Backup source media upload failed')
+  const sourceAsset = (await sourceUpload.json()).asset
+  const sourceCharacter = await makeEntry('character','迁移守护者',{
+    name:'迁移守护者', countryId:sourceCountry.local_id,
+    avatarUrl:'/api/media/'+sourceAsset.id,
+  })
+  const sourceCodex = await makeEntry('worldEntry','迁移古卷',{
+    title:'迁移古卷',category:'迁移文物',parentId:null,summary:'星石铭文',
+  })
+  const sourceBook = await makeEntry('worldEntry','迁移史诗',{
+    title:'迁移史诗',category:'小说',parentId:null,
+  })
+  const sourceChapter = await makeEntry('worldEntry','迁移第一章',{
+    title:'迁移第一章',category:'小说',parentId:sourceBook.local_id,order:1,
+  })
+  const searchSource = await scoped(sourceWorld, '/search?q='+encodeURIComponent('迁移'))
+  assert(searchSource.status === 200, 'Authenticated advanced search failed')
+  const sourceHits = (await searchSource.json()).hits
+  assert(sourceHits.some(hit => hit.entityId === sourceCodex.id && hit.kind === 'world') &&
+    sourceHits.some(hit => hit.entityId === sourceBook.id && hit.kind === 'novel') &&
+    sourceHits.some(hit => hit.entityId === sourceCharacter.id && hit.kind === 'character'),
+    'Cross-entity cloud search missed original content')
+  const searchedForeign = await scoped(restoreWorld, '/search?q='+encodeURIComponent('迁移'))
+  assert((await searchedForeign.json()).hits.length === 0,
+    'Search returned another workspace\'s private content')
+
+  const trashPath = '/trash/' + sourceBook.id
+  const removeSourceBook = await scopedMutation(sourceWorld, '/novels/'+sourceBook.id,
+    'DELETE', {expectedVersion:1})
+  assert(removeSourceBook.status === 200 &&
+    (await removeSourceBook.json()).removedEntries === 2,
+    'Book removal did not soft-delete the complete original chapter tree')
+  const trashList = await scoped(sourceWorld, '/trash')
+  assert((await trashList.json()).items.some(item => item.id === sourceBook.id),
+    'Soft-deleted book is missing from authenticated recycle bin')
+  const restoreSourceBook = await scopedMutation(sourceWorld, trashPath,'POST',{expectedVersion:2})
+  assert(restoreSourceBook.status === 200 && (await restoreSourceBook.json()).items === 2,
+    'Original book and chapter tree could not be restored together')
+  const restoredChapter = await fetch(BASE+'/api/entities/'+sourceChapter.id,{headers:{Cookie:cookie}})
+  assert(restoredChapter.status === 200 &&
+    (await restoredChapter.json()).entity.content.parentId === sourceBook.local_id,
+    'Original chapter parent ID was lost in recycle-bin restore')
+  const removeAgain = await scopedMutation(sourceWorld,'/novels/'+sourceBook.id,
+    'DELETE',{expectedVersion:3})
+  assert(removeAgain.status === 200,'Book setup for deleted backup snapshot failed')
+
+  const backupBefore = await scoped(sourceWorld,'/backup')
+  assert(backupBefore.status === 200,'Cloud export failed HTTP '+backupBefore.status)
+  const backupJson = await backupBefore.text()
+  const archive = JSON.parse(backupJson)
+  assert(archive.version === 1 && archive.cloud.format === 'oc-studio-web-v1' &&
+    archive.cloud.records.length === 5 && archive.cloud.assets.length === 1,
+    'Portable cloud backup is missing versioned records or media')
+  const foreignBackup = await scoped(restoreWorld,'/backup')
+  assert((await foreignBackup.json()).cloud.records.length === 0,
+    'Backup leaked content into a new workspace')
+  assert((await fetch(BASE+targetUrl+'/backup',{
+    method:'POST',headers:{Cookie:cookie,Origin:'https://attacker.invalid',
+      'Content-Type':'application/json'},body:backupJson,
+  })).status === 403,'Cross-origin backup import was allowed')
+  assert((await fetch(BASE+targetUrl+'/backup',{
+    method:'POST',headers:{Origin:PUBLIC_ORIGIN,'Content-Type':'application/json'},body:backupJson,
+  })).status === 401,'Guest could import a private archive')
+
+  const restoreBackup = await scopedMutation(restoreWorld,'/backup','POST',archive)
+  const restoreReport = await restoreBackup.json()
+  assert(restoreBackup.status === 200 && restoreReport.restored === 5 &&
+    restoreReport.media === 1, 'Portable archive import failed: '+JSON.stringify(restoreReport))
+  assert((await scopedMutation(restoreWorld,'/backup','POST',archive)).status === 409,
+    'Cloud import overwrote populated workspace')
+  const copiedSearch = await scoped(restoreWorld,'/search?q='+encodeURIComponent('迁移'))
+  const copiedHits = (await copiedSearch.json()).hits
+  const restoredId = title => copiedHits.find(hit => hit.title === title)?.entityId
+  const targetCountryId = restoredId('迁移王国')
+  const targetCharacterId = restoredId('迁移守护者')
+  assert(targetCountryId && targetCharacterId && targetCountryId !== sourceCountry.id,
+    'Imported entity IDs did not change across workspaces')
+  const copiedCountryResponse = await fetch(BASE+'/api/entities/'+targetCountryId,{headers:{Cookie:cookie}})
+  const copiedCharacterResponse = await fetch(BASE+'/api/entities/'+targetCharacterId,{headers:{Cookie:cookie}})
+  const targetCountry = (await copiedCountryResponse.json()).entity
+  const targetCharacter = (await copiedCharacterResponse.json()).entity
+  assert(targetCharacter.content.countryId === targetCountry.local_id,
+    'Cloud import broke original country reference')
+  assert(targetCharacter.content.avatarUrl !== '/api/media/'+sourceAsset.id,
+    'Backup reused the source workspace\'s private media ID')
+  const copiedAsset = await fetch(BASE+targetCharacter.content.avatarUrl,{headers:{Cookie:cookie}})
+  assert(copiedAsset.status === 200 &&
+    (await copiedAsset.arrayBuffer()).byteLength === tinyPng.length,
+    'Restored private image bytes are incomplete')
+  const copiedConfigResponse = await scoped(restoreWorld,'/customization')
+  assert((await copiedConfigResponse.json()).customization.categories.some(c=>c.name==='迁移文物'),
+    'Custom categories were missing from restored archive')
+  const copiedTrash = await scoped(restoreWorld,'/trash')
+  const copiedDeleted = (await copiedTrash.json()).items
+  const copiedBook = copiedDeleted.find(row=>row.title==='迁移史诗')
+  assert(copiedBook?.version === 4,'Book deletion history was missing from archive')
+  const restoreBook = await scopedMutation(restoreWorld,'/trash/'+copiedBook.id,
+    'POST',{expectedVersion:copiedBook.version})
+  assert(restoreBook.status === 200 && (await restoreBook.json()).items === 2,
+    'Imported original book and chapter tree did not recover together')
+  const copiedChapters = await scoped(restoreWorld,'/search?q='+encodeURIComponent('迁移第一章'))
+  assert((await copiedChapters.json()).hits.some(hit=>hit.kind==='novel'),
+    'Recovered imported chapter was not searchable')
+
   const workbenchPath = '/studio/' + workspaceId
   const workbench = await fetch(BASE + workbenchPath, { headers: { Cookie: cookie } })
   assert(workbench.status === 200, 'Private workbench did not open')
