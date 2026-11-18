@@ -2,6 +2,7 @@ import { mutationOriginAllowed } from '@/lib/cloud/server/origin'
 import { NextResponse } from 'next/server'
 import { worldLinksAllowed } from '@/lib/cloud/server/world-links'
 import { cloudMapAllowed } from '@/lib/cloud/map-fields'
+import { cloudNovelAllowed } from '@/lib/cloud/novel-fields'
 import { characterMediaAllowed } from '@/lib/cloud/server/character-media'
 import { entityAccess } from '@/lib/cloud/server/entity-access'
 import { pool } from '@/lib/cloud/server/db'
@@ -46,6 +47,10 @@ export async function POST(request: Request, context: { params: Promise<{ entity
     if (!snapshot) {
       await client.query('ROLLBACK')
       return NextResponse.json({ error: 'REVISION_NOT_FOUND' }, { status: 404 })
+    }
+    if (!await cloudNovelAllowed(client, access.workspaceId, row.kind, snapshot.data, row.content)) {
+      await client.query('ROLLBACK')
+      return NextResponse.json({ error: 'INVALID_NOVEL_FIELDS' }, { status: 400 })
     }
     if (!await cloudMapAllowed(client, access.workspaceId, row.kind, snapshot.data, snapshot.title, entityId)) {
       await client.query('ROLLBACK')
