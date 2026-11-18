@@ -49,6 +49,7 @@ type MutableNovelProps = {
 }
 export interface WorkspaceNovelProps extends MutableNovelProps {
   workspaceId: string
+  focusEntryId?: number | null
   notes: OriginalNoteSnapshot[]
   loading: boolean
   error?: string | null
@@ -363,6 +364,22 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
   }
 
   const entries=useMemo(()=>props.notes.map(row=>row.entity).filter(row=>row.category===NOVEL_CATEGORY),[props.notes])
+  useEffect(()=>{
+    if(props.focusEntryId==null)return
+    const row=entries.find(item=>item.id===props.focusEntryId)
+    if(!row)return
+    const visited=new Set<number>()
+    let current:WorldEntry|undefined=row
+    while(current?.parentId!=null&&!visited.has(current.id)){
+      visited.add(current.id)
+      current=entries.find(item=>item.id===current!.parentId)
+    }
+    if(current&&current.parentId==null){
+      setActiveBookId(current.id)
+      setActiveChapterId(row.id===current.id?null:row.id)
+      setPreview(false)
+    }
+  },[props.focusEntryId,entries])
   const books=useMemo(()=>cloudNovelBooks(entries),[entries])
   const filteredBooks=useMemo(()=> {
     const rows=books.filter(book=>!query.trim()||book.title.toLocaleLowerCase().includes(query.toLocaleLowerCase().trim()))
