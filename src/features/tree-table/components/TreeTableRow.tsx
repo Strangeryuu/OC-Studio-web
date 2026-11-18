@@ -26,7 +26,7 @@ export interface TreeTableRowHandlers {
   onOpen: (row: TreeRow) => void
   onToggle: (key: string) => void
   onAddChild: (row: TreeRow) => void
-  onDelete: (row: TreeRow) => void
+  onDelete: (row: TreeRow) => void | Promise<void>
   onEdit: (row: TreeRow, field: EditableField, value: string) => Promise<void>
   onSetCountry: (row: TreeRow, countryId: number | null) => Promise<void>
 }

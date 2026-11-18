@@ -260,8 +260,7 @@ export function WorkspaceTreeTable(props: WorkspaceTreeTableProps) {
 
   async function remove(row: TreeRow): Promise<void> {
     if (row.kind === 'group' || !props.canDelete || editing > 0) return
-    try {
-      await write(async () => {
+    await write(async () => {
         const snapshots = [
           ...props.characters.map(item => ({ entityId: item.entityId, version: item.version, id: item.character.id, kind: 'character' })),
           ...props.countries.map(item => ({ entityId: item.entityId, version: item.version, id: item.entity.id, kind: 'country' })),
@@ -283,10 +282,7 @@ export function WorkspaceTreeTable(props: WorkspaceTreeTableProps) {
             : '删除失败：' + (result.error ?? response.status))
         }
         await props.onRefresh()
-      })
-    } catch {
-      // The original DeleteButton closes its confirmation; the table keeps the error visible.
-    }
+    })
   }
 
   const addChild = (row: TreeRow) => {
@@ -352,7 +348,7 @@ export function WorkspaceTreeTable(props: WorkspaceTreeTableProps) {
           onEditingChange={active => setEditing(current => Math.max(0, current + (active ? 1 : -1)))}
           handlers={{
             onOpen: handleOpen, onToggle: toggle, onAddChild: addChild,
-            onDelete: row => { void remove(row) }, onEdit: edit, onSetCountry: setCountry,
+            onDelete: row => remove(row), onEdit: edit, onSetCountry: setCountry,
           }} />)}</tbody>
       </table>}
     </div>
