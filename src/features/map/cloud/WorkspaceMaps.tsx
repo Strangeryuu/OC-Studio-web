@@ -4,6 +4,9 @@ import dynamic from 'next/dynamic'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { MapCanvas, type AnnotationDraft } from '@/features/map/components/MapCanvas'
 import { MapSwitcher } from '@/features/map/components/MapSwitcher'
+import { AnnotationColorMenu } from '@/features/map/components/AnnotationColorMenu'
+import { MediaContextMenu } from '@/components/shared/MediaContextMenu'
+import { Palette, Trash2, PenLine, Route } from 'lucide-react'
 import { MAP_VIEWS, type MapViewRenderer } from '@/features/map/save-generated'
 import { renderMapView } from '@/features/map/render-view'
 import { archiveFileName, archiveImageToBlob, blobToArchiveImage, parseMapArchive,
@@ -12,7 +15,7 @@ import { saveBlobAs, exportMapImage } from '@/features/map/export'
 import type { MapView, WorldMapParams } from '@/plugins/map-generator'
 import { useMapViewport } from '@/features/map/hooks/useMapViewport'
 import { DEFAULT_MAP_LAYERS, MAP_LAYER_LABELS, type MapAnchor, type MapLayerKind } from '@/features/map/types'
-import { minPoints, newAnnotationId, parseAnnotations, stringifyAnnotations } from '@/features/map/annotations'
+import { annotationAt, ANNOTATION_LABELS, minPoints, newAnnotationId, parseAnnotations, stringifyAnnotations, type MapAnnotation } from '@/features/map/annotations'
 import type { AnchorKind, AnchorPoint, MapEntity } from '@/features/map/services'
 import { MAP_CATEGORY, isCodexEntry, isMapEntry } from '@/lib/entry-kinds'
 import { normalizeMapAnchor } from '@/lib/cloud/map-fields'
@@ -103,6 +106,10 @@ export function WorkspaceMaps(props: Props) {
   const [draftAnchor, setDraftAnchor] = useState<{ key: string; anchor: MapAnchor } | null>(null)
   const [pick, setPick] = useState('')
   const [removeId, setRemoveId] = useState('')
+  const [canvasMenu, setCanvasMenu] = useState<{
+    at: { x: number; y: number }; anchor: MapAnchor; target: MapAnnotation | null
+  } | null>(null)
+  const [paintMenu, setPaintMenu] = useState<{ target: MapAnnotation; at: { x: number; y: number } } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [failedDraft, setFailedDraft] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -131,8 +138,8 @@ export function WorkspaceMaps(props: Props) {
   const upload = useWorkspaceImageUpload(props.workspaceId, canEdit && !disabled,
     () => {}, setError)
 
-  async function execute(job: () => Promise<void>, unsaved?: unknown, propagate = false): Promise<void> {
-    if (writing.current || disabled || !canEdit) return
+  async function execute(job: () => Promise<void>, unsaved?: unknown, propagate = false): Promise<boolean> {
+    if (writing.current || disabled || !canEdit) return false
     setError(null)
     setFailedDraft(null)
     setSaving(true)
@@ -141,10 +148,12 @@ export function WorkspaceMaps(props: Props) {
     try {
       await task
       setDraftAnchor(null)
+      return true
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '保存地图失败')
       setFailedDraft(JSON.stringify(unsaved ?? { map: activeName, draft }, null, 2))
       if (propagate) throw cause
+      return false
     } finally {
       writing.current = null
       setSaving(false)
@@ -179,12 +188,39 @@ export function WorkspaceMaps(props: Props) {
     }, { kind, id, ...patch })
   }
 
-  function finishAnnotation() {
+  async function persistAnnotations(items: readonly MapAnnotation[]): Promise<boolean> {
+    if (!selected) return false
+    const patch = { mapAnnotations: stringifyAnnotations(items) ?? null }
+    return execute(async () => {
+      props.onMapSaved(await noteAdapter.save(selected, patch))
+    }, patch)
+  }
+
+  async function finishAnnotation() {
     if (!draft || !map || draft.points.length < minPoints(draft.kind)) return
     const annotation = { id: newAnnotationId(), kind: draft.kind, points: draft.points }
-    updateMap({ mapAnnotations: stringifyAnnotations([...annotations, annotation]) ?? null })
-    setDraft(null)
+    if (await persistAnnotations([...annotations, annotation])) setDraft(null)
   }
+
+  function startDraft(kind: 'border' | 'road', origin?: MapAnchor) {
+    setCanvasMenu(null)
+    setDraft({ kind, points: origin ? [origin] : [] })
+  }
+
+  async function changeAnnotation(target: MapAnnotation, patch: Partial<Pick<MapAnnotation, 'color' | 'fill'>>) {
+    setPaintMenu(null)
+    const updated = annotations.map(item => item.id === target.id ? { ...item, ...patch } : item)
+    await persistAnnotations(updated)
+  }
+
+  useEffect(() => {
+    if (draft === null) return
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setDraft(null)
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [draft])
 
   function removeAnnotation() {
     if (!removeId) return
@@ -421,7 +457,7 @@ export function WorkspaceMaps(props: Props) {
           <MapSwitcher maps={maps.map(toMap)} activeId={map?.id ?? null}
             anchorCount={item => pins.filter(pin => pin.mapId === item.name && pin.position).length}
             canRename={canEdit} canDelete={props.canDelete} canCreate={canEdit} allowDeleteLast
-            onSelect={id => { setActiveId(id); setDraftAnchor(null); setSwitcherOpen(false); setShowDetails(false); setError(null) }}
+            onSelect={id => { setActiveId(id); setDraftAnchor(null); setCanvasMenu(null); setPaintMenu(null); setSwitcherOpen(false); setShowDetails(false); setError(null) }}
             onRename={(id, title) => void manageMap('PATCH', id, title)}
             onDelete={id => void manageMap('DELETE', id)}
             onCreate={() => { setSwitcherOpen(false); document.getElementById('new-map-name')?.focus() }}
@@ -489,9 +525,9 @@ export function WorkspaceMaps(props: Props) {
           onClick={() => { const pin = pins.find(item => mapKey(item.kind,item.id) === pick)
             if (pin) updatePin(pin.kind, pin.id, { x: 0.5, y: 0.5 }); setPick('') }}>放置中心</button>
         <button type="button" className={BTN_QUIET} disabled={!canModify || draft !== null}
-          onClick={() => setDraft({ kind: 'border', points: [] })}>绘制国界</button>
+          onClick={() => startDraft('border')}>绘制国界</button>
         <button type="button" className={BTN_QUIET} disabled={!canModify || draft !== null}
-          onClick={() => setDraft({ kind: 'road', points: [] })}>绘制道路</button>
+          onClick={() => startDraft('road')}>绘制道路</button>
         <select aria-label="选择要删除的地图标注" value={removeId} disabled={!canModify}
           onChange={event => setRemoveId(event.target.value)} className="rounded-control border border-line bg-paper px-2 py-1">
           <option value="">选择标注</option>
@@ -515,7 +551,7 @@ export function WorkspaceMaps(props: Props) {
       {draft && <div className="flex flex-wrap items-center gap-2 text-ui">
         <span>正在绘制{draft.kind === 'border' ? '国界' : '道路'}：{draft.points.length} 个点</span>
         <button type="button" className={BTN_PRIMARY}
-          disabled={saving || draft.points.length < minPoints(draft.kind)} onClick={finishAnnotation}>完成标注</button>
+          disabled={saving || draft.points.length < minPoints(draft.kind)} onClick={() => void finishAnnotation()}>完成标注</button>
         <button type="button" className={BTN_QUIET} onClick={() => setDraft(null)}>取消绘制</button>
       </div>}
       {map.seed !== undefined && map.params && !generatorOpen && <div className="flex flex-wrap items-center gap-2 text-ui">
@@ -541,8 +577,27 @@ export function WorkspaceMaps(props: Props) {
           readOnly={!edit || !canModify || generatorOpen}
           annotations={annotations} draft={edit && canModify ? draft : null}
           onDraftPoint={anchor => setDraft(current => current ? { ...current, points: [...current.points, anchor] } : null)}
+          onCanvasContextMenu={(anchor, at) => { if (edit && canModify && draft === null) setCanvasMenu({ anchor, at, target: annotationAt(annotations, anchor) }) }}
           bleed />
       </div>
+      {canvasMenu && edit && canModify && <MediaContextMenu at={canvasMenu.at}
+        onClose={() => setCanvasMenu(null)} items={[
+          ...(canvasMenu.target ? [
+            { label: '颜色...', icon: <Palette size={13} strokeWidth={2} />,
+              onSelect: () => { setPaintMenu({ target: canvasMenu.target!, at: canvasMenu.at }); setCanvasMenu(null) } },
+            { label: '删除' + ANNOTATION_LABELS[canvasMenu.target.kind], danger: true,
+              icon: <Trash2 size={13} strokeWidth={2} />,
+              onSelect: () => { void persistAnnotations(annotations.filter(item => item.id !== canvasMenu.target!.id)); setCanvasMenu(null) } },
+          ] : []),
+          { label: '画国界', icon: <PenLine size={13} strokeWidth={2} />,
+            onSelect: () => startDraft('border', canvasMenu.anchor) },
+          { label: '画道路', icon: <Route size={13} strokeWidth={2} />,
+            onSelect: () => startDraft('road', canvasMenu.anchor) },
+        ]} />}
+      {paintMenu && edit && canModify && <AnnotationColorMenu target={paintMenu.target} at={paintMenu.at}
+        onClose={() => setPaintMenu(null)}
+        onColor={color => { void changeAnnotation(paintMenu.target, { color }) }}
+        onFill={fill => { void changeAnnotation(paintMenu.target, { fill }) }} />}
       <WorkspaceEntityHistory entityId={selected!.entityId} version={selected!.version} />
     </>}
     {!props.loading && maps.length === 0 && <p className="text-ui text-ink-muted">
