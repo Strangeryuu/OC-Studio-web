@@ -23,6 +23,7 @@ interface EditableCellProps {
   className?: string
   mono?: boolean
   disabled?: boolean
+  onEditingChange?: (editing: boolean) => void
 }
 
 export function EditableCell({
@@ -33,6 +34,7 @@ export function EditableCell({
   className = '',
   mono = false,
   disabled = false,
+  onEditingChange,
 }: EditableCellProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(value)
@@ -56,12 +58,14 @@ export function EditableCell({
     if (next === '' || next === value) {
       setDraft(value)
       setEditing(false)
+      onEditingChange?.(false)
       return
     }
     setSaving(true)
     try {
       await onCommit(next)
       setEditing(false)
+      onEditingChange?.(false)
     } catch {
       // 调用方已经 toast；留在编辑态，草稿还在，可以再按一次 Enter 重试
     } finally {
@@ -88,6 +92,7 @@ export function EditableCell({
             cancelledRef.current = true
             setDraft(value)
             setEditing(false)
+            onEditingChange?.(false)
           }
         }}
         className={`h-7 min-w-0 border-b border-line bg-transparent px-0 text-ui text-ink transition-colors focus:border-line-hover focus:outline-none ${
@@ -106,6 +111,7 @@ export function EditableCell({
         event.stopPropagation()
         setDraft(value)
         setEditing(true)
+        onEditingChange?.(true)
       }}
       className={`-mx-1 flex h-7 min-w-0 items-center gap-1 px-1 text-left text-ui transition-colors hover:bg-[var(--oc-hover)] ${ROUND_ITEM} ${
         mono ? 'font-mono' : ''

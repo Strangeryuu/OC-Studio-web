@@ -38,6 +38,8 @@ interface TreeTableRowProps {
   countryOptions: FilterOption<number | 'none'>[]
   busy: boolean
   readOnly?: boolean
+  allowDelete?: boolean
+  onEditingChange?: (editing: boolean) => void
   handlers: TreeTableRowHandlers
 }
 
@@ -101,10 +103,12 @@ export function TreeTableRow({
   countryOptions,
   busy,
   readOnly = false,
+  allowDelete = true,
+  onEditingChange,
   handlers,
 }: TreeTableRowProps) {
   const canAddChild = !readOnly && row.kind !== 'event' && !(row.kind === 'group' && row.countryId == null)
-  const canDelete = !readOnly && row.kind !== 'group'
+  const canDelete = !readOnly && allowDelete && row.kind !== 'group'
 
   return (
     <tr
@@ -153,6 +157,7 @@ export function TreeTableRow({
             <EditableCell
               value={labelOf(row)}
               disabled={readOnly || busy}
+              onEditingChange={onEditingChange}
               label={
                 row.kind === 'entry'
                   ? '词条标题'
@@ -209,6 +214,7 @@ export function TreeTableRow({
               <EditableCell
                 value={cellText(row.character.race)}
                 disabled={readOnly || busy}
+                onEditingChange={onEditingChange}
                 label="种族"
                 className="w-full"
                 onCommit={(value) => handlers.onEdit(row, 'race', value)}
@@ -220,6 +226,7 @@ export function TreeTableRow({
               <EditableCell
                 value={cellText(row.character.occupation)}
                 disabled={readOnly || busy}
+                onEditingChange={onEditingChange}
                 label="职业"
                 className="w-full"
                 onCommit={(value) => handlers.onEdit(row, 'occupation', value)}
