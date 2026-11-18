@@ -37,6 +37,7 @@ import * as restoreRoute from '@/app/api/entities/[entityId]/restore/route'
 import * as uploadRoute from '@/app/api/workspaces/[workspaceId]/media/route'
 import * as mediaRoute from '@/app/api/media/[assetId]/route'
 import * as cloudMaps from '@/app/api/workspaces/[workspaceId]/maps/[mapEntityId]/route'
+import * as cloudNovels from '@/app/api/workspaces/[workspaceId]/novels/[entryId]/route'
 
 import StudioEntry from '@/app/(studio)/studio/page'
 import StudioWorkspace from '@/app/(studio)/studio/[workspaceId]/page'
@@ -515,6 +516,58 @@ describe('original entity adapters against PostgreSQL', () => {
     const revisions = await revisionRoute.GET(new Request('http://localhost:3000'), ctxEntity(country.entityId))
     expect((await revisions.json()).revisions.map((row: { version: number }) => row.version)).toEqual([5, 4, 3, 2, 1])
     expect(otherMap.entityId).not.toBe(map.entityId)
+  })
+
+  it('keeps cloud novels scoped and deletes their whole chapter trees atomically', async () => {
+    state.userId = 'owner'
+    const notes = new OriginalNotesCloudAdapter(workspaceA, apiFetch)
+    const entry = (title: string, parentId: number | null, category = '小说') =>
+      buildDefaultEntry({ ...newWorldEntryData(), title, category, parentId })
+    const root = await notes.create(entry('云端小说', null))
+    const chapter = await notes.create(entry('第一章', root.entity.id))
+    const subchapter = await notes.create(entry('第一节', chapter.entity.id))
+    const separate = await notes.create(entry('另一本小说', null))
+    const ordinary = await notes.create(entry('普通设定', null, ''))
+    await expect(notes.create(entry('错误父级', ordinary.entity.id)))
+      .rejects.toMatchObject({ status: 400, code: 'INVALID_NOVEL_FIELDS' })
+
+    const coverId = '77777777-7777-4777-8777-777777777777'
+    await state.db!.query(`INSERT INTO media_assets
+      (id,workspace_id,uploaded_by,storage_key,mime_type,byte_size,content_sha256)
+      VALUES($1,$2,'owner','ci-novel-cover.png','image/png',1,'ci-novel-cover')`,
+      [coverId,workspaceA])
+    const updated = await notes.save(root, {
+      novelAuthor: '云端作者', novelSynopsis: '长篇简介', novelTargetWords: 100000,
+      novelCover: '/api/media/' + coverId,
+    })
+    expect(updated.entity.novelAuthor).toBe('云端作者')
+    expect(updated.entity.novelCover).toBe('/api/media/' + coverId)
+    await expect(notes.save(updated, { novelCover: '/api/media/66666666-6666-4666-8666-666666666666' }))
+      .rejects.toMatchObject({ status: 400, code: 'INVALID_NOTE_MEDIA' })
+
+    // Generic single-entity removal would strand chapters, so the novel API owns the cascade.
+    await expect(notes.remove(updated)).rejects.toMatchObject({ status: 400, code: 'NOVEL_MANAGEMENT_REQUIRED' })
+    const ctx = { params: Promise.resolve({ workspaceId: workspaceA, entryId: root.entityId }) }
+    const request = (expectedVersion: number) => new Request('http://localhost:3000', {
+      method: 'DELETE', headers: { Origin: 'http://localhost:3000', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expectedVersion }),
+    })
+    state.userId = 'viewer'
+    expect((await cloudNovels.DELETE(request(updated.version), ctx)).status).toBe(404)
+    state.userId = 'owner'
+    expect((await cloudNovels.DELETE(request(1), ctx)).status).toBe(409)
+    const response = await cloudNovels.DELETE(request(updated.version), ctx)
+    expect(response.status).toBe(200)
+    expect((await response.json()).removedEntries).toBe(3)
+    const remaining = await notes.list()
+    for (const deletedId of [root.entityId, chapter.entityId, subchapter.entityId]) {
+      expect(remaining.some(row => row.entityId === deletedId)).toBe(false)
+      const revisions = await state.db!.query(
+        "SELECT action FROM entity_revisions WHERE entity_id=$1 ORDER BY version DESC LIMIT 1", [deletedId])
+      expect(revisions.rows[0]?.action).toBe('delete')
+    }
+    expect(remaining.some(row => row.entityId === separate.entityId)).toBe(true)
+    expect(remaining.some(row => row.entityId === ordinary.entityId)).toBe(true)
   })
 
   it('uploads and reads private image bytes with workspace authorization', async () => {
