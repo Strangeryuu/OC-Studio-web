@@ -52,7 +52,7 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
       await client.query('ROLLBACK')
       return NextResponse.json({ error: body.kind === 'worldEntry' ? 'INVALID_NOTE_MEDIA' : body.kind === 'event' ? 'INVALID_EVENT_MEDIA' : body.kind === 'country' ? 'INVALID_COUNTRY_MEDIA' : 'INVALID_CHARACTER_MEDIA' }, { status: 400 })
     }
-    if (!await cloudMapAllowed(client, workspaceId, body.kind as string, doc.data)) {
+    if (!await cloudMapAllowed(client, workspaceId, body.kind as string, doc.data, doc.title)) {
       await client.query('ROLLBACK')
       return NextResponse.json({ error: 'INVALID_MAP_FIELDS' }, { status: 400 })
     }

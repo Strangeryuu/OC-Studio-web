@@ -59,7 +59,7 @@ export async function PATCH(request: Request, context: Context) {
       await client.query('ROLLBACK')
       return NextResponse.json({ error: existing.kind === 'worldEntry' ? 'INVALID_NOTE_MEDIA' : existing.kind === 'event' ? 'INVALID_EVENT_MEDIA' : existing.kind === 'country' ? 'INVALID_COUNTRY_MEDIA' : 'INVALID_CHARACTER_MEDIA' }, { status: 400 })
     }
-    if (!await cloudMapAllowed(client, access.workspaceId, existing.kind, document.data)) {
+    if (!await cloudMapAllowed(client, access.workspaceId, existing.kind, document.data, document.title, entityId)) {
       await client.query('ROLLBACK')
       return NextResponse.json({ error: 'INVALID_MAP_FIELDS' }, { status: 400 })
     }

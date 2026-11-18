@@ -40,6 +40,8 @@
 
 地图沿用原版的 `worldEntry`（`category=地图`）存储模型。云端底图改用 `/api/workspaces/<id>/media` 上传，`mapImage` 保存为私有 `/api/media/<assetId>` URL；服务器校验图片属于当前资料库，并校验锚点所指向的地图是当前资料库中的地图条目。地图的图片、尺寸、标注及每个锚点的修改全部通过原有版本化实体 API 进行，使用 `expectedVersion` 检测并发冲突。未修改上游原版画布。
 
+为维持原版 `mapId` 按地图名称关联的语义，新加 `0005_map_name_unique.sql` 限制同一资料库下地图名称唯一；创建/修改地图时会在服务端提前检查同名。
+
 新增 `tests/cloud-map-fields.test.ts` 与 PostgreSQL（PGlite）集成测试用例，覆盖归一化坐标、标注、私有底图、跨资料库地图引用、版本历史和访客权限。新增 `.github/workflows/web-cloud-check.yml`，在 `web-dev` 推送时执行类型检查、lint、单元测试和 Web 生产构建。
 
 **验证状态**：本轮已完成远程分支核对、代码提交和服务端校验路径检查；新测试/CI 的实际执行结果及浏览器交互仍需查看工作流或在有依赖环境的本地/VPS 执行。原先的 558 项测试与 31 项自检仅属于 `5431543` 基线，本轮不沿用其通过结论。

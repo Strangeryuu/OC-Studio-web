@@ -416,6 +416,9 @@ describe('original entity adapters against PostgreSQL', () => {
     expect((await mapsB.list()).some(row => row.entityId === mapA.entityId)).toBe(false)
     state.userId = 'owner'
     expect((await mapsA.list()).some(row => row.entityId === mapB.entityId)).toBe(false)
+    await expect(mapsA.create(buildDefaultEntry({
+      ...newWorldEntryData(), title: '云端大陆', category: '地图',
+    }))).rejects.toMatchObject({ status: 400, code: 'INVALID_MAP_FIELDS' })
 
     const own = '55555555-5555-4555-8555-555555555555'
     const foreign = '66666666-6666-4666-8666-666666666666'

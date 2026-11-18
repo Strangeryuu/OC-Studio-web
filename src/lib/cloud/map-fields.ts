@@ -59,11 +59,21 @@ export function validMapFields(kind: string, content: unknown): boolean {
 
 /** Pins may reference only map entries in the same workspace. */
 export async function cloudMapAllowed(
-  client: PoolClient, workspaceId: string, kind: string, content: unknown,
+  client: PoolClient, workspaceId: string, kind: string, content: unknown, title: string, selfId?: string,
 ): Promise<boolean> {
   if (!validMapFields(kind, content)) return false
   if (kind !== 'country' && kind !== 'event' && kind !== 'worldEntry') return true
   const record = content as Record<string, unknown>
+  if (kind === 'worldEntry' && record.category === MAP_CATEGORY) {
+    const duplicate = await client.query(
+      `SELECT 1 FROM entities
+       WHERE workspace_id=$1 AND kind='worldEntry' AND content->>'category'=$2
+         AND title=$3 AND deleted_at IS NULL AND ($4::uuid IS NULL OR id<>$4::uuid)
+       LIMIT 1`,
+      [workspaceId, MAP_CATEGORY, title, selfId ?? null],
+    )
+    if (duplicate.rowCount) return false
+  }
   const mapName = record.mapId
   if (typeof mapName !== 'string' || mapName === '') return true
   const found = await client.query(
