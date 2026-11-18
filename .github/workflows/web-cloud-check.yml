@@ -59,3 +59,5 @@ jobs:
         run: node scripts/cloud-migrate-business.cjs
       - name: 真实 PostgreSQL 结构与地图约束自检
         run: node scripts/cloud-db-smoke.cjs
+      - name: 跨资料库地图名称与软删除唯一性集成测试
+        run: node scripts/cloud-postgres-map-smoke.cjs
