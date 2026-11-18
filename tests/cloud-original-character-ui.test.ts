@@ -47,6 +47,19 @@ import { WorkspaceCharacters, editablePatch } from '@/features/characters/cloud/
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 const workspaceId = '11111111-1111-4111-8111-111111111111'
+
+/** Keep the workbench's customization request separate from media/history fixtures. */
+function stubCloudFetch(handler: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>) {
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes('/api/workspaces/') && String(input).includes('/customization')) {
+      return Promise.resolve(new Response(JSON.stringify({ customization: null }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      }))
+    }
+    return handler(input, init)
+  }))
+}
+
 let root: Root
 let container: HTMLDivElement
 
@@ -285,7 +298,7 @@ describe('original character information in cloud workspace', () => {
 
     const imageUrl = '/api/media/33333333-3333-4333-8333-333333333333'
     const upload = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ asset: { url: imageUrl } }), { status: 201 }))
-    vi.stubGlobal('fetch', upload)
+    stubCloudFetch(upload)
     const flagInput = container.querySelectorAll<HTMLInputElement>('input[type="file"]')[1]
     Object.defineProperty(flagInput, 'files', { configurable: true, value: [new File(['image'], 'flag.png', { type: 'image/png' })] })
     await act(async () => { flagInput.dispatchEvent(new Event('change', { bubbles: true })); await Promise.resolve() })
@@ -333,7 +346,7 @@ describe('original character information in cloud workspace', () => {
     }))
     const imageUrl = '/api/media/33333333-3333-4333-8333-333333333333'
     const upload = vi.fn().mockResolvedValue(new Response(JSON.stringify({ asset: { url: imageUrl } }), { status: 201 }))
-    vi.stubGlobal('fetch', upload)
+    stubCloudFetch(upload)
     await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' })); await Promise.resolve() })
     await click(button('图片角色'))
     const input = container.querySelector('input[aria-label="上传正文图片"]') as HTMLInputElement
@@ -351,7 +364,7 @@ describe('original character information in cloud workspace', () => {
     }))
     const imageUrl = '/api/media/33333333-3333-4333-8333-333333333333'
     const upload = vi.fn().mockResolvedValue(new Response(JSON.stringify({ asset: { url: imageUrl } }), { status: 201 }))
-    vi.stubGlobal('fetch', upload)
+    stubCloudFetch(upload)
     await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' })); await Promise.resolve() })
     await click(button('封面角色'))
     const input = container.querySelector('input[type="file"]') as HTMLInputElement
@@ -369,7 +382,7 @@ describe('original character information in cloud workspace', () => {
       ...snapshot, version: snapshot.version + 1, character: { ...snapshot.character, ...patch },
     }))
     const imageUrl = '/api/media/33333333-3333-4333-8333-333333333333'
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ asset: { url: imageUrl } }), { status: 201 })))
+    stubCloudFetch(vi.fn().mockResolvedValue(new Response(JSON.stringify({ asset: { url: imageUrl } }), { status: 201 })))
     await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' })); await Promise.resolve() })
     await click(button('头像角色'))
     const input = container.querySelectorAll('input[type="file"]')[1] as HTMLInputElement
@@ -386,7 +399,7 @@ describe('original character information in cloud workspace', () => {
       ...snapshot, version: snapshot.version + 1, character: { ...snapshot.character, ...patch },
     }))
     const imageUrl = '/api/media/33333333-3333-4333-8333-333333333333'
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ asset: { url: imageUrl } }), { status: 201 })))
+    stubCloudFetch(vi.fn().mockResolvedValue(new Response(JSON.stringify({ asset: { url: imageUrl } }), { status: 201 })))
     vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (this: HTMLInputElement) {
       Object.defineProperty(this, 'files', { configurable: true, value: [new File(['image'], 'gallery.png', { type: 'image/png' })] })
       this.dispatchEvent(new Event('change', { bubbles: true }))
@@ -404,7 +417,7 @@ describe('original character information in cloud workspace', () => {
     fake.list.mockResolvedValue([fixture(1, '相册角色')])
     fake.save.mockRejectedValue(new Error('版本冲突'))
     const imageUrl = '/api/media/33333333-3333-4333-8333-333333333333'
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ asset: { url: imageUrl } }), { status: 201 })))
+    stubCloudFetch(vi.fn().mockResolvedValue(new Response(JSON.stringify({ asset: { url: imageUrl } }), { status: 201 })))
     vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (this: HTMLInputElement) {
       Object.defineProperty(this, 'files', { configurable: true, value: [new File(['image'], 'gallery.png', { type: 'image/png' })] })
       this.dispatchEvent(new Event('change', { bubbles: true }))
@@ -423,7 +436,7 @@ describe('original character information in cloud workspace', () => {
       ...snapshot, version: snapshot.version + 1, character: { ...snapshot.character, ...patch },
     }))
     const imageUrl = '/api/media/33333333-3333-4333-8333-333333333333'
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ asset: { url: imageUrl } }), { status: 201 })))
+    stubCloudFetch(vi.fn().mockResolvedValue(new Response(JSON.stringify({ asset: { url: imageUrl } }), { status: 201 })))
     vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (this: HTMLInputElement) {
       Object.defineProperty(this, 'files', { configurable: true, value: [new File(['image'], 'portrait.png', { type: 'image/png' })] })
       this.dispatchEvent(new Event('change', { bubbles: true }))
@@ -439,7 +452,7 @@ describe('original character information in cloud workspace', () => {
 
   it('keeps a failed cover upload out of the character', async () => {
     fake.list.mockResolvedValue([fixture(1, '封面角色')])
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 413 })))
+    stubCloudFetch(vi.fn().mockResolvedValue(new Response('', { status: 413 })))
     await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' })); await Promise.resolve() })
     await click(button('封面角色'))
     const input = container.querySelector('input[type="file"]') as HTMLInputElement
@@ -454,7 +467,7 @@ describe('original character information in cloud workspace', () => {
   it('blocks leaving while a profile image upload is in progress', async () => {
     fake.list.mockResolvedValue([fixture(1, '甲'), fixture(2, '乙')])
     let resolveUpload!: (response: Response) => void
-    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(resolve => { resolveUpload = resolve })))
+    stubCloudFetch(vi.fn(() => new Promise<Response>(resolve => { resolveUpload = resolve })))
     await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' })); await Promise.resolve() })
     await click(button('甲'))
     const input = container.querySelector('input[type="file"]') as HTMLInputElement
@@ -476,7 +489,7 @@ describe('original character information in cloud workspace', () => {
       ...snapshot, version: snapshot.version + 1, character: { ...snapshot.character, ...patch },
     }))
     let resolveUpload!: (response: Response) => void
-    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(resolve => { resolveUpload = resolve })))
+    stubCloudFetch(vi.fn(() => new Promise<Response>(resolve => { resolveUpload = resolve })))
     await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' })); await Promise.resolve() })
     await click(button('甲'))
     const input = container.querySelector('input[aria-label="上传正文图片"]') as HTMLInputElement
@@ -495,7 +508,7 @@ describe('original character information in cloud workspace', () => {
 
   it('shows upload failures without inserting an unsaved image', async () => {
     fake.list.mockResolvedValue([fixture(1, '角色')])
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 413 })))
+    stubCloudFetch(vi.fn().mockResolvedValue(new Response('', { status: 413 })))
     await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' })); await Promise.resolve() })
     await click(button('角色'))
     const input = container.querySelector('input[aria-label="上传正文图片"]') as HTMLInputElement
@@ -596,7 +609,7 @@ describe('original character information in cloud workspace', () => {
     const fetchHistory = vi.fn().mockResolvedValue(new Response(JSON.stringify({ revisions: [
       { version: 2, actor_name: '创作者', action: 'update', created_at: '2026-01-01T00:00:00Z' },
     ] }), { status: 200 }))
-    vi.stubGlobal('fetch', fetchHistory)
+    stubCloudFetch(fetchHistory)
     await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'viewer' })); await Promise.resolve() })
     await click(button('只读角色'))
     const details = container.querySelector('details')!
