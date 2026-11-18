@@ -44,6 +44,9 @@ import { OriginalNoteEditor } from '@/features/world/cloud/OriginalNoteEditor'
 import { WorkspaceNoteTree } from '@/features/world/cloud/WorkspaceNoteTree'
 import { buildDefaultEntry } from '@/features/world/services'
 import { isCodexEntry } from '@/lib/entry-kinds'
+import { defaultWorkspaceCustomization, type WorkspaceCustomization } from '@/lib/cloud/workspace-customization'
+import type { Category } from '@/lib/categories/types'
+import type { CloudSearchHit } from '@/lib/cloud/workspace-search'
 import type { ReferableEntity } from '@/lib/reference-registry'
 
 import { projectGraphData } from '@/features/relations/services'
@@ -64,6 +67,15 @@ const WorkspaceNovel = dynamic(
   () => import('@/features/novel/cloud/WorkspaceNovel').then(mod => mod.WorkspaceNovel),
   { ssr: false },
 )
+
+const WorkspaceTrash = dynamic(
+  () => import('@/features/trash/cloud/WorkspaceTrash').then(m=>m.WorkspaceTrash),{ssr:false})
+const WorkspaceCustomizationPanel = dynamic(
+  () => import('@/features/categories/cloud/WorkspaceCustomizationPanel').then(m=>m.WorkspaceCustomizationPanel),{ssr:false})
+const WorkspaceSearch = dynamic(
+  () => import('@/features/search/cloud/WorkspaceSearch').then(m=>m.WorkspaceSearch),{ssr:false})
+const WorkspaceBackup = dynamic(
+  () => import('@/features/backup/cloud/WorkspaceBackup').then(m=>m.WorkspaceBackup),{ssr:false})
 
 const WorkspaceTreeTable = dynamic(
   () => import('@/features/tree-table/cloud/WorkspaceTreeTable').then(mod => mod.WorkspaceTreeTable),
@@ -220,6 +232,21 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
   const countryList = useWorkspaceRows(countryAdapter, '国家')
   const eventList = useWorkspaceRows(eventAdapter, '事件')
   const [section, setSection] = useState<WorkspaceSection>('character')
+  const [customization,setCustomization]=useState<WorkspaceCustomization>(defaultWorkspaceCustomization)
+  const [configurationRefresh,setConfigurationRefresh]=useState(0)
+  const [activeCategoryId,setActiveCategoryId]=useState<string|null>(null)
+  const [novelFocusId,setNovelFocusId]=useState<number|null>(null)
+  useEffect(()=>{
+    let active=true
+    void fetch('/api/workspaces/'+workspaceId+'/customization',{cache:'no-store'})
+      .then(async response=>{
+        if(!response.ok)throw new Error('资料库分类读取失败')
+        return response.json() as Promise<{customization:WorkspaceCustomization}>
+      })
+      .then(result=>{if(active)setCustomization(result.customization)})
+      .catch(()=>undefined)
+    return()=>{active=false}
+  },[workspaceId,configurationRefresh])
   const [leaving, setLeaving] = useState(false)
   const transition = useRef(false)
   const pendingGraphWrite = useRef<Promise<void> | null>(null)
@@ -237,9 +264,16 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
   const events = useMemo(() => eventList.rows.map(row => row.entity), [eventList.rows])
 
   const notes = useMemo(() => noteList.rows.map(row => row.entity).filter(isCodexEntry), [noteList.rows])
+  const activeCategory=customization.categories.find(c=>c.id===activeCategoryId)??null
+  const visibleCategories=customization.categories.filter(c=>c.enabled)
+  const worldNotes=useMemo(()=>notes.filter(row=>
+    !visibleCategories.some(category=>category.name===row.category)),
+    [notes,visibleCategories.map(c=>c.id+':'+c.enabled+':'+c.name).join('|')])
   const novelRoots = useMemo(() => noteList.rows.filter(row => row.entity.category === '小说' && row.entity.parentId == null), [noteList.rows])
   const mapEntries = useMemo(() => noteList.rows.filter(row => row.entity.category === '地图'), [noteList.rows])
   const note = noteList.rows.find(row => row.entityId === selectedId && isCodexEntry(row.entity))
+  const categoryNote=activeCategory ? noteList.rows.find(row =>
+    row.entityId===selectedId && row.entity.category===activeCategory.name) : undefined
   const graph = useMemo(
     () => section === 'relations' ? projectGraphData({ characters, countries, events, notes }, true) : null,
     [section, characters, countries, events, notes],
@@ -288,14 +322,31 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
     if (target) select(target.entityId, kind)
   }
 
-  function createNote(parentId: number | null) {
+  function createNote(parentId: number | null, category?: Category | null) {
     if (!canEdit) return
-    void openAfterSaving('world', async () => {
-      const draft = buildDefaultEntry({ ...newWorldEntryData(), parentId })
+    void openAfterSaving(category ? 'category' : 'world', async () => {
+      const draft = buildDefaultEntry({ ...newWorldEntryData(), parentId,
+        ...(category?{category:category.name,template:category.template}:{}) })
       const row = await noteAdapter.create(draft)
       noteList.append(row)
       return row.entityId
     })
+  }
+
+  function openSearchHit(hit:CloudSearchHit) {
+    if(hit.kind==='novel'){
+      void openAfterSaving('novel',async()=>{setNovelFocusId(hit.localId);return null})
+    }else if(hit.kind==='map'){
+      void openAfterSaving('map',async()=>null)
+    }else{
+      const targetSection:WorkspaceSection=hit.kind==='world'?'world':hit.kind
+      const found=hit.kind==='world'&&hit.category?
+        visibleCategories.find(category=>category.name===hit.category):undefined
+      void openAfterSaving(found?'category':targetSection,async()=>{
+        if(found)setActiveCategoryId(found.id)
+        return hit.entityId
+      })
+    }
   }
 
   async function saveTimelineTime(id: number, time: string, endTime?: string) {
@@ -378,8 +429,13 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
       {workspaceDescription && <p className="mt-1 text-ui text-ink-muted">{workspaceDescription}</p>}
     </header>}
     <WorkspaceNavigation active={section} busy={busy || leaving} hasMembers={membersPanel !== undefined}
+      categories={customization.categories} activeCategoryId={activeCategoryId}
+      onSelectCategory={id => void openAfterSaving('category',async()=>{setActiveCategoryId(id);return null})}
       onSelect={next => {
-        if (next !== section) void openAfterSaving(next, async () => null)
+        if (next !== section) void openAfterSaving(next, async () => {
+          if(next==='novel')setNovelFocusId(null)
+          return null
+        })
       }}
       onSwitchWorkspace={workspaceName ? () => void openAfterSaving(section, async () => {
         setLeaving(true)
@@ -424,7 +480,7 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
         loading={characterList.loading || countryList.loading || eventList.loading || noteList.loading}
         error={graphError || characterList.error || countryList.error || eventList.error || noteList.error}
         onNavigate={(kind,id) => navigate(kind,id)} onRefresh={refreshGraph} />}
-      {section === 'novel' && <WorkspaceNovel workspaceId={workspaceId}
+      {section === 'novel' && <WorkspaceNovel workspaceId={workspaceId} focusEntryId={novelFocusId}
         notes={noteList.rows} loading={noteList.loading} error={noteList.error}
         adapter={noteAdapter} canEdit={canEdit} canDelete={role === 'owner' || role === 'admin'} disabled={busy}
         onCreated={noteList.append} onSaved={noteList.replace} onRefresh={refreshGraph} />}
@@ -449,7 +505,7 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
           eventList.append(row)
           return row.entityId
         }) : undefined} />}
-      {section === 'world' && <WorkspaceNoteTree entries={notes} selectedId={note?.entity.id} loading={noteList.loading}
+      {section === 'world' && <WorkspaceNoteTree entries={worldNotes} selectedId={note?.entity.id} loading={noteList.loading}
         error={noteList.error} busy={busy} onSelect={id => navigate('world', id)}
         onCreate={canEdit ? () => createNote(null) : undefined} />}
       {section === 'table' && <WorkspaceTreeTable workspaceId={workspaceId}
@@ -497,6 +553,25 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
           onNavigateToEvent={id => navigate('event', id)}
           onNavigateToWorld={id => navigate('world', id)} />
       </div>}
+      {section === 'trash' && <WorkspaceTrash workspaceId={workspaceId}
+        canManage={role==='owner'||role==='admin'} onRestored={refreshGraph}/>}
+      {section === 'settings' && <WorkspaceCustomizationPanel workspaceId={workspaceId}
+        canManage={role==='owner'||role==='admin'}
+        onSaved={()=>setConfigurationRefresh(v=>v+1)} />}
+      {section === 'search' && <WorkspaceSearch workspaceId={workspaceId} onOpen={openSearchHit} />}
+      {section === 'backup' && <WorkspaceBackup workspaceId={workspaceId} workspaceName={workspaceName??'世界观'}
+        canExport={role!=='viewer'} canImport={role==='owner'||role==='admin'}
+        onImported={async()=>{setConfigurationRefresh(v=>v+1);await refreshGraph()}} />}
+      {section === 'category' && activeCategory && <WorkspaceNoteTree key={activeCategory.id}
+        entries={notes.filter(row=>row.category===activeCategory.name)}
+        selectedId={categoryNote?.entity.id} loading={noteList.loading}
+        error={noteList.error} busy={busy} onSelect={id=>navigate('world',id)}
+        onCreate={canEdit?()=>createNote(null,activeCategory):undefined}/>}
+      {section === 'category' && activeCategory && categoryNote &&
+        <OriginalNoteEditor key={categoryNote.entityId} snapshot={categoryNote} adapter={noteAdapter}
+          notes={notes} characters={characters} references={references} canEdit={canEdit} disabled={busy}
+          onSaved={noteList.replace} onUploadBusy={setBusy} onNavigate={navigate}
+          onCreateChild={()=>createNote(categoryNote.entity.id,activeCategory)}/>}
       {section === 'character' && character && <OriginalCharacterEditor key={character.entityId} snapshot={character} adapter={characterAdapter}
         characters={characters} countries={countries} countriesReady={!countryList.loading && !countryList.error}
         notes={notes} onNavigateRelation={navigate}
