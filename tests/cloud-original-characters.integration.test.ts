@@ -401,6 +401,58 @@ describe('original entity adapters against PostgreSQL', () => {
     expect(reread?.character.avatars[0].type).toBe('fullbody')
   })
 
+  it('isolates cloud maps, their private backgrounds, pins and annotation revisions', async () => {
+    state.userId = 'owner'
+    const mapsA = new OriginalNotesCloudAdapter(workspaceA, apiFetch)
+    const countries = new OriginalCountriesCloudAdapter(workspaceA, apiFetch)
+    const mapA = await mapsA.create(buildDefaultEntry({
+      ...newWorldEntryData(), title: '云端大陆', category: '地图',
+    }))
+    state.userId = 'outsider'
+    const mapsB = new OriginalNotesCloudAdapter(workspaceB, apiFetch)
+    const mapB = await mapsB.create(buildDefaultEntry({
+      ...newWorldEntryData(), title: '异库地图', category: '地图',
+    }))
+    expect((await mapsB.list()).some(row => row.entityId === mapA.entityId)).toBe(false)
+    state.userId = 'owner'
+    expect((await mapsA.list()).some(row => row.entityId === mapB.entityId)).toBe(false)
+
+    const own = '55555555-5555-4555-8555-555555555555'
+    const foreign = '66666666-6666-4666-8666-666666666666'
+    await state.db!.query(`INSERT INTO media_assets(id,workspace_id,uploaded_by,storage_key,mime_type,byte_size,content_sha256)
+      VALUES ($1,$3,'owner','own-map.png','image/png',1,'own-map'),
+             ($2,$4,'outsider','foreign-map.png','image/png',1,'foreign-map')`,
+      [own, foreign, workspaceA, workspaceB])
+    await expect(mapsA.save(mapA, { mapImage: '/api/media/' + foreign, mapWidth: 1600, mapHeight: 900 }))
+      .rejects.toMatchObject({ status: 400, code: 'INVALID_NOTE_MEDIA' })
+    const withImage = await mapsA.save(mapA, { mapImage: '/api/media/' + own, mapWidth: 1600, mapHeight: 900 })
+    expect(withImage.entity.mapImage).toBe('/api/media/' + own)
+
+    const country = await countries.create(buildDefaultCountry({ ...newCountryData(), name: '云端国家' }))
+    await expect(countries.save(country, { mapId: '异库地图', mapPosition: { x: 0.2, y: 0.3 } }))
+      .rejects.toMatchObject({ status: 400, code: 'INVALID_MAP_FIELDS' })
+    const pin = await countries.save(country, { mapId: '云端大陆', mapPosition: { x: 0.2, y: 0.3 } })
+    expect(pin.entity.mapPosition).toEqual({ x: 0.2, y: 0.3 })
+    expect(pin.entity.mapId).toBe('云端大陆')
+
+    const annotations = JSON.stringify([
+      { id: 'road-1', kind: 'road', points: [{ x: 0.1, y: 0.2 }, { x: 0.8, y: 0.9 }] },
+    ])
+    const marked = await mapsA.save(withImage, { mapAnnotations: annotations })
+    expect(marked.version).toBe(3)
+    expect(marked.entity.mapAnnotations).toBe(annotations)
+    const history = await revisionRoute.GET(new Request('http://localhost:3000'), ctxEntity(mapA.entityId))
+    expect((await history.json()).revisions.map((row: { version: number }) => row.version)).toEqual([3, 2, 1])
+    await expect(mapsA.save(withImage, { mapAnnotations: '[]' }))
+      .rejects.toMatchObject({ status: 409, code: 'VERSION_CONFLICT' })
+
+    state.userId = 'viewer'
+    await expect(mapsA.save(marked, { mapAnnotations: '[]' })).rejects.toMatchObject({ status: 404 })
+    state.userId = 'outsider'
+    await expect(mapsA.list()).rejects.toMatchObject({ status: 404 })
+    state.userId = 'owner'
+  })
+
   it('uploads and reads private image bytes with workspace authorization', async () => {
     state.userId = 'owner'
     const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0])

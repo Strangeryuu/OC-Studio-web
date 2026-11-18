@@ -30,3 +30,18 @@
 ## 本地开发准备
 
 需要 Node.js 22+ 和 PostgreSQL。安装依赖后，将 `cloud/env.sample` 复制为 `.env.local` 并设置数据库地址、认证地址、随机密钥和媒体目录。先用 Better Auth CLI 创建认证表，再运行 `node scripts/cloud-migrate-business.cjs` 应用业务迁移。准备好账号与数据库后运行 `npm run dev`。这些步骤仍需在真实数据库中验证；请使用独立测试库。
+
+
+## 2026-11-18：云端地图第一阶段（web-dev）
+
+开发基线：`543154303c9a377c227d79b907256b3e456c38fc`（与上次交接的 `5431543` 一致），原版地图代码仍在 `src/features/map/`。
+
+本阶段新增 `src/features/map/cloud/WorkspaceMaps.tsx`，通过云端笔记、国家及事件适配器调用原版 `MapCanvas`、`useMapViewport` 和 `annotations.ts`：在工作台地图板块创建/选择地图、上传底图、缩放平移、筛选国家/事件/词条图层、添加/拖动/移除地图锚点、绘制国界及道路、删除标注，并通过 `WorkspaceEntityHistory` 查看地图条目历史。访客保持只读；草稿、保存失败和版本冲突均提供离开保护及失败数据复制入口。
+
+地图沿用原版的 `worldEntry`（`category=地图`）存储模型。云端底图改用 `/api/workspaces/<id>/media` 上传，`mapImage` 保存为私有 `/api/media/<assetId>` URL；服务器校验图片属于当前资料库，并校验锚点所指向的地图是当前资料库中的地图条目。地图的图片、尺寸、标注及每个锚点的修改全部通过原有版本化实体 API 进行，使用 `expectedVersion` 检测并发冲突。未修改上游原版画布。
+
+新增 `tests/cloud-map-fields.test.ts` 与 PostgreSQL（PGlite）集成测试用例，覆盖归一化坐标、标注、私有底图、跨资料库地图引用、版本历史和访客权限。新增 `.github/workflows/web-cloud-check.yml`，在 `web-dev` 推送时执行类型检查、lint、单元测试和 Web 生产构建。
+
+**验证状态**：本轮已完成远程分支核对、代码提交和服务端校验路径检查；新测试/CI 的实际执行结果及浏览器交互仍需查看工作流或在有依赖环境的本地/VPS 执行。原先的 558 项测试与 31 项自检仅属于 `5431543` 基线，本轮不沿用其通过结论。
+
+**后续待做**：原版地图生成器与多视图生成、`.ocmap` 导入/导出、地图重命名/删除与锚点联动、完整原版地图菜单/详情、多个资料库实际浏览器切换、独立 PostgreSQL 联调及浏览器拖动验收。当前仍为开发版本。

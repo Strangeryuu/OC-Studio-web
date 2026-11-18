@@ -98,8 +98,9 @@ export function WorkspaceMaps(props: Props) {
 
   useEffect(() => registerPendingSave(() => {
     if (draft !== null) throw new Error('地图有尚未完成的标注，请先完成或取消')
+    if (failedDraft !== null) throw new Error('地图上次保存失败，未保存的数据仍保留在页面中')
     return writing.current ?? undefined
-  }), [draft])
+  }), [draft, failedDraft])
   useWorkspaceDraftGuard(draft !== null || saving || failedDraft !== null, '地图')
 
   const upload = useWorkspaceImageUpload(props.workspaceId, canEdit && !disabled && !saving,
