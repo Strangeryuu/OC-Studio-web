@@ -50,7 +50,7 @@ export async function PATCH(request: Request, context: Context) {
     )
     const rows = result.rows
     const root = rows.find(row => row.id === entryId && row.content.parentId == null)
-    const rootLocalId = root && parseOriginalId(String(root.local_id))
+    const rootLocalId = root ? parseOriginalId(String(root.local_id)) : null
     if (!root || rootLocalId === null) {
       await client.query('ROLLBACK')
       return NextResponse.json({ error: 'NOT_FOUND' }, { status: 404 })
