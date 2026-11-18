@@ -626,6 +626,14 @@ async function run() {
   assert(copiedAsset.status === 200 &&
     (await copiedAsset.arrayBuffer()).byteLength === tinyPng.length,
     'Restored private image bytes are incomplete')
+  const sourceSnapshot = archive.cloud.records.find(row => row.id === sourceCharacter.id)
+  const restoredRevisions = await fetch(BASE+'/api/entities/'+targetCharacterId+'/revisions',
+    {headers:{Cookie:cookie}})
+  const restoredHistory = (await restoredRevisions.json()).revisions
+  assert(restoredRevisions.status === 200 &&
+    new Date(restoredHistory[0].created_at).getTime() ===
+      new Date(sourceSnapshot.history[0].createdAt).getTime(),
+    'Cross-VPS backup restore changed the original revision timestamp')
   const copiedConfigResponse = await scoped(restoreWorld,'/customization')
   assert((await copiedConfigResponse.json()).customization.categories.some(c=>c.name==='迁移文物'),
     'Custom categories were missing from restored archive')

@@ -24,7 +24,11 @@ const validId=(v:unknown):v is number=>typeof v==='number'&&Number.isSafeInteger
 /** Accepts the original v1 .ocbak, with an optional complete cloud sidecar. */
 export function parsePortableBackup(raw:unknown):PortableBackup|null{
   if(!obj(raw)||raw.version!==1||!obj(raw.data))return null
-  const cloud=obj(raw.cloud)&&raw.cloud.format==='oc-studio-web-v1'?raw.cloud:null
+  // A present but unsupported sidecar must fail closed. Falling back to v1
+  // would silently discard cloud-only revisions, deleted items and private media.
+  if(raw.cloud!==undefined&&(!obj(raw.cloud)||raw.cloud.format!=='oc-studio-web-v1'))
+    return null
+  const cloud=obj(raw.cloud)?raw.cloud:null
   const records:PortableEntity[]=[]
   if(cloud){
     if(!Array.isArray(cloud.records)||cloud.records.length>3000||
@@ -41,14 +45,16 @@ export function parsePortableBackup(raw:unknown):PortableBackup|null{
       const history:PortableEntity['history']=[]
       for(const item of value.history){
         if(!obj(item)||!validVersion(item.version)||!['create','update','restore','delete'].includes(String(item.action))||
-          !obj(item.content)||!readEntityDocument(item.content))return null
+          !obj(item.content)||!readEntityDocument(item.content)||
+          (item.createdAt!==undefined&&(typeof item.createdAt!=='string'||
+            !/^\\d{4}-\\d{2}-\\d{2}T/.test(item.createdAt)||
+            Number.isNaN(Date.parse(item.createdAt)))))return null
         history.push({version:item.version,action:item.action as PortableEntity['history'][number]['action'],
           summary:typeof item.summary==='string'?item.summary:null,
           createdAt:typeof item.createdAt==='string'?item.createdAt:undefined,
           content:item.content})
       }
-      if(history.length&&(
-        history.length!==value.version||history.some((h,i)=>h.version!==i+1)))return null
+      if(history.length!==value.version||history.some((h,i)=>h.version!==i+1))return null
       records.push({kind:value.kind,sourceId:value.id,localId:value.localId,title:document.title,
         content:document.data as Record<string,unknown>,version:value.version,
         deletedAt:value.deletedAt,history})

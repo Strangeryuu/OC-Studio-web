@@ -37,7 +37,7 @@ export async function exportWorkspaceBackup(workspaceId:string,workspaceName:str
     pool.query<Setting>(`SELECT setting_key,setting_value FROM workspace_settings
       WHERE workspace_id=$1 AND setting_key=ANY($2::text[])`,[workspaceId,ALLOWED_SETTINGS]),
     pool.query<Asset>(`SELECT id,mime_type,storage_key FROM media_assets
-      WHERE workspace_id=$1 AND deleted_at IS NULL ORDER BY id LIMIT 501`,[workspaceId]),
+      WHERE workspace_id=$1 ORDER BY id LIMIT 501`,[workspaceId]),
   ])
   if(entities.rows.length>MAX_RECORDS||tags.rows.length>1000||media.rows.length>500)
     throw error('BACKUP_TOO_LARGE')
@@ -192,11 +192,14 @@ export async function importWorkspaceBackup(workspaceId:string,actorId:string,ra
           title:sourceDoc.title,data:transformed(row.kind,sourceDoc.data as Record<string,unknown>),
         })
         if(!migrated)throw error('INVALID_IMPORTED_HISTORY')
-        await client.query(`INSERT INTO entity_revisions(entity_id,version,actor_id,action,summary,content_snapshot)
-          VALUES($1,$2,$3,$4,$5,$6::jsonb)`,[id,revision.version,actorId,revision.action,
-          revision.summary??'从 .ocbak 导入',JSON.stringify(migrated)])
-        await client.query(`INSERT INTO change_events(entity_id,version,actor_id,action,changes)
-          VALUES($1,$2,$3,$4,'[]'::jsonb)`,[id,revision.version,actorId,revision.action])
+        await client.query(`INSERT INTO entity_revisions(entity_id,version,actor_id,action,summary,content_snapshot,created_at)
+          VALUES($1,$2,$3,$4,$5,$6::jsonb,$7::timestamptz)`,[id,revision.version,actorId,revision.action,
+          revision.summary??'从 .ocbak 导入',JSON.stringify(migrated),
+          revision.createdAt??new Date().toISOString()])
+        await client.query(`INSERT INTO change_events(entity_id,version,actor_id,action,changes,created_at)
+          VALUES($1,$2,$3,$4,'[]'::jsonb,$5::timestamptz)`,[
+          id,revision.version,actorId,revision.action,
+          revision.createdAt??new Date().toISOString()])
       }
     }
     for(const setting of backup.settings){

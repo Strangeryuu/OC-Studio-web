@@ -59,5 +59,12 @@ describe('cloud templates, categories, original global search and portable backu
     expect(parsePortableBackup({...basic,cloud})?.records[0].history).toHaveLength(1)
     expect(parsePortableBackup({...basic,cloud:{...cloud,records:[{...cloud.records[0],kind:'injected'}]}}))
       .toBeNull()
+    expect(parsePortableBackup({...basic,cloud:{format:'unknown'}})).toBeNull()
+    expect(parsePortableBackup({...basic,cloud:{...cloud,records:[{
+      ...cloud.records[0],version:2,
+    }]}})).toBeNull()
+    expect(parsePortableBackup({...basic,cloud:{...cloud,records:[{
+      ...cloud.records[0],history:[{...cloud.records[0].history[0],createdAt:'not-a-date'}],
+    }]}})).toBeNull()
   })
 })
