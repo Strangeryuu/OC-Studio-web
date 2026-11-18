@@ -22,7 +22,7 @@ import { getVaultImageContext } from '@/lib/image-service'
 import { vaultFs, isVaultSupported } from '@/lib/vault/vault-fs'
 import { getVaultSession } from '@/lib/vault/vault-session'
 
-const CLOUD_MEDIA_RE = /^\\/api\\/media\\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const CLOUD_MEDIA_RE = /^\/api\/media\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 /** Cloud images have a UUID URL. The filename must come from their MIME and source label. */
 export function cloudMediaDownloadName(label: string, mime: string): string {
@@ -31,8 +31,8 @@ export function cloudMediaDownloadName(label: string, mime: string): string {
   }
   const ext = extension[mime.toLowerCase().split(';')[0].trim()]
   if (!ext) throw new Error('暂不支持下载这种媒体类型')
-  const safe = label.replace(/[\\\\/:*?"<>|\\x00-\\x1f]/g, '-').replace(/[. ]+$/g,'').trim().slice(0,100) || '图片'
-  const stem = safe.replace(/\\.(png|jpe?g|webp|gif)$/i, '')
+  const safe = label.replace(/[\\/:*?"<>|]/g, '-').replace(/[. ]+$/g, '').trim().slice(0, 100) || '图片'
+  const stem = safe.replace(/\.(png|jpe?g|webp|gif)$/i, '')
   return stem + '.' + ext
 }
 
