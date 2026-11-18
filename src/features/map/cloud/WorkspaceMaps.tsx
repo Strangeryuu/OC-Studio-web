@@ -330,7 +330,7 @@ export function WorkspaceMaps(props: Props) {
         .map(pin => ({ title: pin.title, kind: pin.kind,
           x: pin.position!.x, y: pin.position!.y }))
       await exportMapImage({ image: map.image, width: map.width, height: map.height },
-        anchors, { fileName: map.name.replace(/[\\/:*?"<>|]+/g, '-') + '.png' })
+        anchors, { annotations, fileName: map.name.replace(/[\\/:*?"<>|]+/g, '-') + '.png' })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '地图图片导出失败')
     } finally { setSaving(false) }

@@ -14,6 +14,8 @@ import { isCapacitor, isTauri } from '@/lib/env'
 import { getVaultImageContext } from '@/lib/image-service'
 import { getVaultSession } from '@/lib/vault/vault-session'
 import { isVaultSupported } from '@/lib/vault/vault-fs'
+import { relationColorValue } from '@/lib/relation-colors'
+import type { MapAnnotation } from './annotations'
 
 function extensionOf(name: string): string {
   const base = name.split(/[\\/]/).pop() ?? name
@@ -82,6 +84,8 @@ export interface MapExportOptions {
   fileName?: string
   /** 是否画锚点标签，默认 true */
   withAnchors?: boolean
+  /** Optional original border/road annotations; drawn above the base map and below anchor labels. */
+  annotations?: readonly MapAnnotation[]
   /** 输出倍率：1 = 按底图原始像素，默认 1 */
   scale?: number
   /** 输出格式：PNG 无损（默认）/ JPG 给需要小体积的场合 */
@@ -268,6 +272,55 @@ function drawAnchors(
   }
 }
 
+/** Vector overlay shared by exported PNG/JPEG; coordinates follow the original 0–1 map model. */
+export function drawMapAnnotations(
+  ctx: CanvasRenderingContext2D,
+  items: readonly MapAnnotation[],
+  width: number,
+  height: number,
+  scale = 1,
+): void {
+  if (width <= 0 || height <= 0 || items.length === 0) return
+  const ink = cssColor('--oc-ink-fixed', 'CanvasText')
+  const halo = cssColor('--oc-paper-fixed', 'Canvas')
+  const lineScale = Number.isFinite(scale) ? Math.max(0.1, Math.min(scale, 4)) : 1
+  const colorOf = (name: string | undefined): string => {
+    if (!name) return ink
+    const token = /^var\((--oc-accent-\d+)\)$/.exec(relationColorValue(name))?.[1]
+    return token ? cssColor(token, ink) : ink
+  }
+  for (const item of items) {
+    if (item.points.length < (item.kind === 'border' ? 3 : 2)) continue
+    ctx.save()
+    ctx.beginPath()
+    item.points.forEach((point, index) => {
+      const x = point.x * width
+      const y = point.y * height
+      if (index === 0) ctx.moveTo(x, y)
+      else ctx.lineTo(x, y)
+    })
+    if (item.kind === 'border') ctx.closePath()
+    ctx.lineJoin = 'round'
+    ctx.lineCap = 'round'
+    if (item.kind === 'road') ctx.setLineDash([6 * lineScale, 4 * lineScale])
+    if (item.kind === 'border') {
+      ctx.fillStyle = colorOf(item.fill)
+      ctx.globalAlpha = item.fill ? 0.24 : 0.06
+      ctx.fill()
+      ctx.globalAlpha = 1
+    }
+    ctx.strokeStyle = halo
+    ctx.globalAlpha = 0.55
+    ctx.lineWidth = 4 * lineScale
+    ctx.stroke()
+    ctx.globalAlpha = 1
+    ctx.strokeStyle = colorOf(item.color)
+    ctx.lineWidth = 1.75 * lineScale
+    ctx.stroke()
+    ctx.restore()
+  }
+}
+
 function canvasToBlob(canvas: HTMLCanvasElement, mime = 'image/png', quality?: number): Promise<Blob | null> {
   return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), mime, quality))
 }
@@ -318,6 +371,7 @@ export async function exportMapImage(
       ctx.fillRect(0, 0, width, height)
     }
     ctx.drawImage(loaded.image, 0, 0, width, height)
+    if (options.annotations?.length) drawMapAnnotations(ctx, options.annotations, width, height, scale)
 
     if (options.withAnchors !== false) drawAnchors(ctx, anchors, width, height)
 
