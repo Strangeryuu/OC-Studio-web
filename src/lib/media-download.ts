@@ -22,6 +22,20 @@ import { getVaultImageContext } from '@/lib/image-service'
 import { vaultFs, isVaultSupported } from '@/lib/vault/vault-fs'
 import { getVaultSession } from '@/lib/vault/vault-session'
 
+const CLOUD_MEDIA_RE = /^\\/api\\/media\\/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+/** Cloud images have a UUID URL. The filename must come from their MIME and source label. */
+export function cloudMediaDownloadName(label: string, mime: string): string {
+  const extension: Record<string, string> = {
+    'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif',
+  }
+  const ext = extension[mime.toLowerCase().split(';')[0].trim()]
+  if (!ext) throw new Error('暂不支持下载这种媒体类型')
+  const safe = label.replace(/[\\\\/:*?"<>|\\x00-\\x1f]/g, '-').replace(/[. ]+$/g,'').trim().slice(0,100) || '图片'
+  const stem = safe.replace(/\\.(png|jpe?g|webp|gif)$/i, '')
+  return stem + '.' + ext
+}
+
 const MIME_BY_EXT: Record<string, string> = {
   png: 'image/png',
   jpg: 'image/jpeg',
@@ -197,6 +211,20 @@ export async function saveBytesFile(bytes: Uint8Array, name: string): Promise<st
  */
 export async function downloadMediaFile(path: string, fallbackName = 'media'): Promise<string | null> {
   if (path.trim() === '') throw new Error('没有可保存的文件')
+  if (CLOUD_MEDIA_RE.test(path)) {
+    // The member-only route checks session and owning workspace. Browser fetch
+    // includes same-origin cookies; keep byte length, MIME and failures explicit.
+    let response: Response
+    try {
+      response = await fetch(path, { credentials: 'same-origin' })
+    } catch (cause) {
+      throw new Error('私有图片读取失败：' + messageOf(cause))
+    }
+    if (!response.ok) throw new Error('私有图片读取失败（HTTP ' + response.status + '）')
+    const name = cloudMediaDownloadName(fallbackName, response.headers.get('content-type') ?? '')
+    const bytes = new Uint8Array(await response.arrayBuffer())
+    return saveBytesFile(bytes, name)
+  }
   const name = fileNameOf(path, fallbackName)
 
   // 先读字节再弹对话框：读不到就别让用户白选一次路径
