@@ -35,6 +35,7 @@ const NovelReader = dynamic(() => import('@/features/novel/NovelReader').then(mo
 type MutableNovelProps = {
   adapter: OriginalNotesCloudAdapter
   canEdit: boolean
+  canDelete?: boolean
   disabled: boolean
   onSaved: (snapshot: OriginalNoteSnapshot) => void
 }
@@ -261,9 +262,9 @@ function CloudChapterEditor({ snapshot, adapter, onSaved, canEdit, disabled }: M
 }
 
 function ChapterNode({ node, depth, selectedId, onSelect, canEdit, busy,
-  onCreateChild, onDelete }: {
+  onCreateChild, onDelete, canDelete = false }: {
   node: WorldTreeNode; depth: number; selectedId: number | null
-  onSelect: (id:number)=>void; canEdit:boolean; busy:boolean
+  onSelect: (id:number)=>void; canEdit:boolean; canDelete?: boolean; busy:boolean
   onCreateChild:(id:number)=>void; onDelete:(id:number)=>void
 }) {
   const [expanded, setExpanded] = useState(true)
@@ -275,13 +276,13 @@ function ChapterNode({ node, depth, selectedId, onSelect, canEdit, busy,
       actions={canEdit && !busy ? <div className="flex items-center gap-1">
         <button type="button" title="新建子章节" aria-label="新建子章节"
           onClick={event=>{event.stopPropagation();onCreateChild(node.entry.id)}}><Plus size={13}/></button>
-        <button type="button" title="删除章节及子级" aria-label="删除章节"
-          onClick={event=>{event.stopPropagation();onDelete(node.entry.id)}}><Trash2 size={13}/></button>
+        {canDelete && <button type="button" title="删除章节及子级" aria-label="删除章节"
+          onClick={event=>{event.stopPropagation();onDelete(node.entry.id)}}><Trash2 size={13}/></button>}
       </div> : undefined}/>
     {expanded && node.children.length>0 && <ul>
       {node.children.map(child=><ChapterNode key={child.entry.id} node={child} depth={depth+1}
         selectedId={selectedId} onSelect={onSelect} canEdit={canEdit} busy={busy}
-        onCreateChild={onCreateChild} onDelete={onDelete}/>)}
+        onCreateChild={onCreateChild} onDelete={onDelete} canDelete={canDelete}/>)}
     </ul>}
   </li>
 }
@@ -357,6 +358,7 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
   function openBook(id:number) {
     afterSaving(() => {
       setActiveBookId(id)
+      setQuery('')
       const chapter=novelSubtree(entries,id).filter(row=>row.id!==id)
         .sort((a,b)=>(a.order??0)-(b.order??0))[0]
       setActiveChapterId(chapter?.id??null)
@@ -367,13 +369,17 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
   async function remove(id:number) {
     const target=props.notes.find(row=>row.entity.id===id&&row.entity.category===NOVEL_CATEGORY)
     if (!target || !writable || deleting) return
+    if (!props.canDelete) return
     const children=novelSubtree(entries,id)
     if (!window.confirm(`确认将「${target.entity.title}」和所属 ${children.length-1} 条子章节移入回收站？`)) return
     setDeleting(true)
     await write(async()=>{
+      const refreshed=await props.adapter.list()
+      const latest=refreshed.find(row => row.entityId===target.entityId)
+      if (!latest) throw new Error('条目已删除，请刷新')
       const response=await fetch('/api/workspaces/'+props.workspaceId+'/novels/'+target.entityId,{
         method:'DELETE',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({expectedVersion:target.version})
+        body:JSON.stringify({expectedVersion:latest.version})
       })
       if(!response.ok){
         const body:{error?:string}=await response.json().catch(()=>({}))
@@ -429,7 +435,7 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
         className="flex items-center justify-between gap-3 py-3">
         <button type="button" onClick={()=>openBook(book.id)} className="min-w-0 flex-1 text-left text-ui">
           {book.title}<span className="ml-3 text-caption text-ink-faint">{book.chapters} 章 · {book.words} 字</span>
-        </button>{props.canEdit&&<button type="button" aria-label={'删除'+book.title}
+        </button>{props.canDelete&&<button type="button" aria-label={'删除'+book.title}
           onClick={()=>void remove(book.id)}><Trash2 size={14}/></button>}
         </li>)}</ul>
       :<div className={view==='grid'?'grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4':''}>
@@ -445,7 +451,7 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
 
   return <section className="flex min-w-0 flex-col gap-4 border-t border-line pt-3">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <button type="button" className={BTN_QUIET} onClick={()=>afterSaving(()=>{setActiveBookId(null);setActiveChapterId(null);setPreview(false)})}>← 书架</button>
+      <button type="button" className={BTN_QUIET} onClick={()=>afterSaving(()=>{setActiveBookId(null);setActiveChapterId(null);setPreview(false);setQuery('')})}>← 书架</button>
       <span className="font-serif text-lg font-semibold">{root.entity.title}</span>
       <div className="flex flex-wrap items-center gap-1">
         <button type="button" className={BTN_QUIET} onClick={()=>afterSaving(()=>setPreview(value=>!value))}>
@@ -454,6 +460,8 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
           className="border-b border-line bg-transparent px-1 text-ui">
           <option value="9:16">9:16</option><option value="16:9">16:9</option><option value="A4">A4</option>
         </select>
+        {props.canDelete && <button type="button" className={BTN_QUIET} disabled={busy}
+          onClick={()=>void remove(root.entity.id)}><Trash2 size={14}/>删除本书</button>}
         <button type="button" className={BTN_QUIET} onClick={()=>void download('txt')} disabled={busy}>TXT</button>
         <button type="button" className={BTN_QUIET} onClick={()=>void download('md')} disabled={busy}>Markdown</button>
         <button type="button" className={BTN_QUIET} onClick={()=>void download('docx')} disabled={busy}><FileDown size={14}/>Word</button>
@@ -476,7 +484,7 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
         </div>
         <ul>{chapterTree.filter(node=>!query.trim()||node.entry.title.includes(query)).map(node=>
           <ChapterNode key={node.entry.id} node={node} depth={0} selectedId={activeChapterId}
-            onSelect={id=>afterSaving(()=>setActiveChapterId(id))} canEdit={props.canEdit} busy={busy}
+            onSelect={id=>afterSaving(()=>setActiveChapterId(id))} canEdit={props.canEdit} canDelete={props.canDelete} busy={busy}
             onCreateChild={create} onDelete={id=>void remove(id)} />)}</ul>
         {chapterTree.length===0&&<p className="text-caption text-ink-faint">暂无章节</p>}
         <p className="mt-3 text-caption text-ink-faint">{chapters.length} 章 · {countNovelWords(exported)} 字</p>

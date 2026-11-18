@@ -20,6 +20,7 @@ export interface DashboardProps {
   /** 切换到某个板块（角色 / 事件 / 国家 / 世界观 / 时间线 / 关系图 / 相册） */
   onOpenSection: (item: string) => void
   onCreate?: (type: 'character' | 'event' | 'country') => void
+  showCreate?: boolean
 }
 
 /** Shared original dashboard presentation; cloud workspaces pass scoped snapshots. */
@@ -82,7 +83,7 @@ export function Dashboard({ onNavigate, onOpenSection, onCreate }: DashboardProp
     novels={novels} maps={maps} />
 }
 
-export function DashboardView({ onNavigate, onOpenSection, onCreate, worldName, tagline, coverUrl,
+export function DashboardView({ onNavigate, onOpenSection, onCreate, showCreate = true, worldName, tagline, coverUrl,
   characters, events, countries, entries, novels, maps }: DashboardProps & DashboardData) {
   const coverSrc = coverUrl?.trim() ? resolveImageUrl(coverUrl, 'header') : ''
 
@@ -204,7 +205,7 @@ export function DashboardView({ onNavigate, onOpenSection, onCreate, worldName, 
         </section>
 
         {/* 起步 */}
-        {isEmpty ? (
+        {isEmpty && showCreate ? (
           <section className="mt-12">
             <h2 className={SECTION_TITLE}>从这里开始</h2>
             <div className="-mx-1.5 flex flex-wrap items-center gap-x-5 gap-y-2">

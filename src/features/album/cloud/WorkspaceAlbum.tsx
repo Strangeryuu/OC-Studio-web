@@ -107,14 +107,14 @@ export function WorkspaceAlbum(props: WorkspaceAlbumProps) {
     catch (cause) { setProblem(cause instanceof Error ? cause.message : '刷新失败') }
     finally { setRefreshing(false) }
   }
-  const tree = <AlbumTreePanel entries={entries} selectedKey={selectedKey} expanded={expanded}
+  const renderTree = (mobile: boolean) => <AlbumTreePanel entries={entries} selectedKey={selectedKey} expanded={expanded}
     onSelectKey={key => { setSelectedKey(key); setSourceFilter('all'); setViewerIndex(null); setDrawer(false) }}
     onToggleExpand={key => setExpanded(previous => {
       const next = new Set(previous)
       if (next.has(key)) next.delete(key); else next.add(key)
       return next
     })}
-    isMobile={false} refreshing={refreshing} onRefresh={() => void refresh()}
+    isMobile={mobile} refreshing={refreshing} onRefresh={() => void refresh()}
     onCloseMobileTree={() => setDrawer(false)} onCollapseTree={() => setCollapsed(true)} />
 
   function navigate(id: number, type: string) {
@@ -124,12 +124,21 @@ export function WorkspaceAlbum(props: WorkspaceAlbumProps) {
 
   return <section className="min-w-0 overflow-hidden rounded-panel border border-line">
     <div className="flex min-h-[28rem]">
-      {!collapsed && <div className="hidden w-52 shrink-0 overflow-auto md:block">{tree}</div>}
+      {!collapsed && <div className="hidden w-52 shrink-0 overflow-auto md:block">{renderTree(false)}</div>}
       {drawer && <div className="fixed inset-0 z-50 flex bg-black/30 md:hidden">
-        <div className="h-full w-64 bg-paper">{tree}</div>
+        <div className="h-full w-64 bg-paper">{renderTree(true)}</div>
         <button type="button" aria-label="关闭相册目录" className="flex-1" onClick={() => setDrawer(false)} />
       </div>}
       <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2 border-b border-line p-2 md:hidden">
+          <button type="button" className={ICON_BTN_MD} aria-label="打开相册目录"
+            onClick={() => setDrawer(true)}><Menu size={16}/></button>
+          <input aria-label="移动端搜索相册" value={search} placeholder="搜索相册"
+            onChange={event => { setSearch(event.target.value); setViewerIndex(null) }}
+            className="min-w-0 flex-1 border-b border-line bg-transparent px-2 py-1 text-ui" />
+          <SortSelect sortKey={sortTime ? 'time' : 'default'} onChange={key => setSortTime(key === 'time')}
+            options={[{ value: 'default', label: '默认顺序' }, { value: 'time', label: '最近更新' }]} />
+        </div>
         <PageToolbar title={label} leading={<button type="button" className={ICON_BTN_MD}
           aria-label="切换相册目录" onClick={() => {
             if (window.matchMedia('(min-width: 768px)').matches) setCollapsed(value => !value)

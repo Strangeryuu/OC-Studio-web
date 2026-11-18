@@ -399,7 +399,7 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
           const next = sections[item]
           if (next) void openAfterSaving(next, async () => null)
         }}
-        onCreate={type => {
+        showCreate={canEdit} onCreate={type => {
           if (!canEdit) return
           void openAfterSaving(type, async () => {
             if (type === 'character') {
@@ -425,7 +425,7 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
         onNavigate={(kind,id) => navigate(kind,id)} onRefresh={refreshGraph} />}
       {section === 'novel' && <WorkspaceNovel workspaceId={workspaceId}
         notes={noteList.rows} loading={noteList.loading} error={noteList.error}
-        adapter={noteAdapter} canEdit={canEdit} disabled={busy}
+        adapter={noteAdapter} canEdit={canEdit} canDelete={role === 'owner' || role === 'admin'} disabled={busy}
         onCreated={noteList.append} onSaved={noteList.replace} onRefresh={refreshGraph} />}
       {section === 'character' && <WorkspaceEntryList label="角色" rows={characterList.rows} loading={characterList.loading} error={characterList.error}
         getLabel={row => row.character.name} selectedId={selectedId} busy={busy} onSelect={id => select(id, 'character')}
