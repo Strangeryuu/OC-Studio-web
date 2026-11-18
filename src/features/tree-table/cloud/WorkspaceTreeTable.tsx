@@ -57,6 +57,7 @@ export interface WorkspaceTreeTableProps {
   onRefresh: () => Promise<void>
   onNavigate: (kind: Kind, id: number) => void
   canEdit: boolean
+  canDelete?: boolean
   disabled: boolean
   loading: boolean
   error?: string | null
@@ -257,6 +258,37 @@ export function WorkspaceTreeTable(props: WorkspaceTreeTableProps) {
     }
   }
 
+  async function remove(row: TreeRow): Promise<void> {
+    if (row.kind === 'group' || !props.canDelete || editing > 0) return
+    try {
+      await write(async () => {
+        const snapshots = [
+          ...props.characters.map(item => ({ entityId: item.entityId, version: item.version, id: item.character.id, kind: 'character' })),
+          ...props.countries.map(item => ({ entityId: item.entityId, version: item.version, id: item.entity.id, kind: 'country' })),
+          ...props.events.map(item => ({ entityId: item.entityId, version: item.version, id: item.entity.id, kind: 'event' })),
+          ...props.notes.filter(item => isCodexEntry(item.entity)).map(item =>
+            ({ entityId: item.entityId, version: item.version, id: item.entity.id, kind: 'entry' })),
+        ]
+        const target = snapshots.find(item => item.id === row.entityId && item.kind === row.kind)
+        if (!target) throw new Error('记录已被其他成员修改，请刷新')
+        const response = await fetch('/api/workspaces/' + props.workspaceId + '/table/' + target.entityId, {
+          method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({expectedVersion: target.version,
+            expectedVersions: Object.fromEntries(snapshots.map(item => [item.entityId, item.version]))}),
+        })
+        if (!response.ok) {
+          const result: { error?: string } = await response.json().catch(() => ({}))
+          throw new Error(result.error === 'VERSION_CONFLICT'
+            ? '关联实体已被其他成员修改，请刷新后再删除'
+            : '删除失败：' + (result.error ?? response.status))
+        }
+        await props.onRefresh()
+      })
+    } catch {
+      // The original DeleteButton closes its confirmation; the table keeps the error visible.
+    }
+  }
+
   const addChild = (row: TreeRow) => {
     const kind = row.kind === 'entry' ? 'entry' : row.kind === 'country' ? 'country' : 'character'
     void create(kind, row).catch(() => undefined)
@@ -316,17 +348,18 @@ export function WorkspaceTreeTable(props: WorkspaceTreeTableProps) {
         </tr></thead>
         <tbody>{rows.map(row => <TreeTableRow key={row.key} row={row} tab={tab}
           tagsById={tagsById} countryOptions={countryOptions}
-          busy={locked} readOnly={!props.canEdit} allowDelete={false}
+          busy={locked} readOnly={!props.canEdit} allowDelete={props.canDelete === true && editing === 0}
           onEditingChange={active => setEditing(current => Math.max(0, current + (active ? 1 : -1)))}
           handlers={{
             onOpen: handleOpen, onToggle: toggle, onAddChild: addChild,
-            onDelete: () => undefined, onEdit: edit, onSetCountry: setCountry,
+            onDelete: row => { void remove(row) }, onEdit: edit, onSetCountry: setCountry,
           }} />)}</tbody>
       </table>}
     </div>
     {props.canEdit && <p className="px-3 py-2 text-micro text-ink-faint">
       名称、种族、职业和国籍可直接编辑，改动按云端条目版本保存。
-      级联删除暂由后续事务化操作接入。
+      {props.canDelete ? '删除父条目时，子条目会提到上一层，成员关联同步清理并保留版本历史。'
+        : '删除操作由资料库所有者和管理员执行。'}
     </p>}
   </section>
 }

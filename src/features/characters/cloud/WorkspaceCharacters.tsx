@@ -461,7 +461,7 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
         onCharacterSaved={characterList.replace} onCountrySaved={countryList.replace}
         onEventSaved={eventList.replace} onNoteSaved={noteList.replace}
         onRefresh={refreshGraph} onNavigate={(kind, id) => navigate(kind, id)}
-        canEdit={canEdit} disabled={busy}
+        canEdit={canEdit} canDelete={role === 'owner' || role === 'admin'} disabled={busy}
         loading={characterList.loading || countryList.loading || eventList.loading || noteList.loading}
         error={graphError || characterList.error || countryList.error || eventList.error || noteList.error} />}
       {section === 'map' && <WorkspaceMaps workspaceId={workspaceId}
