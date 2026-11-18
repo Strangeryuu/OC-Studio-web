@@ -44,14 +44,15 @@ HOSTNAME=127.0.0.1
 创建专用 PostgreSQL 16 数据库与应用账号，授予业务迁移所需的 schema 权限。首次建库需先运行 Better Auth 迁移，再运行项目自己的业务迁移。后续更新仍按这一顺序执行：
 
 ```bash
+# 数据库迁移、构建与产物归属统一使用应用服务账号
+sudo -u ocstudio bash <<'SH'
+set -eu
 cd /srv/ocstudio/app
-sudo -u ocstudio npm ci
-
-# 在受保护的管理员 Shell 中加载与服务相同的环境变量
 set -a
 . /etc/ocstudio/web.env
 set +a
 
+npm ci
 npx --no-install auth migrate --yes --config ./src/lib/cloud/server/auth.ts
 node scripts/cloud-migrate-business.cjs
 node scripts/cloud-db-smoke.cjs
@@ -59,8 +60,13 @@ npm run build:web
 
 # Next.js standalone 需要同时提供 public 与静态资源
 mkdir -p .next/standalone/.next
+rm -rf .next/standalone/.next/static
 cp -a .next/static .next/standalone/.next/static
-if [ -d public ]; then cp -a public .next/standalone/public; fi
+if [ -d public ]; then
+  rm -rf .next/standalone/public
+  cp -a public .next/standalone/public
+fi
+SH
 ```
 
 上面迁移命令与数据库结构检查已在 GitHub Actions 的 PostgreSQL 16 环境使用。请使用可用于迁移的受控账户执行，不要以数据库超级用户运行长期应用。所有迁移前应准备快照与回滚方案。

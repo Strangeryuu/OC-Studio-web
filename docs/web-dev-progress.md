@@ -97,3 +97,15 @@
 - `5a109d1` 引入的真实数据隔离写入测试，最终以对应 GitHub Actions 运行结论为准。
 
 仍需验收：独立 PostgreSQL 下完整登录/邀请/编辑/媒体的 HTTP 端到端流程；实际浏览器锚点拖动、右键定位、生成器 Worker、文件下载和多成员并发；地图高级详情及其他原版功能（表格、小说、模板、相册等）。目前为开发版，部署 VPS 前仍需进行安全配置、备份恢复与端到端验证。
+
+
+## 2026-11-18：独立 PostgreSQL HTTP 联调与 VPS 部署文档（第四阶段）
+
+新增验证链路：
+- `941c978`：CI 的独立 PostgreSQL 服务通过 Better Auth 迁移与业务迁移后，使用 `scripts/cloud-ci-seed-user.cjs` 在受限的 `ocstudio_ci` 测试库中，调用 Better Auth 的密码哈希模块生成专用测试账号，实际启动 standalone Web 服务并运行 `scripts/cloud-http-smoke.cjs`。测试覆盖会话登录、资料库创建、私有图片、角色关系与共享标签、版本历史、旧入口跳转、Origin 校验等。
+- `15f0eb9`：将地图的真实 HTTP 生命周期加入 `cloud-http-smoke.cjs`，验证私有底图、多档视图 URL、跨库同名、同库重名拒绝、国家地图锚点、地图重命名的级联版本、旧版本冲突及删除后的锚点清理。
+- `a22f486`：新增 `docs/web-vps-deployment.md`，说明 Linux + Node 24 + PostgreSQL 16 + Nginx 的测试部署、受控账号、环境变量、数据库迁移、standalone 资源、systemd、反向代理和数据库/媒体同步备份。
+
+**已确认的 CI 结果**：`15f0eb9` 的 `Web cloud verification` 运行结论为 success，包含 Web 类型检查、ESLint、单元测试、31 项项目自检与生产构建，以及独立 PostgreSQL 的 Better Auth/业务迁移、幂等、数据库隔离与真实登录/地图生命周期 HTTP 测试。后续文档提交仍以各自工作流为准。
+
+**上线前继续处理**：实际浏览器地图拖拽、上下文菜单位置、文件下载与地图生成器 Worker；邀请码/成员权限与多浏览器并发的独立 PostgreSQL 端到端覆盖；服务器备份恢复演练；原版其它工作台板块的完整移植。当前 Web 分支保持开发版，不建议存储未经备份的正式数据。
