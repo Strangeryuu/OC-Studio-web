@@ -1,6 +1,6 @@
 import type { Character, GraphPosition } from '@/types'
 import type { CharacterFormData } from '@/features/characters/types'
-import { CloudEntityError, OriginalEntityCloudAdapter, type Fetcher, type OriginalSnapshot, type RecordValue } from './original-entities'
+import { CloudEntityError, OriginalEntityCloudAdapter, browserFetcher, type Fetcher, type OriginalSnapshot, type RecordValue } from './original-entities'
 
 export { CloudEntityError as CloudCharacterError }
 
@@ -26,7 +26,7 @@ function characterSnapshot({ entity, ...snapshot }: OriginalSnapshot<Character>)
 export class OriginalCharactersCloudAdapter {
   private readonly entities: OriginalEntityCloudAdapter<Character, OriginalCharacterPatch>
 
-  constructor(readonly workspaceId: string, fetcher: Fetcher = fetch) {
+  constructor(readonly workspaceId: string, fetcher: Fetcher = browserFetcher) {
     this.entities = new OriginalEntityCloudAdapter(workspaceId, 'character', readCharacter, entity => entity.name, fetcher)
   }
 

@@ -2,7 +2,7 @@ import type { WorldEntry, GraphPosition } from '@/types'
 import type { WorldFormData } from '@/features/world/types'
 import { buildDefaultEntry } from '@/features/world/services'
 import { newWorldEntryData } from '@/lib/entity-defaults'
-import { OriginalEntityCloudAdapter, type Fetcher, type OriginalSnapshot, type RecordValue } from './original-entities'
+import { OriginalEntityCloudAdapter, browserFetcher, type Fetcher, type OriginalSnapshot, type RecordValue } from './original-entities'
 
 export type OriginalNoteSnapshot = OriginalSnapshot<WorldEntry>
 export type OriginalNotePatch = Partial<Pick<WorldFormData,
@@ -49,7 +49,7 @@ function readNote(id: number, data: RecordValue, title: unknown): WorldEntry {
 }
 
 export class OriginalNotesCloudAdapter extends OriginalEntityCloudAdapter<WorldEntry, OriginalNotePatch> {
-  constructor(workspaceId: string, fetcher: Fetcher = fetch) {
+  constructor(workspaceId: string, fetcher: Fetcher = browserFetcher) {
     super(workspaceId, 'worldEntry', readNote, entity => entity.title, fetcher)
   }
 }

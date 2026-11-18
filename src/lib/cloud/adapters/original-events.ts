@@ -2,7 +2,7 @@ import type { Event, GraphPosition } from '@/types'
 import type { EventFormData } from '@/features/events/types'
 import { buildDefaultEvent } from '@/features/events/services'
 import { newEventData } from '@/lib/entity-defaults'
-import { OriginalEntityCloudAdapter, type Fetcher, type OriginalSnapshot, type RecordValue } from './original-entities'
+import { OriginalEntityCloudAdapter, browserFetcher, type Fetcher, type OriginalSnapshot, type RecordValue } from './original-entities'
 
 export type OriginalEventSnapshot = OriginalSnapshot<Event>
 export type OriginalEventPatch = Partial<Pick<EventFormData,
@@ -37,7 +37,7 @@ function readEvent(id: number, data: RecordValue, title: unknown): Event {
 }
 
 export class OriginalEventsCloudAdapter extends OriginalEntityCloudAdapter<Event, OriginalEventPatch> {
-  constructor(workspaceId: string, fetcher: Fetcher = fetch) {
+  constructor(workspaceId: string, fetcher: Fetcher = browserFetcher) {
     super(workspaceId, 'event', readEvent, entity => entity.title, fetcher)
   }
 }

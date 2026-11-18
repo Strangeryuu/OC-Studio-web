@@ -16,6 +16,9 @@ export class CloudEntityError extends Error {
 }
 
 export type Fetcher = (input: string, init?: RequestInit) => Promise<Response>
+
+/** Keep the browser's native fetch receiver intact when adapters store a callback. */
+export const browserFetcher: Fetcher = (input, init) => globalThis.fetch(input, init)
 export type RecordValue = Record<string, unknown>
 
 function record(value: unknown): value is RecordValue {
