@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { MapCanvas, type AnnotationDraft } from '@/features/map/components/MapCanvas'
+import { MapSwitcher } from '@/features/map/components/MapSwitcher'
 import { useMapViewport } from '@/features/map/hooks/useMapViewport'
 import { DEFAULT_MAP_LAYERS, MAP_LAYER_LABELS, type MapAnchor, type MapLayerKind } from '@/features/map/types'
 import { minPoints, newAnnotationId, parseAnnotations, stringifyAnnotations } from '@/features/map/annotations'
@@ -33,8 +34,10 @@ type Props = {
   onMapSaved: (row: OriginalNoteSnapshot) => void
   onCountrySaved: (row: OriginalCountrySnapshot) => void
   onEventSaved: (row: OriginalEventSnapshot) => void
+  onReconciled: () => Promise<void>
   onNavigate: (kind: NavigationKind, id: number) => void
   canEdit: boolean
+  canDelete: boolean
   disabled: boolean
   loading: boolean
   error?: string | null
@@ -75,6 +78,8 @@ export function WorkspaceMaps(props: Props) {
   const selected = maps.find(row => row.entity.id === activeId) ?? maps[0] ?? null
   const map = selected ? toMap(selected) : null
   const [name, setName] = useState('')
+  const [switcherOpen, setSwitcherOpen] = useState(false)
+  const [showDetails, setShowDetails] = useState(false)
   const [edit, setEdit] = useState(false)
   const [shownLayers, setShownLayers] = useState<MapLayerKind[]>(DEFAULT_MAP_LAYERS.map(item => item.kind))
   const [draft, setDraft] = useState<AnnotationDraft | null>(null)
@@ -166,6 +171,32 @@ export function WorkspaceMaps(props: Props) {
     setRemoveId('')
   }
 
+  async function manageMap(method: 'PATCH' | 'DELETE', id: number, nextName?: string) {
+    const target = maps.find(row => row.entity.id === id)
+    if (!target || (method === 'DELETE' && !props.canDelete) || (method === 'PATCH' && !canEdit)) return
+    if (draft !== null) {
+      setError('请先完成或取消当前标注')
+      return
+    }
+    await execute(async () => {
+      const response = await fetch(
+        `/api/workspaces/${props.workspaceId}/maps/${target.entityId}`,
+        { method, headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ expectedVersion: target.version, ...(nextName ? { name: nextName } : {}) }) },
+      )
+      if (!response.ok) {
+        const result: { error?: string } = await response.json().catch(() => ({}))
+        throw new Error(result.error === 'VERSION_CONFLICT'
+          ? '地图已由其他成员修改，请刷新后重试'
+          : result.error === 'MAP_NAME_TAKEN' ? '当前资料库已有同名地图'
+            : '地图管理操作失败：' + (result.error ?? response.status))
+      }
+      await props.onReconciled()
+      if (method === 'DELETE') setActiveId(null)
+      setSwitcherOpen(false)
+    }, { method, mapId: id, name: nextName })
+  }
+
   async function createMap() {
     const title = name.trim()
     if (!title || maps.some(row => row.entity.title === title)) {
@@ -204,12 +235,24 @@ export function WorkspaceMaps(props: Props) {
   return <section className="flex min-w-0 flex-col gap-3">
     <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
       <h2 className="mr-2 text-reading font-semibold">地图</h2>
-      {maps.length > 0 && <select aria-label="选择地图" value={selected?.entity.id ?? ''}
-        onChange={event => { setActiveId(Number(event.target.value)); setDraft(null); setDraftAnchor(null); setError(null) }}
-        disabled={saving} className="rounded-control border border-line bg-paper px-2 py-1 text-ui">
-        {maps.map(row => <option key={row.entity.id} value={row.entity.id}>{row.entity.title}</option>)}
-      </select>}
-      {canEdit && <><input aria-label="新地图名称" placeholder="新地图名称" value={name}
+      {maps.length > 0 && <div className="relative">
+        <button type="button" aria-expanded={switcherOpen} aria-label="选择地图"
+          disabled={saving || draft !== null}
+          className={BTN_QUIET} onClick={() => setSwitcherOpen(value => !value)}>
+          {map?.name ?? '选择地图'} · 切换
+        </button>
+        {switcherOpen && <div className="absolute left-0 top-full z-40 mt-1 w-[320px] max-w-[calc(100vw-32px)]">
+          <MapSwitcher maps={maps.map(toMap)} activeId={map?.id ?? null}
+            anchorCount={item => pins.filter(pin => pin.mapId === item.name && pin.position).length}
+            canRename={canEdit} canDelete={props.canDelete} canCreate={canEdit} allowDeleteLast
+            onSelect={id => { setActiveId(id); setDraftAnchor(null); setSwitcherOpen(false); setShowDetails(false); setError(null) }}
+            onRename={(id, title) => void manageMap('PATCH', id, title)}
+            onDelete={id => void manageMap('DELETE', id)}
+            onCreate={() => { setSwitcherOpen(false); document.getElementById('new-map-name')?.focus() }}
+            onOpenDetail={() => { setShowDetails(true); setSwitcherOpen(false) }} />
+        </div>}
+      </div>}
+      {canEdit && <><input id="new-map-name" aria-label="新地图名称" placeholder="新地图名称" value={name}
         onChange={event => setName(event.target.value)} disabled={disabled || saving}
         className="min-w-0 w-36 rounded-control border border-line bg-transparent px-2 py-1 text-ui" />
         <button className={BTN_QUIET} type="button" onClick={() => void createMap()}
@@ -225,6 +268,14 @@ export function WorkspaceMaps(props: Props) {
       {failedDraft && <details><summary>复制未保存数据</summary><textarea readOnly className="w-full" value={failedDraft}/></details>}
     </div>}
     {map && <>
+      {showDetails && <div className="rounded-panel border border-line p-3 text-ui">
+        <div className="flex items-center justify-between gap-3">
+          <strong>{map.name}</strong>
+          <button type="button" className={BTN_QUIET} onClick={() => setShowDetails(false)}>关闭详情</button>
+        </div>
+        <p>尺寸：{map.width ?? '—'} × {map.height ?? '—'} · 标注 {annotations.length} 条 ·
+          锚点 {pins.filter(pin => pin.mapId === map.name && pin.position).length} 个</p>
+      </div>}
       <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="sr-only"
         aria-label="上传地图底图" disabled={!canModify}
         onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; void setBackground(file) }} />

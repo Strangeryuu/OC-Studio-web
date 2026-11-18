@@ -44,6 +44,11 @@ interface MapSwitcherProps {
   onDelete: (id: number, name: string) => void
   /** 打开这张图的详情（尺寸 / 锚点 / 标注 / 重新生成 / 导出） */
   onOpenDetail: () => void
+  /** Cloud viewers can select maps without editing their names or contents. */
+  canRename?: boolean
+  canDelete?: boolean
+  canCreate?: boolean
+  allowDeleteLast?: boolean
 }
 
 export function MapSwitcher({
@@ -55,6 +60,10 @@ export function MapSwitcher({
   onRename,
   onDelete,
   onOpenDetail,
+  canRename = true,
+  canDelete = true,
+  canCreate = true,
+  allowDeleteLast = false,
 }: MapSwitcherProps) {
   const [renamingId, setRenamingId] = useState<number | null>(null)
   const [draft, setDraft] = useState('')
@@ -161,9 +170,9 @@ export function MapSwitcher({
                 </div>
               ) : null}
 
-              {active && renamingId !== map.id ? (
+              {active && renamingId !== map.id && (canRename || canDelete) ? (
                 <div className="absolute right-2 top-2 z-20 flex items-center gap-0.5">
-                  <button
+                  {canRename ? <button
                     type="button"
                     onClick={() => {
                       setRenamingId(map.id)
@@ -174,8 +183,8 @@ export function MapSwitcher({
                     title="重命名"
                   >
                     <Pencil size={12} strokeWidth={2} />
-                  </button>
-                  {maps.length > 1 ? (
+                  </button> : null}
+                  {canDelete && (allowDeleteLast || maps.length > 1) ? (
                     <button
                       type="button"
                       onClick={() => setPendingDelete({ id: map.id, name: map.name })}
@@ -194,10 +203,10 @@ export function MapSwitcher({
       </div>
 
       <div className="mt-2 flex items-center justify-between gap-2 border-t border-line pt-2">
-        <button type="button" onClick={onCreate} className={BTN_QUIET}>
+        {canCreate ? <button type="button" onClick={onCreate} className={BTN_QUIET}>
           <Plus size={13} strokeWidth={2} />
           新建地图
-        </button>
+        </button> : <span />}
         <button type="button" onClick={onOpenDetail} className={BTN_QUIET}>
           <Info size={13} strokeWidth={2} />
           详情

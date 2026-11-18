@@ -289,6 +289,15 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
     }
   }
 
+  async function refreshMapRows() {
+    const [nextCountries, nextEvents, nextNotes] = await Promise.all([
+      countryAdapter.list(), eventAdapter.list(), noteAdapter.list(),
+    ])
+    countryList.reset(nextCountries)
+    eventList.reset(nextEvents)
+    noteList.reset(nextNotes)
+  }
+
   async function refreshGraph() {
     if (busy || transition.current || pendingGraphWrite.current) return
     transition.current = true
@@ -385,8 +394,8 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
         noteAdapter={noteAdapter} countryAdapter={countryAdapter} eventAdapter={eventAdapter}
         onMapCreated={noteList.append} onMapSaved={noteList.replace}
         onCountrySaved={countryList.replace} onEventSaved={eventList.replace}
-        onNavigate={(kind, id) => navigate(kind, id)}
-        canEdit={canEdit} disabled={busy}
+        onReconciled={refreshMapRows} onNavigate={(kind, id) => navigate(kind, id)}
+        canEdit={canEdit} canDelete={role === 'owner' || role === 'admin'} disabled={busy}
         loading={noteList.loading || countryList.loading || eventList.loading}
         error={noteList.error || countryList.error || eventList.error} />}
       {section === 'timeline' && <div className="h-[65vh] min-h-96 rounded-panel border border-line">
