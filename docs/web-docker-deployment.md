@@ -23,9 +23,9 @@ GitHub web-dev push
 
 ## 一、发布分支与镜像版本
 
-1. 将代码推送到 `web-dev`。仓库已有 `.github/workflows/web-cloud-check.yml`：只有 `web` 与 `postgres-schema` 两个作业成功，才执行 `publish-docker`。
+1. 将代码推送到 `web-dev`。仓库已有 `.github/workflows/web-cloud-check.yml`：只有 `web` 与 `postgres-schema` 两个作业成功，才执行 `publish-docker`。每个测试通过的提交都发布独立 `sha-...` 镜像；仅当该提交仍为 `web-dev` 最新 HEAD 时才同步更新 `dev` 标签。
 2. Actions 使用仓库的 `GITHUB_TOKEN` + `packages: write` 发布至 GitHub Container Registry；不需要把私人 Registry 令牌提交到仓库。
-3. 先发布迁移镜像，再发布 Web 镜像。每个镜像有两个标签：浮动 `:dev` 和可回溯的 `:sha-<提交前 12 位>`。只针对 `linux/amd64` 构建；ARM VPS 需要增加多架构构建。
+3. 先发布迁移镜像，再发布 Web 镜像。每个通过 CI 的提交都有可回溯的 `:sha-<提交前 12 位>`；如果该提交仍为最新 `web-dev` HEAD，再将两张镜像提升为浮动 `:dev`。在持续频繁推送代码时，`dev` 可能暂时落后于仓库最新提交，仍以最近成功提升的版本为准。当前只针对 `linux/amd64` 构建；ARM VPS 需要增加多架构构建。
 4. 可从 GitHub 仓库 **Actions → Web cloud verification** 查看代码测试及 Docker 发布状态，也可在 **Packages** 查看 OCI 镜像。
 
 GHCR 新建包通常默认 private，与 GitHub 源码仓库可见性独立。如果希望公开镜像，可在 Packages 的包设置中调整可见性；如继续 private，VPS 应使用只具备 `read:packages` 权限的 token 登录镜像仓库。不要将 token 写进 `.env` 或 Git。
@@ -74,7 +74,7 @@ Nginx/Caddy 将 `https://studio.example.com` 反向代理到 `http://127.0.0.1:3
 
 **推荐先手动更新，跑通几次后在测试 VPS 启用自动更新。** 更新行为分开处理：
 
-- GitHub：每次 `web-dev` push 先完整测试，成功后自动发布 `:dev` 和 `:sha-...` OCI 镜像；失败不发布。
+- GitHub：每次 `web-dev` push 先完整测试，成功后自动发布不可变 `:sha-...` OCI 镜像；当前分支 HEAD 通过验证后再发布 `:dev`。失败不发布；在新提交密集到来时，已通过验证的旧提交仍有 SHA 镜像可部署。
 - VPS：运行 `sudo /opt/ocstudio/update.sh` 才会拉取最新镜像并部署。脚本有排他锁，已运行且健康的相同镜像会跳过重复部署；检测到更新后，先备份数据库/媒体，再执行迁移并启动新的 Web 容器，健康检查失败会报告错误。
 
 在测试服务器可选择用 systemd 自动检测 Registry 的新镜像：
