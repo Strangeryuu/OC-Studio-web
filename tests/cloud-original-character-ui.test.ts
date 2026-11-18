@@ -3,11 +3,12 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { OriginalCharacterSnapshot } from '@/lib/cloud/adapters/original-characters'
 import { buildDefaultCharacter } from '@/features/characters/services'
-import { newCharacterData, newCountryData, newEventData } from '@/lib/entity-defaults'
+import { newCharacterData, newCountryData, newEventData, newWorldEntryData } from '@/lib/entity-defaults'
 import * as characters from '@/features/characters/services'
 import * as countries from '@/features/countries/services'
 import type { OriginalCountrySnapshot, OriginalCountryPatch } from '@/lib/cloud/adapters/original-countries'
 import { buildDefaultEvent } from '@/features/events/services'
+import type { OriginalNoteSnapshot, OriginalNotePatch } from '@/lib/cloud/adapters/original-notes'
 import type { OriginalEventSnapshot, OriginalEventPatch } from '@/lib/cloud/adapters/original-events'
 import * as world from '@/features/world/services'
 import type { Editor } from '@tiptap/core'
@@ -16,6 +17,10 @@ import { flushPendingSaves } from '@/lib/pending-saves'
 const fake = vi.hoisted(() => ({
   list: vi.fn(), save: vi.fn(), create: vi.fn(), countries: vi.fn(), saveCountry: vi.fn(),
   events: vi.fn(), saveEvent: vi.fn(), createEvent: vi.fn(),
+  notes: vi.fn(), saveNote: vi.fn(), createNote: vi.fn(),
+}))
+vi.mock('@/lib/cloud/adapters/original-notes', () => ({
+  OriginalNotesCloudAdapter: class { list = fake.notes; save = fake.saveNote; create = fake.createNote },
 }))
 vi.mock('@/lib/cloud/adapters/original-events', () => ({
   OriginalEventsCloudAdapter: class { list = fake.events; save = fake.saveEvent; create = fake.createEvent },
@@ -74,6 +79,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   fake.countries.mockResolvedValue([])
   fake.events.mockResolvedValue([])
+  fake.notes.mockResolvedValue([])
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
@@ -86,6 +92,56 @@ afterEach(async () => {
 })
 
 describe('original character information in cloud workspace', () => {
+  it('opens the cloud note tree, creates and saves a child, and links it from a character', async () => {
+    const rootNote: OriginalNoteSnapshot = {
+      workspaceId, entityId: '00000000-0000-4000-8000-000000000006', version: 1,
+      entity: { ...world.buildDefaultEntry({ ...newWorldEntryData(), title: '编年史' }), id: 6 },
+    }
+    fake.notes.mockResolvedValue([rootNote])
+    fake.list.mockResolvedValue([fixture(1, '记录者')])
+    fake.createNote.mockImplementation(async (entry: Omit<OriginalNoteSnapshot['entity'], 'id'>) => ({
+      workspaceId, entityId: '00000000-0000-4000-8000-000000000008', version: 1, entity: { ...entry, id: 8 },
+    }))
+    fake.saveNote.mockImplementation(async (row: OriginalNoteSnapshot, patch: OriginalNotePatch) => ({
+      ...row, version: row.version + 1, entity: { ...row.entity, ...patch },
+    }))
+    fake.save.mockImplementation(async (row: OriginalCharacterSnapshot, patch: Record<string, unknown>) => ({
+      ...row, version: row.version + 1, character: { ...row.character, ...patch },
+    }))
+    await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' })) })
+    await click(container.querySelector<HTMLElement>('[role="treeitem"][aria-label="编年史"]')!)
+    await click(button('新建子笔记'))
+    expect(fake.createNote).toHaveBeenCalledWith(expect.objectContaining({ parentId: 6 }))
+    await inputText(container.querySelector<HTMLInputElement>('input[aria-label="笔记标题"]')!, '王国起源')
+    await click(button('保存'))
+    expect(fake.saveNote.mock.calls[0][1]).toEqual({ title: '王国起源' })
+    expect(container.querySelector('[role="treeitem"][aria-label="王国起源"]')).toBeTruthy()
+
+    const body = container.querySelector<HTMLElement>('.tiptap') as HTMLElement & { editor: Editor }
+    await act(async () => {
+      body.editor.commands.setContent({ type: 'doc', content: [{ type: 'paragraph', content: [
+        { type: 'wikiLink', attrs: { id: '6', label: '编年史' } },
+      ] }] })
+    })
+    await click(button('保存'))
+    expect(fake.saveNote.mock.calls[1][1]).toMatchObject({ content: '', document: { type: 'doc' } })
+    await click(container.querySelector<HTMLElement>('[data-type="wiki-link"]')!)
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="笔记标题"]')?.value).toBe('编年史')
+
+    await click(button('记录者'))
+    const relation = [...container.querySelectorAll('section')].find(item => item.querySelector('h3')?.textContent === '角色关系')!
+    await click([...relation.querySelectorAll('button')].find(item => item.textContent?.trim() === '添加')!)
+    await click([...document.body.querySelectorAll('button')].find(item =>
+      item.textContent?.trim() === '王国起源' && !container.contains(item))!)
+    await click(button('保存'))
+    expect(fake.save.mock.calls[0][1].relatedNotes).toEqual([{ targetId: 8, name: '王国起源', relation: '' }])
+    await click([...relation.querySelectorAll('button')].find(item => item.textContent?.trim() === '王国起源')!)
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="笔记标题"]')?.value).toBe('王国起源')
+    const noteRelations = [...container.querySelectorAll('section')].find(item =>
+      item.querySelector('h3')?.textContent === '关系')
+    expect(noteRelations?.textContent).toContain('记录者')
+  })
+
   it('creates an original event, links a country, and opens it from the country relations', async () => {
     const event: OriginalEventSnapshot = {
       workspaceId, entityId: '00000000-0000-4000-8000-000000000009', version: 1,

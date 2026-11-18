@@ -1,5 +1,6 @@
 import { mutationOriginAllowed } from '@/lib/cloud/server/origin'
 import { NextResponse } from 'next/server'
+import { worldLinksAllowed } from '@/lib/cloud/server/world-links'
 import { entityAccess } from '@/lib/cloud/server/entity-access'
 import { pool } from '@/lib/cloud/server/db'
 import { readEntityDocument, readExpectedVersion } from '@/lib/cloud/entity-input'
@@ -25,8 +26,8 @@ export async function POST(request: Request, context: { params: Promise<{ entity
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
-    const existing = await client.query<{ version: number }>(
-      'SELECT version FROM entities WHERE id=$1 AND workspace_id=$2 FOR UPDATE', [entityId, access.workspaceId],
+    const existing = await client.query<{ version: number; kind: string; content: unknown }>(
+      'SELECT version,kind,content FROM entities WHERE id=$1 AND workspace_id=$2 FOR UPDATE', [entityId, access.workspaceId],
     )
     const row = existing.rows[0]
     if (!row) { await client.query('ROLLBACK'); return NextResponse.json({ error: 'NOT_FOUND' }, { status: 404 }) }
@@ -42,6 +43,12 @@ export async function POST(request: Request, context: { params: Promise<{ entity
     if (!snapshot) {
       await client.query('ROLLBACK')
       return NextResponse.json({ error: 'REVISION_NOT_FOUND' }, { status: 404 })
+    }
+    if (row.kind === 'worldEntry' && !await worldLinksAllowed(
+      client, access.workspaceId, row.kind, snapshot.data, entityId, row.content,
+    )) {
+      await client.query('ROLLBACK')
+      return NextResponse.json({ error: 'INVALID_NOTE_LINKS' }, { status: 400 })
     }
     const nextVersion = row.version + 1
     await client.query(

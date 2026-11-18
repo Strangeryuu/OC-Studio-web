@@ -13,7 +13,7 @@ import type { JournalActor } from '@/lib/vault/journal'
 
 const TABLE = 'worldEntries'
 
-function buildDefaultEntry(data: WorldFormData, overrides: Partial<WorldEntry> = {}): Omit<WorldEntry, 'id'> {
+export function buildDefaultEntry(data: WorldFormData, overrides: Partial<WorldEntry> = {}): Omit<WorldEntry, 'id'> {
   const now = Date.now()
   return {
     title: data.title,

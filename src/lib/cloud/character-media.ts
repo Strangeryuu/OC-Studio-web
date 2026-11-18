@@ -2,6 +2,7 @@
  * The owning-workspace check is performed in the server database.
  */
 import { collectBodyImageRefs } from '@/lib/image-refs'
+import { worldBodyOf } from '@/lib/world-body'
 import { readStoredBody } from '@/lib/body-content'
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -12,11 +13,13 @@ export function cloudMediaUrlId(value: string): string | null {
 }
 
 export function characterMediaIds(kind: unknown, content: unknown): string[] | null {
-  if (kind !== 'character' && kind !== 'country' && kind !== 'event') return []
+  if (kind !== 'character' && kind !== 'country' && kind !== 'event' && kind !== 'worldEntry') return []
   if (!content || typeof content !== 'object' || Array.isArray(content)) return null
   const record = content as Record<string, unknown>
   const ids: string[] = []
-  const coverKeys = kind === 'country' ? ['flagUrl', 'headerUrl'] : kind === 'character' ? ['avatarUrl', 'headerUrl'] : ['headerUrl']
+  const coverKeys = kind === 'worldEntry' ? ['cover', 'avatar', 'image']
+    : kind === 'country' ? ['flagUrl', 'headerUrl']
+    : kind === 'character' ? ['avatarUrl', 'headerUrl'] : ['headerUrl']
   for (const key of coverKeys) {
     const value = record[key]
     if (typeof value !== 'string' || !value.startsWith('/api/media/')) continue
@@ -24,7 +27,7 @@ export function characterMediaIds(kind: unknown, content: unknown): string[] | n
     if (id === null) return null
     ids.push(id)
   }
-  const galleryKeys = kind === 'character' ? ['avatars', 'gallery'] : kind === 'country' ? ['gallery'] : ['images']
+  const galleryKeys = kind === 'character' ? ['avatars', 'gallery'] : kind === 'event' ? ['images'] : ['gallery']
   for (const key of galleryKeys) {
     const images = record[key]
     if (!Array.isArray(images)) continue
@@ -36,7 +39,10 @@ export function characterMediaIds(kind: unknown, content: unknown): string[] | n
       ids.push(id)
     }
   }
-  for (const src of collectBodyImageRefs(readStoredBody(record.document))) {
+  const doc = kind === 'worldEntry'
+    ? worldBodyOf({ document: record.document, content: typeof record.content === 'string' ? record.content : undefined })
+    : readStoredBody(record.document)
+  for (const src of collectBodyImageRefs(doc)) {
     if (!src.startsWith('/api/media/')) continue
     const id = cloudMediaUrlId(src)
     if (id === null) return null

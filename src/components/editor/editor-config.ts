@@ -13,7 +13,7 @@ import Mention from '@tiptap/extension-mention'
 import { DragHandle } from '@tiptap/extension-drag-handle'
 import { getSchema, type Editor } from '@tiptap/core'
 import type { UseEditorOptions } from '@tiptap/react'
-import { searchReferableEntities } from '@/lib/reference-registry'
+import { rankReferableEntities, searchReferableEntities, type ReferableEntity } from '@/lib/reference-registry'
 import { openExternal } from '@/lib/open-external'
 import { safeHref } from '@/lib/safe-href'
 import { ImageBlock } from './extensions/ImageBlock'
@@ -35,6 +35,7 @@ export interface BuildEditorConfigArgs {
   plain?: boolean
   content?: string | object
   localReferences?: boolean
+  getReferenceItems?: () => ReferableEntity[] | undefined
   isMobile: boolean
   editorId: string
   /** 惰性读取当前编辑器（配置模块不持有 ref，只在事件处理器里调用） */
@@ -61,6 +62,7 @@ export function buildEditorConfig({
   plain,
   content,
   localReferences = true,
+  getReferenceItems,
   isMobile,
   editorId,
   getEditor,
@@ -149,7 +151,7 @@ export function buildEditorConfig({
       // Tab = 段首缩进两个全角空格（中文排版）。列表 / 表格 / 代码块里让路给它们自己的 Tab
       FirstLineIndent,
       SlashCommand,
-      createWikiLinkExtension(localReferences),
+      createWikiLinkExtension(localReferences, getReferenceItems),
       ...(isMobile ? [] : [
         DragHandle.configure({
         render: () => {
@@ -212,11 +214,10 @@ export function buildEditorConfig({
         suggestion: {
           char: '@',
           items: async ({ query }) => {
-            if (!localReferences) return []
-            // 类型过滤在注册表内完成；先截断再按类型挑选，会让事件与国家在角色众多时整体缺失
-            const entities = await searchReferableEntities(query, {
-              types: ['character', 'event', 'country'],
-            })
+            const types = ['character', 'event', 'country']
+            const scoped = getReferenceItems?.()
+            const entities = scoped ? rankReferableEntities(scoped.filter(entity => types.includes(entity.type)), query)
+              : localReferences ? await searchReferableEntities(query, { types }) : []
             return entities.map((e) => ({ ...e, label: e.name }))
           },
           render: createMentionRender(),

@@ -6,7 +6,8 @@ import { readEntityDocument, readExpectedVersion } from '@/lib/cloud/entity-inpu
 import { planEntityUpdate, type JsonValue } from '@/lib/cloud/versioning'
 import { characterMediaAllowed } from '@/lib/cloud/server/character-media'
 import { characterLinksAllowed } from '@/lib/cloud/server/character-links'
-import { eventLinksAllowed } from '@/lib/cloud/server/event-links'
+import { eventLinksAllowed } from '@/lib/cloud/server/original-links'
+import { worldLinksAllowed } from '@/lib/cloud/server/world-links'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -55,11 +56,15 @@ export async function PATCH(request: Request, context: Context) {
     }
     if (!await characterMediaAllowed(client, access.workspaceId, existing.kind, document.data)) {
       await client.query('ROLLBACK')
-      return NextResponse.json({ error: existing.kind === 'event' ? 'INVALID_EVENT_MEDIA' : existing.kind === 'country' ? 'INVALID_COUNTRY_MEDIA' : 'INVALID_CHARACTER_MEDIA' }, { status: 400 })
+      return NextResponse.json({ error: existing.kind === 'worldEntry' ? 'INVALID_NOTE_MEDIA' : existing.kind === 'event' ? 'INVALID_EVENT_MEDIA' : existing.kind === 'country' ? 'INVALID_COUNTRY_MEDIA' : 'INVALID_CHARACTER_MEDIA' }, { status: 400 })
     }
     if (existing.kind === 'event' && !await eventLinksAllowed(client, access.workspaceId, document.data, entityId, existing.content)) {
       await client.query('ROLLBACK')
       return NextResponse.json({ error: 'INVALID_EVENT_LINKS' }, { status: 400 })
+    }
+    if (!await worldLinksAllowed(client, access.workspaceId, existing.kind, document.data, entityId, existing.content)) {
+      await client.query('ROLLBACK')
+      return NextResponse.json({ error: 'INVALID_NOTE_LINKS' }, { status: 400 })
     }
     if (!await characterLinksAllowed(client, access.workspaceId, existing.kind, document.data, entityId, existing.content)) {
       await client.query('ROLLBACK')

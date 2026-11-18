@@ -1,12 +1,12 @@
 import 'server-only'
 import type { PoolClient } from 'pg'
 
-function eventRecord(value: unknown): Record<string, unknown> {
+export function entityRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown> : {}
 }
 
-function numericIds(values: unknown): number[] | null {
+export function numericIds(values: unknown): number[] | null {
   if (values === undefined || values === null) return []
   if (!Array.isArray(values) || values.length > 1000) return null
   const result = new Set<number>()
@@ -20,7 +20,7 @@ function numericIds(values: unknown): number[] | null {
 function relatedEvents(values: unknown): number[] | null {
   if (values === undefined || values === null) return []
   if (!Array.isArray(values) || values.length > 1000) return null
-  const ids = values.map(value => eventRecord(value).targetId)
+  const ids = values.map(value => entityRecord(value).targetId)
   return numericIds(ids)
 }
 
@@ -28,8 +28,8 @@ function relatedEvents(values: unknown): number[] | null {
 export async function eventLinksAllowed(
   client: PoolClient, workspaceId: string, content: unknown, selfId?: string, previousContent?: unknown,
 ): Promise<boolean> {
-  const current = eventRecord(content)
-  const previous = eventRecord(previousContent)
+  const current = entityRecord(content)
+  const previous = entityRecord(previousContent)
   const targets = [
     { kind: 'character', next: numericIds(current.characters), before: numericIds(previous.characters) },
     { kind: 'country', next: numericIds(current.countries), before: numericIds(previous.countries) },
@@ -38,17 +38,22 @@ export async function eventLinksAllowed(
       before: numericIds(previous.parentEventId == null ? [] : [previous.parentEventId]) },
   ]
   for (const { kind, next, before } of targets) {
-    if (next === null) return false
-    // An unchanged historical reference may point to a deleted target.
-    const existing = new Set(before ?? [])
-    const added = next.filter(id => !existing.has(id))
-    if (added.length === 0) continue
-    const result = await client.query(
-      `SELECT local_id FROM entities WHERE workspace_id=$1 AND kind=$2
-       AND local_id=ANY($3::bigint[]) AND deleted_at IS NULL AND ($4::uuid IS NULL OR id<>$4::uuid)`,
-      [workspaceId, kind, added, selfId ?? null],
-    )
-    if (result.rows.length !== added.length) return false
+    if (next === null || !await scopedTargetsAllowed(client, workspaceId, kind, next, before, selfId)) return false
   }
   return true
+}
+
+/** Existing targets may have been deleted since the reference was written. */
+export async function scopedTargetsAllowed(
+  client: PoolClient, workspaceId: string, kind: string, next: number[], before: number[] | null, selfId?: string,
+): Promise<boolean> {
+  const previous = new Set(before ?? [])
+  const added = [...new Set(next)].filter(id => !previous.has(id))
+  if (added.length === 0) return true
+  const result = await client.query(
+    `SELECT local_id FROM entities WHERE workspace_id=$1 AND kind=$2
+     AND local_id=ANY($3::bigint[]) AND deleted_at IS NULL AND ($4::uuid IS NULL OR id<>$4::uuid)`,
+    [workspaceId, kind, added, selfId ?? null],
+  )
+  return result.rows.length === added.length
 }

@@ -3,7 +3,7 @@
 import { resolveCharacterCountryId } from '@/lib/membership'
 import { useState, useCallback, useRef, useEffect, useMemo, useLayoutEffect } from 'react'
 import type { Editor } from '@tiptap/core'
-import type { Character, Country, GalleryImage, RelatedCharacter, WorldRelation } from '@/types'
+import type { Character, Country, GalleryImage, RelatedCharacter, WorldEntry, WorldRelation } from '@/types'
 import type { RelatedItem } from '@/components/shared/RelatedItemsSelector'
 import type { RelationCandidate, RelationRow, RelationTargetKind } from '@/components/shared/relations/types'
 import type { RelationArrow } from '@/lib/relation-colors'
@@ -161,7 +161,7 @@ export interface InboundRelation {
 export function useCharacterForm(
   character: Character,
   onSave: (id: number, data: Partial<CharacterFormData>) => Promise<void>,
-  options?: { localLookups?: boolean; characters?: Character[]; countries?: Country[] },
+  options?: { localLookups?: boolean; characters?: Character[]; countries?: Country[]; notes?: WorldEntry[] },
 ) {
   /** 挂载那一刻的字段值：初始 state 与初始基线都从这里来，不会两边漂移 */
   const [initial] = useState(() => valuesFromEntity(character))
@@ -251,7 +251,8 @@ export function useCharacterForm(
   const allCharacters = options?.characters ?? localCharacters
   const { countries: localCountries } = useCountryList(useLocalLookups)
   const countries = options?.countries ?? localCountries
-  const { entries: allNotes } = useCodexEntryList(useLocalLookups)
+  const { entries: localNotes } = useCodexEntryList(useLocalLookups)
+  const allNotes = options?.notes ?? localNotes
 
   /**
    * 反向关系：遍历全体角色，收集「谁在自己的关系表里记了我」。

@@ -6,10 +6,12 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
 import { OriginalCharactersCloudAdapter, CloudCharacterError } from '@/lib/cloud/adapters/original-characters'
 import { buildDefaultCharacter } from '@/features/characters/services'
-import { newCharacterData, newCountryData, newEventData } from '@/lib/entity-defaults'
+import { newCharacterData, newCountryData, newEventData, newWorldEntryData } from '@/lib/entity-defaults'
 
 import { OriginalCountriesCloudAdapter } from '@/lib/cloud/adapters/original-countries'
 import { OriginalEventsCloudAdapter } from '@/lib/cloud/adapters/original-events'
+import { OriginalNotesCloudAdapter } from '@/lib/cloud/adapters/original-notes'
+import { buildDefaultEntry } from '@/features/world/services'
 import { buildDefaultEvent } from '@/features/events/services'
 import { buildDefaultCountry } from '@/features/countries/services'
 
@@ -235,6 +237,45 @@ describe('original entity adapters against PostgreSQL', () => {
     expect((await history.json()).revisions.map((row: { version: number }) => row.version)).toEqual([2, 1])
   })
 
+  it('versions notes and scopes their hierarchy, named links and inline references', async () => {
+    state.userId = 'owner'
+    const notes = new OriginalNotesCloudAdapter(workspaceA, apiFetch)
+    const parent = await notes.create(buildDefaultEntry({ ...newWorldEntryData(), title: '主题' }))
+    const child = await notes.create(buildDefaultEntry({ ...newWorldEntryData(), title: '子词条', parentId: parent.entity.id }))
+    const characters = new OriginalCharactersCloudAdapter(workspaceA, apiFetch)
+    const character = await characters.create(buildDefaultCharacter(newCharacterData()))
+    state.userId = 'outsider'
+    const external = await new OriginalNotesCloudAdapter(workspaceB, apiFetch).create(buildDefaultEntry(newWorldEntryData()))
+    state.userId = 'owner'
+    const invalid = { status: 400, code: 'INVALID_NOTE_LINKS' }
+    await expect(notes.save(parent, { parentId: child.entity.id })).rejects.toMatchObject(invalid)
+    await expect(notes.save(child, { parentId: external.entity.id })).rejects.toMatchObject(invalid)
+    await expect(notes.save(child, { relations: [{ targetId: external.entity.id, name: '其他资料库', relation: '参考' }] }))
+      .rejects.toMatchObject(invalid)
+    await expect(characters.save(character, { relatedNotes: [{ targetId: external.entity.id, name: '资料', relation: '' }] }))
+      .rejects.toMatchObject(invalid)
+    const reference = (id: number) => ({ type: 'doc', content: [{
+      type: 'paragraph', content: [{ type: 'wikiLink', attrs: { id: String(id), label: '主题' } }],
+    }] })
+    await expect(notes.save(child, { document: reference(external.entity.id) })).rejects.toMatchObject(invalid)
+
+    state.userId = 'editor'
+    const linked = await characters.save(character, { relatedNotes: [{ targetId: child.entity.id, name: '子词条', relation: '来源' }] })
+    expect(linked.character.relatedNotes?.[0].targetId).toBe(child.entity.id)
+    const doc = reference(parent.entity.id)
+    const saved = await notes.save(child, { document: doc, relations: [{ targetId: parent.entity.id, name: '主题', relation: '参考' }] })
+    expect(saved.version).toBe(2)
+    await expect(notes.save(child, { title: '过期编辑' })).rejects.toMatchObject({ status: 409 })
+
+    state.userId = 'viewer'
+    const visible = await notes.list()
+    expect(visible.find(item => item.entityId === child.entityId)?.entity.document).toEqual(doc)
+    expect(visible.some(item => item.entityId === external.entityId)).toBe(false)
+    await expect(notes.save(saved, { title: '访客编辑' })).rejects.toMatchObject({ status: 404 })
+    const history = await revisionRoute.GET(new Request('http://localhost:3000'), ctxEntity(child.entityId))
+    expect((await history.json()).revisions.map((row: { version: number }) => row.version)).toEqual([2, 1])
+  })
+
   it('accepts body images only from the character workspace', async () => {
     state.userId = 'owner'
     const own = '33333333-3333-4333-8333-333333333333'
@@ -254,6 +295,15 @@ describe('original entity adapters against PostgreSQL', () => {
       .rejects.toMatchObject({ status: 400, code: 'INVALID_EVENT_MEDIA' })
     const withImage = await events.save(gathering, { images: [{ url: `/api/media/${own}`, caption: '会场' }] })
     expect(withImage.entity.images).toEqual([{ url: `/api/media/${own}`, caption: '会场' }])
+    const notes = new OriginalNotesCloudAdapter(workspaceA, apiFetch)
+    const entry = await notes.create(buildDefaultEntry(newWorldEntryData()))
+    const noteBody = (id: string) => ({ type: 'doc', content: [
+      { type: 'imageBlock', attrs: { src: `/api/media/${id}` } },
+    ] })
+    await expect(notes.save(entry, { document: noteBody(other) }))
+      .rejects.toMatchObject({ status: 400, code: 'INVALID_NOTE_MEDIA' })
+    const savedNote = await notes.save(entry, { document: noteBody(own) })
+    expect(savedNote.entity.document).toEqual(noteBody(own))
     const adapter = new OriginalCharactersCloudAdapter(workspaceA, apiFetch)
     const initial = await adapter.create(buildDefaultCharacter({ ...newCharacterData(), name: '图片角色' }))
     const doc = (id: string) => ({ type: 'doc', content: [{ type: 'imageBlock', attrs: { src: `/api/media/${id}` } }] })

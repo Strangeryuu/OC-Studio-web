@@ -9,13 +9,13 @@ import { CharacterInfoSection } from '@/features/characters/components/Character
 import { characterFormBaseline, useCharacterForm } from '@/features/characters/hooks/useCharacterForm'
 import { buildDefaultCharacter } from '@/features/characters/services'
 import type { CharacterFormData } from '@/features/characters/types'
-import { newCharacterData, newCountryData, newEventData } from '@/lib/entity-defaults'
+import { newCharacterData, newCountryData, newEventData, newWorldEntryData } from '@/lib/entity-defaults'
 import { BUILTIN_FIELDS } from '@/lib/fields'
 import { flushPendingSaves } from '@/lib/pending-saves'
 import { BTN_PRIMARY, BTN_QUIET, TITLE_INPUT } from '@/lib/ui-tokens'
 import { OriginalCharactersCloudAdapter, type OriginalCharacterSnapshot, type OriginalCharacterPatch } from '@/lib/cloud/adapters/original-characters'
 import type { WorkspaceRole } from '@/lib/cloud/permissions'
-import type { Character, Country } from '@/types'
+import type { Character, Country, WorldEntry } from '@/types'
 import type { Editor } from '@tiptap/core'
 import { EditorCore } from '@/components/editor/EditorCore'
 import { ActiveEditorProvider } from '@/lib/editor-context'
@@ -35,6 +35,13 @@ import { useDelayedFlag } from '@/lib/use-delayed-flag'
 import { buildDefaultCountry } from '@/features/countries/services'
 import { WorkspaceEntityHistory } from '@/components/cloud/WorkspaceEntityHistory'
 import { insertWorkspaceBodyImage, useWorkspaceDraftGuard, useWorkspaceImageUpload } from '@/components/cloud/workspace-editor-guards'
+
+import { OriginalNotesCloudAdapter } from '@/lib/cloud/adapters/original-notes'
+import { OriginalNoteEditor } from '@/features/world/cloud/OriginalNoteEditor'
+import { WorkspaceNoteTree } from '@/features/world/cloud/WorkspaceNoteTree'
+import { buildDefaultEntry } from '@/features/world/services'
+import { isCodexEntry } from '@/lib/entry-kinds'
+import type { ReferableEntity } from '@/lib/reference-registry'
 
 const CLOUD_FIELDS = BUILTIN_FIELDS.character
 const EDITABLE_KEYS = [
@@ -61,6 +68,15 @@ export function editablePatch(character: Character, values: Partial<CharacterFor
     }))
     if (JSON.stringify(normalized) !== JSON.stringify(baseline.related)) {
       result.relatedCharacters = values.relatedCharacters
+    }
+  }
+  if (values.relatedNotes !== undefined) {
+    const normalized = values.relatedNotes.map(relation => ({
+      targetId: relation.targetId ?? null, relation: relation.relation,
+      arrow: relation.arrow ?? null, color: relation.color ?? null,
+    }))
+    if (JSON.stringify(normalized) !== JSON.stringify(baseline.relatedNotes)) {
+      result.relatedNotes = values.relatedNotes
     }
   }
   for (const key of ['avatars', 'gallery'] as const) {
@@ -152,6 +168,8 @@ function CharacterWorkspace({ workspaceId, role }: { workspaceId: string; role: 
   const characterAdapter = useMemo(() => new OriginalCharactersCloudAdapter(workspaceId), [workspaceId])
   const countryAdapter = useMemo(() => new OriginalCountriesCloudAdapter(workspaceId), [workspaceId])
   const eventAdapter = useMemo(() => new OriginalEventsCloudAdapter(workspaceId), [workspaceId])
+  const noteAdapter = useMemo(() => new OriginalNotesCloudAdapter(workspaceId), [workspaceId])
+  const noteList = useWorkspaceRows(noteAdapter, '笔记')
   const characterList = useWorkspaceRows(characterAdapter, '角色')
   const countryList = useWorkspaceRows(countryAdapter, '国家')
   const eventList = useWorkspaceRows(eventAdapter, '事件')
@@ -165,6 +183,17 @@ function CharacterWorkspace({ workspaceId, role }: { workspaceId: string; role: 
   const characters = useMemo(() => characterList.rows.map(row => row.character), [characterList.rows])
   const countries = useMemo(() => countryList.rows.map(row => row.entity), [countryList.rows])
   const events = useMemo(() => eventList.rows.map(row => row.entity), [eventList.rows])
+
+  const notes = useMemo(() => noteList.rows.map(row => row.entity).filter(isCodexEntry), [noteList.rows])
+  const note = noteList.rows.find(row => row.entityId === selectedId && isCodexEntry(row.entity))
+  const references = useMemo<ReferableEntity[]>(() => {
+    return [
+      ...characters.map(row => ({ type: 'character', id: String(row.id), name: row.name, keywords: row.aliases, avatarUrl: row.avatarUrl })),
+      ...countries.map(row => ({ type: 'country', id: String(row.id), name: row.name, keywords: row.aliases ?? [], avatarUrl: row.flagUrl })),
+      ...events.map(row => ({ type: 'event', id: String(row.id), name: row.title, keywords: row.aliases ?? [] })),
+      ...notes.map(row => ({ type: 'world', id: String(row.id), name: row.title, keywords: row.aliases ?? [] })),
+    ]
+  }, [characters, countries, events, notes])
 
   async function openAfterSaving(next: () => Promise<string>) {
     if (busy) return
@@ -189,8 +218,19 @@ function CharacterWorkspace({ workspaceId, role }: { workspaceId: string; role: 
     const target = kind === 'character' ? characterList.rows.find(row => row.character.id === id)
       : kind === 'country' ? countryList.rows.find(row => row.entity.id === id)
       : kind === 'event' ? eventList.rows.find(row => row.entity.id === id)
+      : kind === 'world' ? noteList.rows.find(row => row.entity.id === id && isCodexEntry(row.entity))
       : undefined
     if (target) select(target.entityId)
+  }
+
+  function createNote(parentId: number | null) {
+    if (!canEdit) return
+    void openAfterSaving(async () => {
+      const draft = buildDefaultEntry({ ...newWorldEntryData(), parentId })
+      const row = await noteAdapter.create(draft)
+      noteList.append(row)
+      return row.entityId
+    })
   }
 
   async function saveTimelineTime(id: number, time: string, endTime?: string) {
@@ -230,6 +270,9 @@ function CharacterWorkspace({ workspaceId, role }: { workspaceId: string; role: 
         eventList.append(row)
         return row.entityId
       }) : undefined} />
+    <WorkspaceNoteTree entries={notes} selectedId={note?.entity.id} loading={noteList.loading}
+      error={noteList.error} busy={busy} onSelect={id => navigate('world', id)}
+      onCreate={canEdit ? () => createNote(null) : undefined} />
     {error && <p role="alert" className="text-ui text-error">{error}</p>}
     {selectedId === 'timeline' && <div className="h-[65vh] min-h-96 rounded-panel border border-line">
       <TimelineView workspace={{
@@ -244,7 +287,7 @@ function CharacterWorkspace({ workspaceId, role }: { workspaceId: string; role: 
     </div>}
     {character && <OriginalCharacterEditor key={character.entityId} snapshot={character} adapter={characterAdapter}
       characters={characters} countries={countries} countriesReady={!countryList.loading && !countryList.error}
-      onNavigateCharacter={id => navigate('character', id)}
+      notes={notes} onNavigateRelation={navigate}
       onNavigateCountry={id => navigate('country', id)}
       canEdit={canEdit} disabled={busy} onUploadBusy={setBusy} onSaved={characterList.replace} />}
     {country && <OriginalCountryEditor key={country.entityId} snapshot={country} adapter={countryAdapter}
@@ -253,17 +296,22 @@ function CharacterWorkspace({ workspaceId, role }: { workspaceId: string; role: 
     {event && <OriginalEventEditor key={event.entityId} snapshot={event} adapter={eventAdapter}
       lookups={{ characters, countries, events }} canEdit={canEdit} disabled={busy}
       onSaved={eventList.replace} onUploadBusy={setBusy} onNavigate={navigate} />}
+    {note && <OriginalNoteEditor key={note.entityId} snapshot={note} adapter={noteAdapter}
+      notes={notes} characters={characters} references={references} canEdit={canEdit} disabled={busy}
+      onSaved={noteList.replace} onUploadBusy={setBusy} onNavigate={navigate}
+      onCreateChild={() => createNote(note.entity.id)} />}
   </div>
 }
 
-function OriginalCharacterEditor({ snapshot, adapter, characters, countries, countriesReady, onNavigateCharacter, onNavigateCountry, canEdit, disabled, onUploadBusy, onSaved }: {
+function OriginalCharacterEditor({ snapshot, adapter, characters, countries, countriesReady, notes, onNavigateRelation, onNavigateCountry, canEdit, disabled, onUploadBusy, onSaved }: {
   snapshot: OriginalCharacterSnapshot
   adapter: OriginalCharactersCloudAdapter
   characters: Character[]
   countries: Country[]
   countriesReady: boolean
   onNavigateCountry: (id: number) => void
-  onNavigateCharacter: (id: number) => void
+  notes: WorldEntry[]
+  onNavigateRelation: (kind: RelationTargetKind, id: number) => void
   canEdit: boolean
   disabled: boolean
   onUploadBusy: (busy: boolean) => void
@@ -293,7 +341,7 @@ function OriginalCharacterEditor({ snapshot, adapter, characters, countries, cou
       throw cause
     }
   }, [adapter, onSaved])
-  const form = useCharacterForm(snapshot.character, save, { localLookups: false, characters, countries })
+  const form = useCharacterForm(snapshot.character, save, { localLookups: false, characters, countries, notes })
   const { handleDocReady, handleDocChange } = form
   useEffect(() => { docDirty.current = form.docDirty }, [form.docDirty])
   useEffect(() => { bodyEditor.current?.setEditable(canEdit && !disabled) }, [canEdit, disabled])
@@ -340,7 +388,7 @@ function OriginalCharacterEditor({ snapshot, adapter, characters, countries, cou
             height: form.height, birthday: [form.birthdayYear, form.birthdayMonth, form.birthdayDay].join('-'),
             isMajor: form.isMajor, bio: form.bio, avatarUrl: form.avatarUrl,
             headerUrl: form.headerUrl, avatars: form.avatarUrls, gallery: form.galleryUrls,
-            relatedCharacters: form.relatedCharacters,
+            relatedCharacters: form.relatedCharacters, relatedNotes: form.relatedNotes,
             countryId: form.countryId ?? null, nationalityLegacy: form.nationalityLegacy,
             document: bodyDraft }, null, 2)} />
       </details>
@@ -360,14 +408,14 @@ function OriginalCharacterEditor({ snapshot, adapter, characters, countries, cou
         onNavigateToCountry={onNavigateCountry} preserveLegacyNationality />
       <SummaryBlock value={form.bio} onChange={form.setBio} />
       <RelationsSection title="角色关系" selfName={form.name}
-        rows={form.relationRows.filter(row => row.kind === 'character')}
+        rows={form.relationRows}
         inbound={form.inboundRelationRows}
-        candidates={form.relationCandidates.filter(candidate => candidate.kind === 'character')}
+        candidates={form.relationCandidates}
         onAdd={canEdit && !disabled ? form.addRelation : undefined}
         onRemove={canEdit && !disabled ? form.removeRelation : undefined}
         onRename={canEdit && !disabled ? form.renameRelation : undefined}
         onArrowChange={canEdit && !disabled ? form.setRelationArrow : undefined}
-        onNavigate={(_kind, id) => onNavigateCharacter(id)} />
+        onNavigate={onNavigateRelation} />
       <GalleryBlock title="立绘" images={form.avatarUrls} gridAspect="portrait" enableCrop cropAspect={9 / 16}
         onAdd={canEdit && !disabled ? path => form.setAvatarUrls(current => [...current, path]) : undefined}
         onReplace={canEdit && !disabled ? (index, path) => form.setAvatarUrls(current => current.map((url, i) => i === index ? path : url)) : undefined}

@@ -28,7 +28,7 @@ import type {
 import { AvatarBlock, GalleryBlock, ImageBlock, SummaryBlock } from '@/components/shared/template-blocks'
 import { updateEntry } from '../../services'
 import type { WorldFormData } from '../../types'
-import { useNoteLinks } from '../../hooks/useNoteLinks'
+import { useNoteLinks, type NoteLinks } from '../../hooks/useNoteLinks'
 
 function reportSaveError(err: unknown): void {
   toast.error('保存失败', { description: err instanceof Error ? err.message : String(err) })
@@ -262,6 +262,19 @@ export function NoteRelationsBlock({
     [write],
   )
 
+  return <NoteRelationFields entry={entry} links={links} relations={relations}
+    onChange={persist} onNavigate={onNavigate} display={block} />
+}
+
+/** Controlled relation fields shared by local and cloud note editors. */
+export function NoteRelationFields({ entry, links, relations, onChange, onNavigate, display }: {
+  entry: WorldEntry
+  links: Omit<NoteLinks, 'loading'>
+  relations: WorldRelation[]
+  onChange?: (relations: WorldRelation[], immediate: boolean) => void
+  onNavigate?: (kind: RelationTargetKind, id: number) => void
+  display?: ReturnType<typeof useRelationsBlock>
+}) {
   const resolveTarget = (relation: WorldRelation): { targetId?: number; name: string } => {
     const target =
       relation.targetId === undefined
@@ -375,15 +388,12 @@ export function NoteRelationsBlock({
     if (kind !== 'world') return
     const target = links.all.find((row) => row.id === targetId)
     if (!target) return
-    persist(
-      [...relations, { targetId, name: target.title, relation: '' }],
-      true,
-    )
+    onChange?.([...relations, { targetId, name: target.title, relation: '' }], true)
   }
 
   const removeRelation = (row: RelationRow): void => {
     if (row.index === undefined) return
-    persist(
+    onChange?.(
       relations.filter((_, index) => index !== row.index),
       true,
     )
@@ -391,7 +401,7 @@ export function NoteRelationsBlock({
 
   const renameRelation = (row: RelationRow, value: string): void => {
     if (row.index === undefined) return
-    persist(
+    onChange?.(
       relations.map((relation, index) =>
         index === row.index ? { ...relation, relation: value } : relation,
       ),
@@ -401,7 +411,7 @@ export function NoteRelationsBlock({
 
   const setRelationArrow = (row: RelationRow, arrow: RelationArrow): void => {
     if (row.index === undefined) return
-    persist(
+    onChange?.(
       relations.map((relation, index) =>
         index === row.index ? { ...relation, arrow } : relation,
       ),
@@ -414,15 +424,15 @@ export function NoteRelationsBlock({
       rows={[...manualRows, ...factRows]}
       inbound={inbound}
       candidates={candidates}
-      presentation={block.presentation}
-      showTitle={block.showTitle}
-      title={block.title}
-      onPresentationChange={block.canSwitch ? block.setPresentation : undefined}
-      onAdd={addRelation}
-      onRemove={removeRelation}
-      onRename={renameRelation}
-      onArrowChange={setRelationArrow}
-      onNavigate={(kind, id) => onNavigate(kind, id)}
+      presentation={display?.presentation}
+      showTitle={display?.showTitle}
+      title={display?.title}
+      onPresentationChange={display?.canSwitch ? display.setPresentation : undefined}
+      onAdd={onChange ? addRelation : undefined}
+      onRemove={onChange ? removeRelation : undefined}
+      onRename={onChange ? renameRelation : undefined}
+      onArrowChange={onChange ? setRelationArrow : undefined}
+      onNavigate={onNavigate}
       selfName={entry.title}
     />
   )

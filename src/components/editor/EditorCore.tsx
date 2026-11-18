@@ -27,6 +27,8 @@ import { FindReplaceBar } from './FindReplaceBar'
 import { OutlinePanel } from './OutlinePanel'
 import { OPEN_FIND_EVENT, OPEN_OUTLINE_EVENT, type OpenFindEventDetail, type OpenOutlineEventDetail } from './editor-events'
 
+import type { ReferableEntity } from '@/lib/reference-registry'
+
 interface EditorCoreProps {
   onReady: (editor: Editor) => void
   onCharacterCount?: (count: number) => void
@@ -38,6 +40,7 @@ interface EditorCoreProps {
   plain?: boolean
   imageUploads?: boolean
   localReferences?: boolean
+  referenceItems?: ReferableEntity[]
 }
 
 /**
@@ -53,7 +56,7 @@ const BUBBLE_MENU_OPTIONS = {
 } satisfies NonNullable<BubbleMenuProps['options']>
 
 export function EditorCore({
-  onReady, onCharacterCount, onContentChange, content, placeholder, onMentionClick, onWikiLinkClick, plain, imageUploads = true, localReferences = true,
+  onReady, onCharacterCount, onContentChange, content, placeholder, onMentionClick, onWikiLinkClick, plain, imageUploads = true, localReferences = true, referenceItems,
 }: EditorCoreProps) {
   const editorId = useId()
   const [blockMenuPosition, setBlockMenuPosition] = useState<{ x: number; y: number } | null>(null)
@@ -91,6 +94,9 @@ export function EditorCore({
     return () => window.removeEventListener(BLOCK_MENU_EVENT, handleBlockMenuEvent)
   }, [handleBlockMenuEvent])
 
+  const referenceItemsRef = useRef(referenceItems)
+  useEffect(() => { referenceItemsRef.current = referenceItems }, [referenceItems])
+
   // 仅把「取值器」交给配置模块（.current 一律在事件处理器里才读，render 期不读）。
   // 规则在 render 表达式里看到存在 .current 的闭包即报，无法区分是否真的读取 —— 属误报。
   // eslint-disable-next-line react-hooks/refs
@@ -99,6 +105,7 @@ export function EditorCore({
     plain,
     content,
     localReferences,
+    getReferenceItems: () => referenceItemsRef.current,
     isMobile,
     editorId,
     getEditor: () => editorRef.current,
