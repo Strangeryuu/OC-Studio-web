@@ -17,7 +17,7 @@ export function characterMediaIds(kind: unknown, content: unknown): string[] | n
   if (!content || typeof content !== 'object' || Array.isArray(content)) return null
   const record = content as Record<string, unknown>
   const ids: string[] = []
-  const coverKeys = kind === 'worldEntry' ? ['cover', 'avatar', 'image', 'mapImage']
+  const coverKeys = kind === 'worldEntry' ? ['cover', 'avatar', 'image', 'mapImage', 'novelCover']
     : kind === 'country' ? ['flagUrl', 'headerUrl']
     : kind === 'character' ? ['avatarUrl', 'headerUrl'] : ['headerUrl']
   for (const key of coverKeys) {

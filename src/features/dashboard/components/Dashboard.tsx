@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
+import type { Character, Country, Event, WorldEntry } from '@/types'
 import { Plus } from 'lucide-react'
 import { Avatar } from '@/components/shared/Avatar'
 import { StretchyHeader } from '@/components/shared/StretchyHeader'
@@ -13,11 +14,25 @@ import { useEntryList } from '@/features/world/hooks/useWorldEntries'
 import { useOverviewCounts } from '../hooks/useOverviewCounts'
 import { MEDIA_IMG, PAGE_TITLE, ROUND_ITEM, SECTION_TITLE } from '@/lib/ui-tokens'
 
-interface DashboardProps {
+export interface DashboardProps {
   /** 打开某个实体 */
   onNavigate: (id: number, type: string) => void
   /** 切换到某个板块（角色 / 事件 / 国家 / 世界观 / 时间线 / 关系图 / 相册） */
   onOpenSection: (item: string) => void
+  onCreate?: (type: 'character' | 'event' | 'country') => void
+}
+
+/** Shared original dashboard presentation; cloud workspaces pass scoped snapshots. */
+export interface DashboardData {
+  worldName: string
+  tagline: string
+  coverUrl?: string
+  characters: Character[]
+  events: Event[]
+  countries: Country[]
+  entries: WorldEntry[]
+  novels: number
+  maps: number
 }
 
 type RecentType = 'character' | 'event' | 'country' | 'world'
@@ -53,7 +68,7 @@ function requestCreate(type: 'character' | 'event' | 'country') {
  * 只呈现「世界是谁 + 有多少东西 + 最近在做什么」，不放图表不放卡片墙。
  * 世界的封面（设置 → 世界）就是这一页的头图，没设封面时不占位、也不出灰块。
  */
-export function Dashboard({ onNavigate, onOpenSection }: DashboardProps) {
+export function Dashboard({ onNavigate, onOpenSection, onCreate }: DashboardProps) {
   const { meta } = useProjectMeta()
   const { characters } = useCharacterList()
   const { events } = useEventList()
@@ -61,7 +76,15 @@ export function Dashboard({ onNavigate, onOpenSection }: DashboardProps) {
   const { entries } = useEntryList()
   const { novels, maps } = useOverviewCounts()
 
-  const coverSrc = meta.coverUrl.trim() ? resolveImageUrl(meta.coverUrl, 'header') : ''
+  return <DashboardView onNavigate={onNavigate} onOpenSection={onOpenSection} onCreate={onCreate}
+    worldName={meta.worldName} tagline={meta.tagline} coverUrl={meta.coverUrl}
+    characters={characters} events={events} countries={countries} entries={entries}
+    novels={novels} maps={maps} />
+}
+
+export function DashboardView({ onNavigate, onOpenSection, onCreate, worldName, tagline, coverUrl,
+  characters, events, countries, entries, novels, maps }: DashboardProps & DashboardData) {
+  const coverSrc = coverUrl?.trim() ? resolveImageUrl(coverUrl, 'header') : ''
 
   const majorCharacters = useMemo(
     () => characters.filter((c) => c.isMajor),
@@ -110,10 +133,10 @@ export function Dashboard({ onNavigate, onOpenSection }: DashboardProps) {
         <header className={`flex flex-col gap-2 ${coverSrc ? 'mt-8 md:mt-10' : ''}`}>
           <span className="text-micro tracking-[0.14em] text-ink-faint">当前世界</span>
           <h1 className={PAGE_TITLE}>
-            {meta.worldName.trim() || '未命名世界'}
+            {worldName.trim() || '未命名世界'}
           </h1>
-          {meta.tagline.trim() ? (
-            <p className="max-w-xl text-ui leading-relaxed text-ink-muted">{meta.tagline}</p>
+          {tagline.trim() ? (
+            <p className="max-w-xl text-ui leading-relaxed text-ink-muted">{tagline}</p>
           ) : null}
         </header>
 
@@ -192,7 +215,7 @@ export function Dashboard({ onNavigate, onOpenSection }: DashboardProps) {
               ]).map((a) => (
                 <button
                   key={a.type}
-                  onClick={() => requestCreate(a.type)}
+                  onClick={() => onCreate ? onCreate(a.type) : requestCreate(a.type)}
                   className="flex items-center gap-1.5 px-1.5 py-1 text-ui text-ink-muted transition-colors hover:bg-[var(--oc-hover)] hover:text-ink"
                 >
                   <Plus size={13} strokeWidth={2} />

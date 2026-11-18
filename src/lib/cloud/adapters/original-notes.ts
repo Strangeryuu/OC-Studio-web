@@ -8,6 +8,14 @@ export type OriginalNoteSnapshot = OriginalSnapshot<WorldEntry>
 export type OriginalNotePatch = Partial<Pick<WorldFormData,
   'title' | 'summary' | 'cover' | 'gallery' | 'relations' | 'parentId' | 'document' | 'content'
 >> & {
+  /** Novel roots and chapters reuse versioned worldEntry records. */
+  order?: number
+  chapterOutline?: string
+  novelAuthor?: string
+  novelSynopsis?: string
+  novelTargetWords?: number | null
+  novelNotes?: string
+  novelCover?: string | null
   graphPosition?: GraphPosition
   mapPosition?: GraphPosition | null
   mapId?: string | null
