@@ -318,6 +318,76 @@ async function run() {
   })
   assert(deletedChapter.status === 404, 'Deleted novel chapter remains readable')
 
+  // Advanced original novel DnD order and table parent promotion on real PostgreSQL.
+  const orderedBook = await createNovel(workspaceId, 'CI 排序小说', {parentId:null,order:0})
+  assert(orderedBook.status === 201, 'Novel reorder setup book failed')
+  const orderedRoot = (await orderedBook.json()).entity
+  const orderedChapters = []
+  for (const [index,title] of ['前章','中章','末章'].entries()) {
+    const created = await createNovel(workspaceId,title,{parentId:orderedRoot.local_id,order:index})
+    assert(created.status===201, 'Novel reorder chapter setup failed')
+    orderedChapters.push((await created.json()).entity)
+  }
+  const [firstChapter,secondChapter,lastChapter] = orderedChapters
+  const reorderVersions = Object.fromEntries(orderedChapters.map(item=>[String(item.local_id),item.version]))
+  const reorderUrl = BASE+'/api/workspaces/'+workspaceId+'/novels/'+orderedRoot.id+'/reorder'
+  const invalidReorder = await fetch(reorderUrl,{method:'PATCH',headers:mapHeaders,
+    body:JSON.stringify({draggedId:lastChapter.local_id,overId:foreignBookData.entity.local_id,
+      expectedVersions:reorderVersions})})
+  assert(invalidReorder.status===400,'Novel drag across books must be refused')
+  const changedReorder = await fetch(reorderUrl,{method:'PATCH',headers:mapHeaders,
+    body:JSON.stringify({draggedId:lastChapter.local_id,overId:firstChapter.local_id,
+      expectedVersions:reorderVersions})})
+  const reorderResult=await changedReorder.json()
+  assert(changedReorder.status===200&&reorderResult.updated===3,
+    'Original novel ordering transaction failed: '+JSON.stringify(reorderResult))
+  const staleReorder = await fetch(reorderUrl,{method:'PATCH',headers:mapHeaders,
+    body:JSON.stringify({draggedId:firstChapter.local_id,overId:lastChapter.local_id,
+      expectedVersions:reorderVersions})})
+  assert(staleReorder.status===409,'Novel reorder must reject concurrent stale versions')
+  const readSorted = await fetch(BASE+'/api/entities/'+lastChapter.id,{headers:{Cookie:cookie}})
+  assert(readSorted.status===200,'Reordered chapter is missing')
+  assert((await readSorted.json()).entity.content.order===0,'Reordered chapter order was not persisted')
+
+  const createTableEntity = async(kind,title,data) => {
+    const response=await fetch(BASE+'/api/workspaces/'+workspaceId+'/entities',{
+      method:'POST',headers:mapHeaders,
+      body:JSON.stringify({kind,title,data}),
+    })
+    assert(response.status===201,'Table fixture creation failed for '+kind+': '+response.status)
+    return (await response.json()).entity
+  }
+  const tableCountry = await createTableEntity('country','CI 表格父国家',{name:'CI 表格父国家'})
+  const tableChild = await createTableEntity('country','CI 表格子国家',{
+    name:'CI 表格子国家',parentId:tableCountry.local_id,
+  })
+  const tableMember = await createTableEntity('character','CI 表格成员',{
+    name:'CI 表格成员',countryId:tableCountry.local_id,
+  })
+  const tableEvent = await createTableEntity('event','CI 表格事件',{
+    title:'CI 表格事件',countries:[tableCountry.local_id],
+  })
+  const tableVersions = Object.fromEntries([tableCountry,tableChild,tableMember,tableEvent]
+    .map(item=>[item.id,item.version]))
+  const tableUrl=BASE+'/api/workspaces/'+workspaceId+'/table/'+tableCountry.id
+  const staleTable = await fetch(tableUrl,{method:'DELETE',headers:mapHeaders,
+    body:JSON.stringify({expectedVersion:1,expectedVersions:{}})})
+  assert(staleTable.status===409,'Table delete must check all dependent revisions')
+  const tableRemoval=await fetch(tableUrl,{method:'DELETE',headers:mapHeaders,
+    body:JSON.stringify({expectedVersion:1,expectedVersions:tableVersions})})
+  const tableResult=await tableRemoval.json()
+  assert(tableRemoval.status===200&&tableResult.promotedOrUnlinked===3,
+    'Original table delete cascade failed: '+JSON.stringify(tableResult))
+  const promotedRow=await fetch(BASE+'/api/entities/'+tableChild.id,{headers:{Cookie:cookie}})
+  assert(promotedRow.status===200&&(await promotedRow.json()).entity.content.parentId===null,
+    'Child country was not promoted to the previous parent')
+  const clearedMember=await fetch(BASE+'/api/entities/'+tableMember.id,{headers:{Cookie:cookie}})
+  assert(clearedMember.status===200&&(await clearedMember.json()).entity.content.countryId===null,
+    'Country membership was not cleared')
+  const clearedEvent=await fetch(BASE+'/api/entities/'+tableEvent.id,{headers:{Cookie:cookie}})
+  assert(clearedEvent.status===200&&(await clearedEvent.json()).entity.content.countries.length===0,
+    'Deleted country remained in event references')
+
   // Tags have stable UUIDs; renaming one does not require rewriting characters.
   const tagResponse = await fetch(BASE + '/api/workspaces/' + workspaceId + '/tags', {
     method: 'POST', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
