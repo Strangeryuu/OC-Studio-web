@@ -85,6 +85,7 @@ jobs:
   publish-docker:
     name: 构建并发布 Docker 至 GHCR
     needs: [web, postgres-schema]
+    if: github.ref == 'refs/heads/web-dev'
     runs-on: ubuntu-latest
     timeout-minutes: 50
     permissions:
