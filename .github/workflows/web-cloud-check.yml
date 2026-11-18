@@ -25,7 +25,7 @@ jobs:
   postgres-schema:
     name: 独立 PostgreSQL 业务迁移自检
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:16
@@ -61,3 +61,20 @@ jobs:
         run: node scripts/cloud-db-smoke.cjs
       - name: 跨资料库地图名称与软删除唯一性集成测试
         run: node scripts/cloud-postgres-map-smoke.cjs
+      - name: 创建专用 HTTP 测试账号
+        run: node scripts/cloud-ci-seed-user.cjs
+      - name: 构建真实 PostgreSQL Web 服务
+        run: npm run build:web
+      - name: 使用真实 PostgreSQL 完成登录与工作台 HTTP 联调
+        run: |
+          mkdir -p /tmp/ocstudio-ci-media
+          node .next/standalone/server.js > /tmp/ocstudio-web-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          node scripts/cloud-http-smoke.cjs || {
+            cat /tmp/ocstudio-web-server.log
+            exit 1
+          }
+        env:
+          MEDIA_ROOT: /tmp/ocstudio-ci-media
+
