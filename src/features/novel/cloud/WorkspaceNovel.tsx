@@ -17,7 +17,7 @@ import { TreeRow } from '@/components/shared/TreeRow'
 import { EditorCore } from '@/components/editor/EditorCore'
 import { WorkspaceEntityHistory } from '@/components/cloud/WorkspaceEntityHistory'
 import { insertWorkspaceBodyImage, useWorkspaceDraftGuard, useWorkspaceImageUpload } from '@/components/cloud/workspace-editor-guards'
-import { registerPendingSave } from '@/lib/pending-saves'
+import { flushPendingSaves, registerPendingSave } from '@/lib/pending-saves'
 import { docRevisionChanged } from '@/lib/save-revision'
 import { hasNewBodyImages } from '@/lib/cloud/character-media'
 import { worldBodyOf, worldBodyPatch } from '@/lib/world-body'
@@ -179,7 +179,11 @@ function CloudChapterEditor({ snapshot, adapter, onSaved, canEdit, disabled }: M
     if (inFlight.current) return inFlight.current
     const current = baseline.current
     const patch: OriginalNotePatch = {}
-    if (fields.current.title.trim() && fields.current.title !== current.entity.title) patch.title=fields.current.title.trim()
+    if (!fields.current.title.trim()) {
+      setError('章节标题不能为空')
+      throw new Error('章节标题不能为空')
+    }
+    if (fields.current.title.trim() !== current.entity.title) patch.title=fields.current.title.trim()
     if (fields.current.outline !== (current.entity.chapterOutline ?? '')) patch.chapterOutline=fields.current.outline
     const doc = editor.current?.state.doc
     if (doc && bodyBaseline.current && docRevisionChanged(doc, bodyBaseline.current)) {
@@ -319,6 +323,11 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
 
   async function write(fn:()=>Promise<void>) {
     if(!writable||pending.current) return
+    try { await flushPendingSaves() } catch (cause) {
+      setError(cause instanceof Error?cause.message:'仍有未保存的章节草稿')
+      return
+    }
+    if (pending.current) return
     setBusy(true);setError(null)
     const task=fn()
     pending.current=task
@@ -340,12 +349,19 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
     })
   }
 
+  function afterSaving(next: () => void) {
+    void flushPendingSaves().then(next).catch(cause =>
+      setError(cause instanceof Error ? cause.message : '保存草稿失败，已保留当前编辑内容'))
+  }
+
   function openBook(id:number) {
-    setActiveBookId(id)
-    const chapter=novelSubtree(entries,id).filter(row=>row.id!==id)
-      .sort((a,b)=>(a.order??0)-(b.order??0))[0]
-    setActiveChapterId(chapter?.id??null)
-    setPreview(false)
+    afterSaving(() => {
+      setActiveBookId(id)
+      const chapter=novelSubtree(entries,id).filter(row=>row.id!==id)
+        .sort((a,b)=>(a.order??0)-(b.order??0))[0]
+      setActiveChapterId(chapter?.id??null)
+      setPreview(false)
+    })
   }
 
   async function remove(id:number) {
@@ -372,6 +388,10 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
 
   async function download(format:'txt'|'md'|'docx'){
     if(!root)return
+    try { await flushPendingSaves() } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '请先保存章节草稿')
+      return
+    }
     setError(null);setBusy(true)
     const name=safeNovelFileName(root.entity.title)
     try{
@@ -425,10 +445,10 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
 
   return <section className="flex min-w-0 flex-col gap-4 border-t border-line pt-3">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <button type="button" className={BTN_QUIET} onClick={()=>{setActiveBookId(null);setActiveChapterId(null);setPreview(false)}}>← 书架</button>
+      <button type="button" className={BTN_QUIET} onClick={()=>afterSaving(()=>{setActiveBookId(null);setActiveChapterId(null);setPreview(false)})}>← 书架</button>
       <span className="font-serif text-lg font-semibold">{root.entity.title}</span>
       <div className="flex flex-wrap items-center gap-1">
-        <button type="button" className={BTN_QUIET} onClick={()=>setPreview(value=>!value)}>
+        <button type="button" className={BTN_QUIET} onClick={()=>afterSaving(()=>setPreview(value=>!value))}>
           {preview?'返回编辑':'分页预览'}</button>
         <select aria-label="阅读纸张" value={format} onChange={event=>setFormat(event.target.value as typeof format)}
           className="border-b border-line bg-transparent px-1 text-ui">
@@ -456,7 +476,7 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
         </div>
         <ul>{chapterTree.filter(node=>!query.trim()||node.entry.title.includes(query)).map(node=>
           <ChapterNode key={node.entry.id} node={node} depth={0} selectedId={activeChapterId}
-            onSelect={setActiveChapterId} canEdit={props.canEdit} busy={busy}
+            onSelect={id=>afterSaving(()=>setActiveChapterId(id))} canEdit={props.canEdit} busy={busy}
             onCreateChild={create} onDelete={id=>void remove(id)} />)}</ul>
         {chapterTree.length===0&&<p className="text-caption text-ink-faint">暂无章节</p>}
         <p className="mt-3 text-caption text-ink-faint">{chapters.length} 章 · {countNovelWords(exported)} 字</p>
