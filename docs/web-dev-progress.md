@@ -184,3 +184,16 @@
 - `205bdf1` 的完整 GitHub Actions 已通过，包含类型、lint、单元/PGlite 测试、自检、Next.js 生产构建及独立 PostgreSQL。针对 `917e830` 新增的真实 HTTP 高级操作，**独立 PostgreSQL 业务迁移自检作业已确认成功**；最新完整 Web 作业以 Actions 最终运行结论为准。
 - **浏览器手动验收待办**：实际拖动嵌套章节、移动端长按/下载、深色主题的分页预览、真实多成员同时调整章节、资源文件可用性、备份恢复演练。GitHub Actions 的 HTTP/组件测试和生产构建属于自动化验证。
 - **后续高级功能**：世界观/国家/事件/角色编辑器与表格的一致删除入口；云端回收站界面与整树恢复；模板/组件/分类在线设置；全局搜索与聚合浏览；旧数据与整库 `.ocbak` 的安全导入/导出；AI 插件、本地扩展与实时协同，以及部署安全与实际多浏览器验收。
+
+
+## 2026-11-19：Docker / GHCR / VPS 自动更新打包
+
+- 沿用 `web-dev`，保留 `main`；无需创建部署专用分支。
+- 新增根目录多阶段 `Dockerfile` 和 `.dockerignore`，使用 Node 24 及 Next.js standalone Web 最小运行镜像，另建带 Better Auth CLI 和 `cloud-migrate-business.cjs` 的数据库迁移镜像。Web 使用独立 UID/GID 10001。
+- `deploy/compose.yaml` 使用 PostgreSQL 16 持久卷、`./data/media` 私有媒体 bind mount，绑定宿主机 `127.0.0.1:3000`，按 HTTPS `BETTER_AUTH_URL`、数据库连接、独立密钥配置；数据库迁移服务只在 `maintenance` profile 运行。
+- `.github/workflows/web-cloud-check.yml` 新增 Docker Compose 静态校验和 `publish-docker` 作业，只有 Web 类型检查/测试/自检/构建和真实 PostgreSQL 迁移+HTTP 全部成功，才用 GitHub 自带 Token 发布 `ghcr.io/strangeryuu/oc-studio-web:dev`、`...-migrate:dev` 及对应 `sha-<12位>` 标签。迁移镜像先发布、Web 后发布，防止 VPS 拉取新 Web 但尚无配套迁移镜像。因 `main` 保持不变，直接在现有分支 CI 添加 `needs: [web, postgres-schema]`，避开 `workflow_run` 依赖默认分支的限制。
+- `deploy/update.sh` 为幂等更新工具：使用 `flock` 防止并发，比较已运行与镜像仓库最新 `web` 镜像 ID，发现更新后先备份 PostgreSQL 和媒体，再运行一次性迁移并启动新的 Web 容器；检查健康情况。失败时保留备份和日志，不对潜在不兼容迁移做自动数据库回滚。
+- `deploy/ocstudio-update.service` 和 `.timer` 提供可选系统定时拉取（仅建议测试环境先开启）；正式环境建议固定 SHA 并人工升级。无需把 VPS 私钥交给 GitHub。
+- 配套 `docs/web-docker-deployment.md`，说明 GHCR 私有镜像读权限、系统账号、HTTPS、机密变量、初始化、更新、备份、恢复与验收。项目源代码改动自动在 CI 中构建镜像，VPS 可只保留 Compose/脚本与持久数据，无需每次 git pull 与重新 npm 构建。
+
+**验收边界：** 现有 Web/PostgreSQL CI 是代码和 HTTP 业务验证；新增容器构建/发布需等 `publish-docker` 作业结论。实际 VPS 的 HTTPS、数据库和媒体恢复演练，以及 x86_64 宿主机 Compose 运行仍需独立验收。

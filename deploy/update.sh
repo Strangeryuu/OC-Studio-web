@@ -23,7 +23,7 @@ fi
 
 compose=(docker compose --env-file .env -f compose.yaml)
 echo "Pulling verified OC Studio app and migration images..."
-"${compose[@]}" pull migrate web
+"${compose[@]}" --profile maintenance pull migrate web
 
 web_image="$("${compose[@]}" config --images | grep -E '^ghcr\.io/[^/]+/oc-studio-web:[^[:space:]]+$' | head -n 1)"
 if [[ -z "$web_image" ]]; then

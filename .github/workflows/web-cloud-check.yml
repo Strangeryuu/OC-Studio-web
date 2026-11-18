@@ -15,6 +15,10 @@ jobs:
         with:
           node-version: '24'
           cache: npm
+      - name: Check container syntax and Compose values
+        run: |
+          bash -n deploy/update.sh
+          docker compose --env-file deploy/.env.example -f deploy/compose.yaml config --quiet
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
