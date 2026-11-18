@@ -36,6 +36,7 @@ import * as revisionRoute from '@/app/api/entities/[entityId]/revisions/route'
 import * as restoreRoute from '@/app/api/entities/[entityId]/restore/route'
 import * as uploadRoute from '@/app/api/workspaces/[workspaceId]/media/route'
 import * as mediaRoute from '@/app/api/media/[assetId]/route'
+import * as cloudMaps from '@/app/api/workspaces/[workspaceId]/maps/[mapEntityId]/route'
 
 import StudioEntry from '@/app/(studio)/studio/page'
 import StudioWorkspace from '@/app/(studio)/studio/[workspaceId]/page'
@@ -454,6 +455,62 @@ describe('original entity adapters against PostgreSQL', () => {
     state.userId = 'outsider'
     await expect(mapsA.list()).rejects.toMatchObject({ status: 404 })
     state.userId = 'owner'
+  })
+
+  it('renames and deletes maps transactionally, preserving pin revisions and roles', async () => {
+    state.userId = 'owner'
+    const notes = new OriginalNotesCloudAdapter(workspaceA, apiFetch)
+    const countries = new OriginalCountriesCloudAdapter(workspaceA, apiFetch)
+    const events = new OriginalEventsCloudAdapter(workspaceA, apiFetch)
+    const map = await notes.create(buildDefaultEntry({
+      ...newWorldEntryData(), title: '事务地图一', category: '地图',
+    }))
+    const otherMap = await new OriginalNotesCloudAdapter(workspaceB, apiFetch).create(buildDefaultEntry({
+      ...newWorldEntryData(), title: '事务地图二', category: '地图',
+    }))
+    const country = await countries.create(buildDefaultCountry({ ...newCountryData(), name: '事务国' }))
+    const event = await events.create(buildDefaultEvent({ ...newEventData(), title: '事务事件' }))
+    const pinnedCountry = await countries.save(country, { mapId: map.entity.title, mapPosition: { x: .1, y: .2 } })
+    const pinnedEvent = await events.save(event, { mapId: map.entity.title, mapPosition: { x: .4, y: .5 } })
+
+    const ctx = { params: Promise.resolve({ workspaceId: workspaceA, mapEntityId: map.entityId }) }
+    const request = (method: 'PATCH' | 'DELETE', payload: object) => new Request('http://localhost:3000', {
+      method, headers: { Origin: 'http://localhost:3000', 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    state.userId = 'viewer'
+    expect((await cloudMaps.PATCH(request('PATCH', { expectedVersion: 1, name: '新地图' }), ctx)).status).toBe(404)
+    expect((await cloudMaps.DELETE(request('DELETE', { expectedVersion: 1 }), ctx)).status).toBe(404)
+
+    state.userId = 'editor'
+    const renamed = await cloudMaps.PATCH(request('PATCH', { expectedVersion: 1, name: '事务地图一-新版' }), ctx)
+    expect(renamed.status).toBe(200)
+    expect((await renamed.json()).renamedPins).toBe(2)
+    expect((await cloudMaps.DELETE(request('DELETE', { expectedVersion: 2 }), ctx)).status).toBe(404)
+    expect((await cloudMaps.PATCH(request('PATCH', { expectedVersion: 1, name: '旧版覆盖' }), ctx)).status).toBe(409)
+    expect((await cloudMaps.PATCH(request('PATCH', { expectedVersion: 2, name: '事务地图二' }), ctx)).status).toBe(200)
+    // Same title is allowed in different workspaces; map IDs remain scoped.
+    const nextMap = (await notes.list()).find(row => row.entityId === map.entityId)!
+    expect(nextMap.entity.title).toBe('事务地图二')
+    expect((await countries.list()).find(row => row.entityId === country.entityId)?.entity.mapId).toBe('事务地图二')
+    expect((await events.list()).find(row => row.entityId === event.entityId)?.entity.mapId).toBe('事务地图二')
+    expect(otherMap.entity.title).toBe('事务地图二')
+
+    state.userId = 'owner'
+    const current = (await notes.list()).find(row => row.entityId === map.entityId)!
+    expect(current.version).toBe(3)
+    const removed = await cloudMaps.DELETE(request('DELETE', { expectedVersion: 3 }), ctx)
+    expect(removed.status).toBe(200)
+    expect((await removed.json()).removedPins).toBe(2)
+    expect((await notes.list()).find(row => row.entityId === map.entityId)).toBeUndefined()
+    const clearedCountry = (await countries.list()).find(row => row.entityId === country.entityId)!
+    const clearedEvent = (await events.list()).find(row => row.entityId === event.entityId)!
+    expect(clearedCountry.entity.mapId).toBeNull()
+    expect(clearedCountry.entity.mapPosition).toBeNull()
+    expect(clearedEvent.entity.mapId).toBeNull()
+    const revisions = await revisionRoute.GET(new Request('http://localhost:3000'), ctxEntity(country.entityId))
+    expect((await revisions.json()).revisions.map((row: { version: number }) => row.version)).toEqual([4, 3, 2, 1])
+    expect(otherMap.entityId).not.toBe(map.entityId)
   })
 
   it('uploads and reads private image bytes with workspace authorization', async () => {
