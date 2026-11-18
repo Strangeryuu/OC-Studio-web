@@ -123,3 +123,29 @@
 - 本阶段第一次新增 UI 用例因测试角色缺少预期的所属国家，导致行投影正确显示“未归属”，已修正测试夹具。完整 CI 结果以最后代码提交对应的工作流状态为准。
 
 **后续表格差距**：安全的事务式删除和子项提升、从原版数据批量导入、云端标签增删编辑、测试真实浏览器单元格/下拉选项互动。其后进入原版多视图浏览模式、小说、模板与全局相册的云端移植。
+
+
+## 2026-11-19：主页、小说、全局相册集中接入（第六阶段）
+
+基线 `07bfc19`（此前 573 项测试、31 项自检、Web 构建和独立 PostgreSQL HTTP 验证均通过）。本阶段只在 `web-dev` 开发，`main` 保留原状。
+
+### 原版 11 个主要导航板块的云端入口已全部接通
+
+1. **主页**：从 `src/features/dashboard/components/Dashboard.tsx` 抽取共用的 `DashboardView`，原版桌面 `Dashboard` 保持自己的 IndexedDB hooks；云端注入当前资料库角色/国家/事件/词条与小说、地图数目，继续沿用主要角色、最近更新与快捷入口。新增 `src/features/dashboard/cloud/WorkspaceHome.tsx`；使用版本化 `workspace_settings['world-cover']` 和私有图片接口上传、替换、移除世界封面，更新操作仅限资料库所有者及管理员，读取对成员开放，记录到审计日志。
+2. **小说**：新增 `src/features/novel/cloud/WorkspaceNovel.tsx`、`cloud-novel-projection.ts`，沿用原版 `worldEntry(category=小说)` 和 `parentId` 章节树、`CoverCard`、`CoverFlow`、`TreeRow`、TipTap `EditorCore`、分页 `NovelReader` 及原版 `flattenNovel`、`toTxt`、`toMarkdown`、`downloadNovelDocx`。支持多本小说、章节及子章节、标题和大纲、自动与手动保存、封面/作者/简介/目标字数、阅读预览（9:16/16:9/A4）、TXT/Markdown/Word 导出。导出前执行草稿 flush，再读取服务器最新的当前资料库章节，避免刚保存就导出旧文本。子章节搜索保留匹配子项的祖先路径。
+3. **小说删除/权限**：新建 `/api/workspaces/[workspaceId]/novels/[entryId]` 的 DELETE 事务接口，递归删除所选章节/作品的整棵子树并逐条写版本历史和 change events；普通单条实体删除接口会拒绝该类别的直接删除。删除限 owner/admin；editor 可新建/修改，viewer 只读。服务端 `cloudNovelAllowed` 检查小说父级位于当前资料库且同为小说、字段值有效及封面是私有媒体引用；恢复旧版本同样执行这些校验。
+4. **全局相册**：新增 `src/features/album/cloud/WorkspaceAlbum.tsx` 与 `cloud-album-projection.ts`，复用原版 `AlbumTreePanel`、`AlbumCard`、`FullscreenViewer`、`FilterSelect`、`SortSelect` 和 `lib/image-refs.ts`。汇总当前资料库角色、国家、事件及普通词条的字段图与富文本正文图片，另展示世界封面；沿用原版排除小说和地图条目的规则。仅使用 `/api/media/<uuid>` 类型的私有媒体，服务器仍验证实际归属。提供类别树、来源/共享标签过滤、搜索、时间排序、图片全屏查看和跳转来源，增加移动端目录、搜索与排序入口。
+5. **原版导航**：工作台 `WorkspaceNavigation` 现包含主页、角色、国家、事件、世界观、小说、表格、地图、时间线、关系图、全局相册，以及额外的成员与邀请。原版 11/11 **主要板块已接入**，这是入口覆盖数；各板块高级功能仍在迁移中。
+
+### 代码与测试
+
+关键提交依次为：`8cf36d5`（主页展示与导航）、`139194d`（相册）、`d47e676`（小说）、`49d3887`（工作台挂载）、`21d74ee`（小说子树事务删除）、`cddb7a2`（草稿保护）、`175ad75`（投影测试）、`6f7fbb5`（PGlite 类型修复）、`4188884`（真实 PostgreSQL HTTP 小说生命周期）、`e7becb6`（历史恢复校验）、`70aaa0d`（权限及移动端）、`f8833c9`（最新章节导出/私有封面）、`8aa1b08`、`2b7a847`、`af92a2a`（世界封面 API/UI/相册集成）和 `410b3fe`（封面权限、版本与相册测试）。
+
+已确认 `70aaa0d`、`4188884` 及 `f8833c9` 对应的完整 GitHub Actions 验证成功（含 Web 类型检查、ESLint、全部当时测试、31 项项目自检、生产构建和独立 PostgreSQL HTTP 作业）。`410b3fe` 的新封面测试发现 PGlite 对同一个 SQL 参数推断 UUID/TEXT 类型冲突，已通过 `977e068` 将审计日志 text 参数拆开；**最后提交的全套 CI 结果需重新核对**。
+
+### 与原版完整功能仍有差距（不可混同于 11/11 入口覆盖）
+
+- 小说章节的原版完整 DnD 排序、书架移动端长按动作、分页版式自定义、完整导出中心和批量恢复仍需进一步迁移。当前章节树和书架通过原版组件/纯函数搭建。
+- 全局相册移动端长按动作和各高级筛选控件仍有精细适配工作，独立的分类管理、模板与个性化设置需要云端数据接口。世界封面使用 `workspace_settings` 版本及审计历史，与实体逐版本历史采用不同存储模型。
+- 其他原版高级能力：表格事务删除、角色卡片/画廊多视图、全局快捷搜索、灵感、回收站 UI、完整导入导出、`.ocbak`、插件与 AI 助手、实时协同编辑，以及全库备份/恢复验证。
+- 自动化验证已包含独立 PostgreSQL 的真实 HTTP 调用，仍需在真实浏览器完成小说章节编辑/阅读/Word 下载、封面上传、相册图片与移动端、地图拖动、多人并发等验收，再部署 VPS 正式使用。
