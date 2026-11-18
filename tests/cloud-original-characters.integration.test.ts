@@ -41,6 +41,12 @@ import * as cloudNovels from '@/app/api/workspaces/[workspaceId]/novels/[entryId
 import * as novelReorder from '@/app/api/workspaces/[workspaceId]/novels/[entryId]/reorder/route'
 import * as tableDelete from '@/app/api/workspaces/[workspaceId]/table/[entityId]/route'
 import * as workspaceCover from '@/app/api/workspaces/[workspaceId]/cover/route'
+import * as workspaceTrash from '@/app/api/workspaces/[workspaceId]/trash/route'
+import * as workspaceTrashItem from '@/app/api/workspaces/[workspaceId]/trash/[entityId]/route'
+import * as workspaceCustomization from '@/app/api/workspaces/[workspaceId]/customization/route'
+import * as workspaceSearch from '@/app/api/workspaces/[workspaceId]/search/route'
+import * as workspaceBackup from '@/app/api/workspaces/[workspaceId]/backup/route'
+import { defaultWorkspaceCustomization } from '@/lib/cloud/workspace-customization'
 
 import StudioEntry from '@/app/(studio)/studio/page'
 import StudioWorkspace from '@/app/(studio)/studio/[workspaceId]/page'
@@ -745,6 +751,172 @@ describe('original entity adapters against PostgreSQL', () => {
     expect((await get()).status).toBe(200)
     state.userId = 'outsider'
     expect((await get()).status).toBe(404)
+  })
+
+  it('restores or permanently purges original novel subtrees in the scoped recycle bin',async()=>{
+    state.userId='owner'
+    const notes=new OriginalNotesCloudAdapter(workspaceA,apiFetch)
+    const book=await notes.create(buildDefaultEntry({...newWorldEntryData(),
+      title:'回收站原版小说',category:'小说',parentId:null}))
+    const chapter=await notes.create(buildDefaultEntry({...newWorldEntryData(),
+      title:'回收站第一章',category:'小说',parentId:book.entity.id}))
+    const ctx={params:Promise.resolve({workspaceId:workspaceA,entryId:book.entityId})}
+    const del=()=>new Request('http://localhost:3000',{method:'DELETE',
+      headers:{Origin:'http://localhost:3000','Content-Type':'application/json'},
+      body:JSON.stringify({expectedVersion:1})})
+    expect((await cloudNovels.DELETE(del(),ctx)).status).toBe(200)
+    const trashCtx={params:Promise.resolve({workspaceId:workspaceA,entityId:book.entityId})}
+    const operation=(method:'POST'|'DELETE',expectedVersion:number)=>new Request('http://localhost:3000',{
+      method,headers:{Origin:'http://localhost:3000','Content-Type':'application/json'},
+      body:JSON.stringify({expectedVersion})})
+    const list=await workspaceTrash.GET(new Request('http://localhost:3000'),ctxWorkspace(workspaceA))
+    expect((await list.json()).items.some((row:{id:string})=>row.id===book.entityId)).toBe(true)
+    state.userId='viewer'
+    expect((await workspaceTrashItem.POST(operation('POST',2),trashCtx)).status).toBe(404)
+    state.userId='owner'
+    const restored=await workspaceTrashItem.POST(operation('POST',2),trashCtx)
+    expect(restored.status).toBe(200)
+    expect((await restored.json()).items).toBe(2)
+    const live=await notes.list()
+    const rootNow=live.find(row=>row.entityId===book.entityId)
+    const childNow=live.find(row=>row.entityId===chapter.entityId)
+    expect(rootNow?.version).toBe(3)
+    expect(childNow?.version).toBe(3)
+    expect(childNow?.entity.parentId).toBe(book.entity.id)
+    const history=await revisionRoute.GET(new Request('http://localhost:3000'),ctxEntity(book.entityId))
+    expect((await history.json()).revisions[0].action).toBe('restore')
+    const deleted=await cloudNovels.DELETE(new Request('http://localhost:3000',{
+      method:'DELETE',headers:{Origin:'http://localhost:3000','Content-Type':'application/json'},
+      body:JSON.stringify({expectedVersion:3}),
+    }),ctx)
+    expect(deleted.status).toBe(200)
+    const purged=await workspaceTrashItem.DELETE(operation('DELETE',4),trashCtx)
+    expect(purged.status).toBe(200)
+    expect((await purged.json()).items).toBe(2)
+    const all=await state.db!.query<{id:string}>(
+      'SELECT id FROM entities WHERE id=ANY($1::uuid[])',[ [book.entityId,chapter.entityId] ])
+    expect(all.rows).toHaveLength(0)
+  })
+
+  it('versions original category and template settings and preserves categories when renamed',async()=>{
+    state.userId='owner'
+    const ctx=ctxWorkspace(workspaceA)
+    const initial=await workspaceCustomization.GET(new Request('http://localhost:3000'),ctx)
+    expect(initial.status).toBe(200)
+    const before=await initial.json() as {version:number;customization:ReturnType<typeof defaultWorkspaceCustomization>}
+    const settings=structuredClone(before.customization)
+    settings.categories.push({id:'cat-relic',name:'遗物',template:'weapon',icon:'swords',enabled:true,order:3})
+    const request=(version:number,customization:typeof settings)=>new Request('http://localhost:3000',{
+      method:'PUT',headers:{Origin:'http://localhost:3000','Content-Type':'application/json'},
+      body:JSON.stringify({expectedVersion:version,customization}),
+    })
+    state.userId='viewer'
+    expect((await workspaceCustomization.PUT(request(before.version,settings),ctx)).status).toBe(404)
+    state.userId='owner'
+    const created=await workspaceCustomization.PUT(request(before.version,settings),ctx)
+    expect(created.status).toBe(200)
+    const version=(await created.json()).version as number
+    const notes=new OriginalNotesCloudAdapter(workspaceA,apiFetch)
+    const note=await notes.create(buildDefaultEntry({...newWorldEntryData(),title:'遗物卷宗',
+      category:'遗物',template:'weapon'}))
+    settings.categories[settings.categories.length-1].name='古代遗物'
+    const changed=await workspaceCustomization.PUT(request(version,settings),ctx)
+    expect(changed.status).toBe(200)
+    expect((await changed.json()).renamedEntries).toBe(1)
+    const after=(await notes.list()).find(row=>row.entityId===note.entityId)
+    expect(after?.entity.category).toBe('古代遗物')
+    expect(after?.version).toBe(2)
+    expect((await workspaceCustomization.PUT(request(version,settings),ctx)).status).toBe(409)
+  })
+
+  it('searches original notes, events and novel chapters without leaking other worlds',async()=>{
+    state.userId='owner'
+    const notes=new OriginalNotesCloudAdapter(workspaceA,apiFetch)
+    const target=await notes.create(buildDefaultEntry({...newWorldEntryData(),title:'海雾秘典',
+      summary:'古老龙族的传说'}))
+    const event=new OriginalEventsCloudAdapter(workspaceA,apiFetch)
+    await event.create(buildDefaultEvent({...newEventData(),title:'海雾苏醒'}))
+    const lookup=(workspaceId:string,q:string)=>workspaceSearch.GET(
+      new Request('http://localhost:3000/api/workspaces/'+workspaceId+'/search?q='+encodeURIComponent(q)),
+      ctxWorkspace(workspaceId))
+    state.userId='viewer'
+    const response=await lookup(workspaceA,'海雾')
+    expect(response.status).toBe(200)
+    const items=(await response.json()).hits as Array<{entityId:string;kind:string}>
+    expect(items.some(item=>item.entityId===target.entityId&&item.kind==='world')).toBe(true)
+    expect(items.some(item=>item.kind==='event')).toBe(true)
+    state.userId='outsider'
+    expect((await lookup(workspaceA,'海雾')).status).toBe(404)
+    state.userId='owner'
+  })
+
+  it('exports cloud .ocbak, remaps image/parent/nationality IDs and imports into empty world',async()=>{
+    state.userId='owner'
+    const source='44444444-4444-4444-8444-444444444444'
+    const target='55555555-5555-4555-8555-555555555555'
+    await state.db!.query(`INSERT INTO workspaces(id,owner_id,name) VALUES($1,'owner','备份源'),($2,'owner','备份目标')`,[source,target])
+    await state.db!.query(`INSERT INTO workspace_members(workspace_id,user_id,role)
+      VALUES($1,'owner','owner'),($2,'owner','owner')`,[source,target])
+    const createCountry=new OriginalCountriesCloudAdapter(source,apiFetch)
+    const createCharacter=new OriginalCharactersCloudAdapter(source,apiFetch)
+    const createNotes=new OriginalNotesCloudAdapter(source,apiFetch)
+    const country=await createCountry.create(buildDefaultCountry({...newCountryData(),name:'迁移国家'}))
+    const file=new FormData()
+    const bytes=Uint8Array.from([137,80,78,71,13,10,26,10,0,0,0,0])
+    file.append('file',new File([bytes],'cover.png',{type:'image/png'}))
+    const up=await uploadRoute.POST(new Request('http://localhost:3000',{method:'POST',
+      headers:{Origin:'http://localhost:3000'},body:file}),ctxWorkspace(source))
+    expect(up.status).toBe(201)
+    const asset=(await up.json()).asset as {id:string}
+    const original=await createCharacter.create(buildDefaultCharacter({...newCharacterData(),
+      name:'迁移角色',countryId:country.entity.id,avatarUrl:'/api/media/'+asset.id}))
+    const book=await createNotes.create(buildDefaultEntry({...newWorldEntryData(),
+      title:'迁移小说',category:'小说',parentId:null}))
+    const chapter=await createNotes.create(buildDefaultEntry({...newWorldEntryData(),
+      title:'迁移章节',category:'小说',parentId:book.entity.id}))
+    const novelContext={params:Promise.resolve({workspaceId:source,entryId:book.entityId})}
+    expect((await cloudNovels.DELETE(new Request('http://localhost:3000',{method:'DELETE',
+      headers:{Origin:'http://localhost:3000','Content-Type':'application/json'},
+      body:JSON.stringify({expectedVersion:1})}),novelContext)).status).toBe(200)
+    const result=await workspaceBackup.GET(new Request('http://localhost:3000'),ctxWorkspace(source))
+    expect(result.status).toBe(200)
+    const text=await result.text()
+    const json=JSON.parse(text) as {version:number;cloud:{records:unknown[];assets:unknown[]}}
+    expect(json.version).toBe(1)
+    expect(json.cloud.records).toHaveLength(4)
+    expect(json.cloud.assets).toHaveLength(1)
+    const importRequest=()=>new Request('http://localhost:3000',{
+      method:'POST',headers:{Origin:'http://localhost:3000','Content-Type':'application/json'},
+      body:text,
+    })
+    const imported=await workspaceBackup.POST(importRequest(),ctxWorkspace(target))
+    expect(imported.status).toBe(200)
+    expect((await imported.json()).restored).toBe(4)
+    const importedCountry=(await new OriginalCountriesCloudAdapter(target,apiFetch).list())[0]
+    const importedCharacter=(await new OriginalCharactersCloudAdapter(target,apiFetch).list())[0]
+    expect(importedCharacter.character.countryId).toBe(importedCountry.entity.id)
+    expect(importedCharacter.character.countryId).not.toBe(country.entity.id)
+    expect(importedCharacter.character.avatarUrl).toMatch(/^\/api\/media\//)
+    expect(importedCharacter.character.avatarUrl).not.toBe(original.character.avatarUrl)
+    const newAssetId=importedCharacter.character.avatarUrl!.replace('/api/media/','')
+    const image=await mediaRoute.GET(new Request('http://localhost:3000'),{
+      params:Promise.resolve({assetId:newAssetId})})
+    expect(image.status).toBe(200)
+    expect([...new Uint8Array(await image.arrayBuffer())]).toEqual([...bytes])
+    const trash=await workspaceTrash.GET(new Request('http://localhost:3000'),ctxWorkspace(target))
+    const deleted=(await trash.json()).items as Array<{id:string;title:string;version:number}>
+    const copiedBook=deleted.find(item=>item.title==='迁移小说')
+    expect(copiedBook?.version).toBe(2)
+    const recovery=await workspaceTrashItem.POST(new Request('http://localhost:3000',{
+      method:'POST',headers:{Origin:'http://localhost:3000','Content-Type':'application/json'},
+      body:JSON.stringify({expectedVersion:2}),
+    }),{params:Promise.resolve({workspaceId:target,entityId:copiedBook!.id})})
+    expect(recovery.status).toBe(200)
+    expect((await recovery.json()).items).toBe(2)
+    const notes=(await new OriginalNotesCloudAdapter(target,apiFetch).list())
+    expect(notes.find(item=>item.entity.title==='迁移章节')?.entity.parentId)
+      .toBe(notes.find(item=>item.entity.title==='迁移小说')?.entity.id)
+    expect((await workspaceBackup.POST(importRequest(),ctxWorkspace(target))).status).toBe(409)
   })
 
   it('enforces login and same-origin protection', async () => {
