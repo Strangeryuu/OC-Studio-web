@@ -44,14 +44,62 @@ export async function PUT(request:Request,context:Context){
   try{
     await client.query('BEGIN')
     await client.query('SELECT id FROM workspaces WHERE id=$1 FOR NO KEY UPDATE',[workspaceId])
-    const result=await client.query<{version:number}>(
-      "SELECT version FROM workspace_settings WHERE workspace_id=$1 AND setting_key='customization' FOR UPDATE",
+    const result=await client.query<{version:number;setting_value:unknown}>(
+      "SELECT version,setting_value FROM workspace_settings WHERE workspace_id=$1 AND setting_key='customization' FOR UPDATE",
       [workspaceId])
     const version=result.rows[0]?.version??0
     if(version!==req.expectedVersion){
       await client.query('ROLLBACK')
       return NextResponse.json({error:'VERSION_CONFLICT',actualVersion:version},{status:409})
     }
+    const prior=result.rows[0]
+      ?readWorkspaceCustomization(result.rows[0].setting_value):defaultWorkspaceCustomization()
+    if(!prior){
+      await client.query('ROLLBACK')
+      return NextResponse.json({error:'INVALID_SAVED_CUSTOMIZATION'},{status:409})
+    }
+    const pastById=new Map(prior.categories.map(row=>[row.id,row]))
+    const changedCategories=content.categories.filter(row=>{
+      const old=pastById.get(row.id)
+      return old && old.name!==row.name
+    })
+    let renamed=0
+    for(const category of changedCategories){
+      const oldName=pastById.get(category.id)!.name
+      const found=await client.query<{
+        id:string;version:number;title:string;content:Record<string,unknown>
+      }>(`SELECT id,version,title,content FROM entities
+        WHERE workspace_id=$1 AND kind='worldEntry' AND content->>'category'=$2
+        ORDER BY local_id FOR UPDATE LIMIT 501`,[workspaceId,oldName])
+      if(found.rows.length>500){
+        await client.query('ROLLBACK')
+        return NextResponse.json({error:'CATEGORY_RENAME_TOO_LARGE'},{status:413})
+      }
+      for(const row of found.rows){
+        const next={...row.content,category:category.name}
+        const nextVersion=row.version+1
+        await client.query(`UPDATE entities SET content=$1::jsonb,version=$2,updated_by=$3,updated_at=now()
+          WHERE id=$4 AND workspace_id=$5`,
+          [JSON.stringify(next),nextVersion,user.id,row.id,workspaceId])
+        await client.query(`INSERT INTO entity_revisions(entity_id,version,actor_id,action,summary,content_snapshot)
+          VALUES($1,$2,$3,'update','分类重命名',$4::jsonb)`,[
+          row.id,nextVersion,user.id,JSON.stringify({title:row.title,data:next})])
+        await client.query(`INSERT INTO change_events(entity_id,version,actor_id,action,changes)
+          VALUES($1,$2,$3,'update',$4::jsonb)`,[
+          row.id,nextVersion,user.id,JSON.stringify([{
+            field:'category',oldValue:oldName,newValue:category.name,
+          }])])
+        renamed++
+      }
+    }
+    // A renamed template keeps its old name as an alias, preserving original
+    // WorldEntry.template overrides throughout the workspace and history.
+    const oldTemplates=new Map(prior.templates.map(t=>[t.id,t]))
+    content.templates=content.templates.map(next=>{
+      const old=oldTemplates.get(next.id)
+      return old&&old.name!==next.name?
+        {...next,aliases:[...new Set([...next.aliases,...old.aliases,old.name])]}:next
+    })
     const updated=await client.query<{version:number}>(`INSERT INTO workspace_settings
        (workspace_id,setting_key,setting_value,version)
        VALUES($1,'customization',$2::jsonb,1)
@@ -63,7 +111,7 @@ export async function PUT(request:Request,context:Context){
       [workspaceId,user.id,workspaceId,JSON.stringify({version:updated.rows[0].version,
         categories:content.categories.length,templates:content.templates.length})])
     await client.query('COMMIT')
-    return NextResponse.json({customization:content,version:updated.rows[0].version})
+    return NextResponse.json({customization:content,version:updated.rows[0].version,renamedEntries:renamed})
   }catch(error){await client.query('ROLLBACK');throw error}
   finally{client.release()}
 }
