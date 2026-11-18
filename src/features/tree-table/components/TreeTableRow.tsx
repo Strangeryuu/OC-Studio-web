@@ -37,6 +37,7 @@ interface TreeTableRowProps {
   tagsById: Map<number, Tag>
   countryOptions: FilterOption<number | 'none'>[]
   busy: boolean
+  readOnly?: boolean
   handlers: TreeTableRowHandlers
 }
 
@@ -99,10 +100,11 @@ export function TreeTableRow({
   tagsById,
   countryOptions,
   busy,
+  readOnly = false,
   handlers,
 }: TreeTableRowProps) {
-  const canAddChild = row.kind !== 'event' && !(row.kind === 'group' && row.countryId == null)
-  const canDelete = row.kind !== 'group'
+  const canAddChild = !readOnly && row.kind !== 'event' && !(row.kind === 'group' && row.countryId == null)
+  const canDelete = !readOnly && row.kind !== 'group'
 
   return (
     <tr
@@ -150,6 +152,7 @@ export function TreeTableRow({
           ) : (
             <EditableCell
               value={labelOf(row)}
+              disabled={readOnly || busy}
               label={
                 row.kind === 'entry'
                   ? '词条标题'
@@ -205,6 +208,7 @@ export function TreeTableRow({
             {row.character ? (
               <EditableCell
                 value={cellText(row.character.race)}
+                disabled={readOnly || busy}
                 label="种族"
                 className="w-full"
                 onCommit={(value) => handlers.onEdit(row, 'race', value)}
@@ -215,6 +219,7 @@ export function TreeTableRow({
             {row.character ? (
               <EditableCell
                 value={cellText(row.character.occupation)}
+                disabled={readOnly || busy}
                 label="职业"
                 className="w-full"
                 onCommit={(value) => handlers.onEdit(row, 'occupation', value)}
@@ -225,6 +230,7 @@ export function TreeTableRow({
             {row.character ? (
               <FilterSelect<number | 'none'>
                 value={row.countryId ?? 'none'}
+                disabled={readOnly || busy}
                 onChange={(value) => {
                   void handlers.onSetCountry(row, value === 'none' ? null : value)
                 }}

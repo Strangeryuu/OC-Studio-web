@@ -34,6 +34,7 @@ interface FilterSelectProps<T extends string | number> {
   /** 触发按钮里文字那一层的类名（需要截断时传 max-w-* truncate） */
   labelClassName?: string
   chevronSize?: number
+  disabled?: boolean
   /** 面板最大高度（用于长列表滚动） */
   maxHeightClassName?: string
 }
@@ -49,6 +50,7 @@ export function FilterSelect<T extends string | number>({
   activeItemClassName = 'bg-[var(--oc-hover)] text-ink',
   labelClassName,
   chevronSize = 14,
+  disabled = false,
   maxHeightClassName = 'max-h-64',
 }: FilterSelectProps<T>) {
   const [open, setOpen] = useState(false)
@@ -61,7 +63,7 @@ export function FilterSelect<T extends string | number>({
 
   return (
     <Menu.Root open={open} onOpenChange={setOpen} modal={false} loopFocus>
-      <Menu.Trigger className={triggerClassName}>
+      <Menu.Trigger disabled={disabled} className={triggerClassName}>
         <span className={labelClassName}>{selectedLabel}</span>
         <ChevronDown size={chevronSize} strokeWidth={2} />
       </Menu.Trigger>

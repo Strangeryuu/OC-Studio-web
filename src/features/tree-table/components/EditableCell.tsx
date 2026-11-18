@@ -22,6 +22,7 @@ interface EditableCellProps {
   label?: string
   className?: string
   mono?: boolean
+  disabled?: boolean
 }
 
 export function EditableCell({
@@ -31,6 +32,7 @@ export function EditableCell({
   label = '名称',
   className = '',
   mono = false,
+  disabled = false,
 }: EditableCellProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(value)
@@ -49,7 +51,7 @@ export function EditableCell({
       cancelledRef.current = false
       return
     }
-    if (saving) return
+    if (saving || disabled) return
     const next = draft.trim()
     if (next === '' || next === value) {
       setDraft(value)
@@ -73,7 +75,7 @@ export function EditableCell({
         ref={inputRef}
         value={draft}
         aria-label={label}
-        disabled={saving}
+        disabled={saving || disabled}
         onChange={(event) => setDraft(event.target.value)}
         onBlur={() => void commit()}
         onClick={(event) => event.stopPropagation()}
@@ -99,6 +101,7 @@ export function EditableCell({
     <button
       type="button"
       title={value ? `${value} · 点击编辑` : '点击编辑'}
+      disabled={disabled}
       onClick={(event) => {
         event.stopPropagation()
         setDraft(value)
