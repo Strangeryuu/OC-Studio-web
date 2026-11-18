@@ -660,8 +660,11 @@ async function run() {
       countries:[{id:7,name:'旧版迁移国家'}],
       events:[],worldEntries:[],
       tags:[{id:1,name:'旧版分类标签',color:'#4ecdc4'}],
-      periods:[],meta:[],
+      periods:[{id:9,name:'旧时代年表'}],
+      meta:[{id:1,worldName:'旧版世界'}],
     },
+    config:{inspirations:[{id:'i-old',title:'旧版灵感',content:{type:'doc',content:[]}}]},
+    journal:['{"ts":"2026-11-18T00:00:00Z","action":"create"}'],
   }
   const legacyResponse = await scopedMutation(legacyWorld,'/backup','POST',legacyArchive)
   const legacyResult=await legacyResponse.json()
@@ -688,6 +691,15 @@ async function run() {
   assert(legacyMedia.status===200 &&
     (await legacyMedia.arrayBuffer()).byteLength===tinyPng.byteLength,
     'Original desktop inline image was lost during conversion')
+  const legacyRoundTrip=await scoped(legacyWorld,'/backup')
+  assert(legacyRoundTrip.status===200,'Legacy backup could not be re-exported')
+  const legacyReexport=await legacyRoundTrip.json()
+  assert(legacyReexport.data.periods[0].name==='旧时代年表' &&
+    legacyReexport.data.meta[0].worldName==='旧版世界' &&
+    legacyReexport.config.inspirations[0].title==='旧版灵感' &&
+    legacyReexport.journal.length===1 &&
+    legacyReexport.cloud.settings.some(setting=>setting.key==='desktop-extras'),
+    'Original desktop-only period/meta/inspiration/journal stores were lost in cloud migration')
   const badLegacy=await makeWorld('CI Invalid Archive')
   const invalidArchive={...legacyArchive,cloud:{format:'unrecognized-cloud-backup'}}
   const rejected=await scopedMutation(badLegacy,'/backup','POST',invalidArchive)

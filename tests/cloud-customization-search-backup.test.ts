@@ -41,6 +41,17 @@ describe('cloud templates, categories, original global search and portable backu
     const parsed=parsePortableBackup(legacy)
     expect(parsed?.source).toBe('legacy')
     expect(parsed?.records.map(r=>r.sourceId)).toEqual(['character:1','country:1'])
+    const withExtras=parsePortableBackup({...legacy,
+      data:{...legacy.data,periods:[{id:8,name:'旧时纪'}],meta:[{id:1,worldName:'旧世界'}]},
+      config:{inspirations:[{id:'original-inspiration',title:'不丢失的灵感'}]},
+      journal:['{"ts":"2026-11-18T00:00:00Z"}'],
+    })
+    const extras=withExtras?.settings.find(item=>item.key==='desktop-extras')?.value as
+      {periods:unknown[];meta:unknown[];config:Record<string,unknown>;journal:string[]}
+    expect(extras.periods).toHaveLength(1)
+    expect(extras.meta).toHaveLength(1)
+    expect(extras.config.inspirations).toHaveLength(1)
+    expect(extras.journal).toHaveLength(1)
     const local=new Map([['character:1',12],['country:1',13]])
     const output=remapPortableContent('character',{name:'角色',countryId:1},{local,
       uuid:new Map(),media:new Map(),tags:new Map()})

@@ -4,13 +4,14 @@ import { pool } from '@/lib/cloud/server/db'
 import { readPrivateImage, writePrivateImage, removePrivateImage } from '@/lib/cloud/server/media-store'
 import { detectAllowedImage, MAX_UPLOAD_BYTES } from '@/lib/cloud/image-types'
 import { readWorkspaceCustomization } from '@/lib/cloud/workspace-customization'
-import { parsePortableBackup, remapPortableContent, type ImportIdMaps, type PortableBackup } from '@/lib/cloud/backup-format'
+import { parsePortableBackup, remapPortableContent, readDesktopArchiveExtras,
+  type ImportIdMaps } from '@/lib/cloud/backup-format'
 import { readEntityDocument } from '@/lib/cloud/entity-input'
 import type { PoolClient } from 'pg'
 
 const MAX_EXPORT_BYTES=60*1024*1024
 const MAX_RECORDS=3000
-const ALLOWED_SETTINGS=['customization','world-cover','character-config'] as const
+const ALLOWED_SETTINGS=['customization','world-cover','character-config','desktop-extras'] as const
 interface Row {id:string;local_id:string|number;kind:string;title:string;content:Record<string,unknown>;
   version:number;deleted_at:string|null}
 interface Rev {entity_id:string;version:number;action:'create'|'update'|'delete'|'restore';summary:string|null;
@@ -72,14 +73,25 @@ export async function exportWorkspaceBackup(workspaceId:string,workspaceName:str
   }))
   const active=(kind:string)=>entities.rows.filter(row=>row.kind===kind&&row.deleted_at===null).map(asLegacy)
   const config=settings.rows.find(item=>item.setting_key==='customization')
+  const desktopSettings=settings.rows.find(item=>item.setting_key==='desktop-extras')
+  const desktop=desktopSettings?readDesktopArchiveExtras(desktopSettings.setting_value):null
+  if(desktopSettings&&!desktop)throw error('INVALID_SAVED_DESKTOP_EXTRAS')
+  const configFromDesktop=desktop?.config??{}
+  const currentTemplates=config&&obj(config.setting_value)?{
+    categories:config.setting_value.categories,templates:config.setting_value.templates,
+  }:{}
+  const originalConfig={...configFromDesktop,...currentTemplates}
+  const inlineDesktop=walkReplace(desktop,mediaInline) as typeof desktop
   const content={
     version:1,exportedAt:new Date().toISOString(),
     data:{characters:active('character'),events:active('event'),
       countries:active('country'),worldEntries:active('worldEntry'),
-      tags:tags.rows.map((tag,i)=>({...tag,id:i+1})),periods:[],meta:[]},
-    ...(config&&obj(config.setting_value)?{config:{
-      categories:config.setting_value.categories,templates:config.setting_value.templates,
-    }}:{}),
+      tags:tags.rows.map((tag,i)=>({...tag,id:i+1})),
+      periods:inlineDesktop?.periods??[],meta:inlineDesktop?.meta??[]},
+    ...(Object.keys(originalConfig).length>0?
+      {config:walkReplace(originalConfig,mediaInline)}:{}),
+    ...(inlineDesktop?.manifest?{manifest:inlineDesktop.manifest}:{}),
+    ...(inlineDesktop?.journal?{journal:inlineDesktop.journal}:{}),
     cloud:{format:'oc-studio-web-v1',sourceWorkspaceId:workspaceId,sourceName:workspaceName,
       records,assets,tags:tags.rows,settings:settings.rows.map(item=>({
         key:item.setting_key,value:item.setting_value,

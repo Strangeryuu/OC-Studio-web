@@ -11,6 +11,31 @@ export interface PortableEntity {
 export interface PortableAsset {id:string;mime:string;base64:string}
 export interface PortableTag {id:string;name:string;color:string;legacyId?:number}
 export interface PortableSetting {key:string;value:unknown}
+/** Original desktop-only stores are retained for round-trip export even when
+ * their cloud rendering is not yet supported. */
+export interface DesktopArchiveExtras {
+  periods: unknown[]
+  meta: unknown[]
+  config?: Record<string, unknown>
+  manifest?: Record<string, unknown>
+  journal?: string[]
+}
+export function readDesktopArchiveExtras(value:unknown): DesktopArchiveExtras|null {
+  if(!obj(value)||!Array.isArray(value.periods)||value.periods.length>3000||
+    !Array.isArray(value.meta)||value.meta.length>100||
+    (value.config!==undefined&&!obj(value.config))||
+    (value.manifest!==undefined&&!obj(value.manifest))||
+    (value.journal!==undefined&&(!Array.isArray(value.journal)||
+      value.journal.length>20000||!value.journal.every(x=>typeof x==='string'&&x.length<=100000))))return null
+  const size=JSON.stringify(value).length
+  if(size>45_000_000)return null
+  return {
+    periods:value.periods,meta:value.meta,
+    ...(value.config===undefined?{}:{config:value.config as Record<string,unknown>}),
+    ...(value.manifest===undefined?{}:{manifest:value.manifest as Record<string,unknown>}),
+    ...(value.journal===undefined?{}:{journal:value.journal as string[]}),
+  }
+}
 export interface PortableBackup {
   records:PortableEntity[];assets:PortableAsset[];tags:PortableTag[];settings:PortableSetting[]
   source:'cloud'|'legacy'
@@ -75,8 +100,9 @@ export function parsePortableBackup(raw:unknown):PortableBackup|null{
     }
     const settings:PortableSetting[]=[]
     for(const value of cloud.settings){
-      if(!obj(value)||!['customization','world-cover','character-config'].includes(String(value.key)))return null
+      if(!obj(value)||!['customization','world-cover','character-config','desktop-extras'].includes(String(value.key)))return null
       if(value.key==='customization'&&!readWorkspaceCustomization(value.value))return null
+      if(value.key==='desktop-extras'&&!readDesktopArchiveExtras(value.value))return null
       settings.push({key:value.key as string,value:value.value})
     }
     if(new Set(records.map(r=>r.sourceId)).size!==records.length||
@@ -114,6 +140,15 @@ export function parsePortableBackup(raw:unknown):PortableBackup|null{
     }
   }
   const settings:PortableSetting[]=[]
+  const extras=readDesktopArchiveExtras({
+    periods:raw.data.periods??[],meta:raw.data.meta??[],
+    ...(raw.config===undefined?{}:{config:raw.config}),
+    ...(raw.manifest===undefined?{}:{manifest:raw.manifest}),
+    ...(raw.journal===undefined?{}:{journal:raw.journal}),
+  })
+  if(!extras)return null
+  if(extras.periods.length||extras.meta.length||extras.config||extras.manifest||extras.journal)
+    settings.push({key:'desktop-extras',value:extras})
   if(obj(raw.config)&&Array.isArray(raw.config.categories)&&Array.isArray(raw.config.templates)){
     const normalized=readWorkspaceCustomization({
       categories:raw.config.categories,templates:raw.config.templates,
