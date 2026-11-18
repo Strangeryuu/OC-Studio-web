@@ -18,7 +18,7 @@ let element: HTMLDivElement
 const id = (n: number) => '00000000-0000-4000-8000-' + String(n).padStart(12, '0')
 const character: OriginalCharacterSnapshot = {
   workspaceId, entityId: id(1), version: 1,
-  character: { ...buildDefaultCharacter({ ...newCharacterData(), name: '云端角色', race: '人类' }), id: 1 },
+  character: { ...buildDefaultCharacter({ ...newCharacterData(), name: '云端角色', race: '人类', countryId: 2 }), id: 1 },
 }
 const country: OriginalCountrySnapshot = {
   workspaceId, entityId: id(2), version: 1,
