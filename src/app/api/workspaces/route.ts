@@ -2,6 +2,7 @@ import { mutationOriginAllowed } from '@/lib/cloud/server/origin'
 import { NextResponse } from 'next/server'
 import { currentCloudUser } from '@/lib/cloud/server/authorization'
 import { pool } from '@/lib/cloud/server/db'
+import { isSiteAdmin } from '@/lib/cloud/site-policy'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -10,11 +11,11 @@ export async function GET() {
   const user = await currentCloudUser()
   if (!user) return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 })
   const result = await pool.query(
-    `SELECT w.id,w.name,w.description,w.updated_at,m.role
-     FROM workspaces w JOIN workspace_members m ON m.workspace_id=w.id
-     WHERE m.user_id=$1 AND w.deleted_at IS NULL
+    `SELECT w.id,w.name,w.description,w.updated_at,COALESCE(m.role,CASE WHEN $2::boolean THEN 'owner' ELSE 'viewer' END) AS role
+     FROM workspaces w LEFT JOIN workspace_members m ON m.workspace_id=w.id AND m.user_id=$1
+     WHERE (m.user_id IS NOT NULL OR $2::boolean) AND w.deleted_at IS NULL
      ORDER BY w.updated_at DESC LIMIT 100`,
-    [user.id],
+    [user.id,isSiteAdmin(user.role)],
   )
   return NextResponse.json({ workspaces: result.rows })
 }

@@ -3,15 +3,16 @@ import { headers } from 'next/headers'
 import { auth } from './auth'
 import { pool } from './db'
 import { canPerformWorkspaceAction, type WorkspaceAction, type WorkspaceRole } from '@/lib/cloud/permissions'
+import { isSiteAdmin } from '@/lib/cloud/site-policy'
 
-export interface CloudUser { id: string; email: string; name: string }
+export interface CloudUser { id: string; email: string; name: string; role: string | null }
 
 // Read session and current account status from DB at every sensitive API request.
 export async function currentCloudUser(): Promise<CloudUser | null> {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session || session.user.banned) return null
   const result = await pool.query<CloudUser>(
-    'SELECT id, email, name FROM "user" WHERE id=$1 AND COALESCE(banned,false)=false',
+    'SELECT id, email, name,role FROM "user" WHERE id=$1 AND COALESCE(banned,false)=false',
     [session.user.id],
   )
   return result.rows[0] ?? null
@@ -25,6 +26,10 @@ export async function authorizedWorkspace(
   user: CloudUser, workspaceId: string, action: WorkspaceAction,
 ): Promise<WorkspaceRole | null> {
   if (!isUuid(workspaceId)) return null
+  if (isSiteAdmin(user.role)) {
+    const workspace=await pool.query('SELECT id FROM workspaces WHERE id=$1 AND deleted_at IS NULL',[workspaceId])
+    return workspace.rowCount ? 'owner' : null
+  }
   const result = await pool.query<{ role: WorkspaceRole }>(
     `SELECT m.role FROM workspace_members m
      JOIN workspaces w ON w.id=m.workspace_id

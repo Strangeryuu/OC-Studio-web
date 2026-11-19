@@ -6,6 +6,8 @@ import { auth } from '@/lib/cloud/server/auth'
 import { OverlayRoot } from '@/components/layout/OverlayRoot'
 import { SignOutButton } from '@/components/cloud/SignOutButton'
 import { THEME_BOOT_SCRIPT } from '@/lib/theme/boot'
+import { setupNeeded } from '@/lib/cloud/server/site-admin'
+import { isSiteAdmin } from '@/lib/cloud/site-policy'
 import '../globals.css'
 
 export const metadata: Metadata = {
@@ -14,6 +16,7 @@ export const metadata: Metadata = {
 }
 
 export default async function StudioLayout({ children }: { children: React.ReactNode }) {
+  if(await setupNeeded())redirect('/setup')
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session || session.user.banned) redirect('/login')
   return (
@@ -25,8 +28,8 @@ export default async function StudioLayout({ children }: { children: React.React
             <Link href="/" className="font-semibold">OC Studio Cloud</Link>
             <nav className="flex items-center gap-4 text-sm">
               <a href="/join" className="opacity-80 hover:opacity-100">接受邀请</a>
-              {session.user.role?.split(',').includes('admin') &&
-                <a href="/admin/users" className="opacity-80 hover:opacity-100">用户管理</a>}
+              {isSiteAdmin(session.user.role) &&
+                <a href="/admin" className="opacity-80 hover:opacity-100">管理员菜单</a>}
               <SignOutButton />
             </nav>
           </div>
