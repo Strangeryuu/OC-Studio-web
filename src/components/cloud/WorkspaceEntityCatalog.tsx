@@ -329,7 +329,7 @@ export function WorkspaceEntityCatalog({
       imageSrc={header ? resolveImageUrl(header, 'header') : undefined}
       tintSrc={avatar ? resolveImageUrl(avatar, kind === 'country' ? 'flag' : 'avatar') : undefined}
       emblem={avatar && kind !== 'event' ? <Avatar src={avatar} type={kind === 'country' ? 'flag' : 'avatar'} fill /> : undefined}
-      onSelect={() => onSelect(item.entityId)} isMobile={false} sortable={canDrag}
+      onSelect={() => onSelect(item.entityId)} disabled={blocked} isMobile={false} sortable={canDrag}
       actions={<>
         {kind === 'character' && folderLoaded && !blocked && onCreate &&
           <MoveToFolderMenu tone="overlay" folders={knownFolders} current={(data as Character).folder}
