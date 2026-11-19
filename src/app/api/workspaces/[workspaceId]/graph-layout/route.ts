@@ -101,25 +101,8 @@ export async function POST(request: Request, context: Context) {
         'WHERE id=$4 AND workspace_id=$5 AND version=$6',
         [JSON.stringify(next), version, user.id, current.id, workspaceId, current.version],
       )
-      await client.query(
-        "INSERT INTO entity_revisions(entity_id,version,actor_id,action,summary,content_snapshot) " +
-        "VALUES($1,$2,$3,'update','关系图批量布局',$4::jsonb)",
-        [current.id, version, user.id, JSON.stringify({ title: current.title, data: next })],
-      )
-      await client.query(
-        "INSERT INTO change_events(entity_id,version,actor_id,action,changes) " +
-        "VALUES($1,$2,$3,'update',$4::jsonb)",
-        [current.id, version, user.id, JSON.stringify([{
-          field: 'graphPosition', oldValue: before ?? null, newValue: next.graphPosition,
-        }])],
-      )
       output.positions.push({ id: current.id, version, x: position.x, y: position.y })
     }
-    await client.query(
-      'INSERT INTO audit_logs(workspace_id,actor_id,action,target_id,details) ' +
-      "VALUES($1,$2,'workspace:graph:relayout',$3,$4::jsonb)",
-      [workspaceId, user.id, workspaceId, JSON.stringify({ nodes: positions.length })],
-    )
     await client.query('COMMIT')
     return NextResponse.json(output, { headers: noStore })
   } catch (error) {

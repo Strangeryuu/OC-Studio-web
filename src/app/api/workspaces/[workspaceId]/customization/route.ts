@@ -81,14 +81,6 @@ export async function PUT(request:Request,context:Context){
         await client.query(`UPDATE entities SET content=$1::jsonb,version=$2,updated_by=$3,updated_at=now()
           WHERE id=$4 AND workspace_id=$5`,
           [JSON.stringify(next),nextVersion,user.id,row.id,workspaceId])
-        await client.query(`INSERT INTO entity_revisions(entity_id,version,actor_id,action,summary,content_snapshot)
-          VALUES($1,$2,$3,'update','分类重命名',$4::jsonb)`,[
-          row.id,nextVersion,user.id,JSON.stringify({title:row.title,data:next})])
-        await client.query(`INSERT INTO change_events(entity_id,version,actor_id,action,changes)
-          VALUES($1,$2,$3,'update',$4::jsonb)`,[
-          row.id,nextVersion,user.id,JSON.stringify([{
-            field:'category',oldValue:oldName,newValue:category.name,
-          }])])
         renamed++
       }
     }

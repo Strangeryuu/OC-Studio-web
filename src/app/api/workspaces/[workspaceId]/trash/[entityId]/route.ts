@@ -89,12 +89,6 @@ async function operate(request: Request, context: Context, permanent: boolean) {
         const nextVersion=row.version+1
         await client.query(`UPDATE entities SET deleted_at=NULL,version=$1,updated_at=now(),updated_by=$2
           WHERE id=$3 AND workspace_id=$4`,[nextVersion,user.id,row.id,workspaceId])
-        await client.query(`INSERT INTO entity_revisions(entity_id,version,actor_id,action,summary,content_snapshot)
-          VALUES($1,$2,$3,'restore',$4,$5::jsonb)`,[row.id,nextVersion,user.id,
-          '从回收站恢复',JSON.stringify({title:row.title,data:row.content})])
-        await client.query(`INSERT INTO change_events(entity_id,version,actor_id,action,changes)
-          VALUES($1,$2,$3,'restore',$4::jsonb)`,[row.id,nextVersion,user.id,
-          JSON.stringify([{field:'deleted',oldValue:true,newValue:false}])])
       }
     }
     await client.query(`INSERT INTO audit_logs(workspace_id,actor_id,action,target_id,details)

@@ -126,33 +126,11 @@ export async function DELETE(request: Request, context: Context) {
          WHERE id=$4 AND workspace_id=$5`,
         [JSON.stringify(next), version, user.id, row.id, workspaceId],
       )
-      await client.query(
-        `INSERT INTO entity_revisions(entity_id,version,actor_id,action,summary,content_snapshot)
-         VALUES($1,$2,$3,'update','表格删除关联调整',$4::jsonb)`,
-        [row.id, version, user.id, JSON.stringify({ title: row.title, data: next })],
-      )
-      await client.query(
-        `INSERT INTO change_events(entity_id,version,actor_id,action,changes)
-         VALUES($1,$2,$3,'update',$4::jsonb)`,
-        [row.id, version, user.id, JSON.stringify([{ field: 'document',
-          oldValue: { title: row.title, data: row.content }, newValue: { title: row.title, data: next } }])],
-      )
     }
     const version = target.version + 1
     await client.query(
       `UPDATE entities SET deleted_at=now(),version=$1,updated_by=$2,updated_at=now()
        WHERE id=$3 AND workspace_id=$4`, [version, user.id, target.id, workspaceId],
-    )
-    await client.query(
-      `INSERT INTO entity_revisions(entity_id,version,actor_id,action,summary,content_snapshot)
-       VALUES($1,$2,$3,'delete','表格删除',$4::jsonb)`,
-      [target.id, version, user.id, JSON.stringify({ title: target.title, data: target.content })],
-    )
-    await client.query(
-      `INSERT INTO change_events(entity_id,version,actor_id,action,changes)
-       VALUES($1,$2,$3,'delete',$4::jsonb)`,
-      [target.id, version, user.id, JSON.stringify([{ field: 'document',
-        oldValue: { title: target.title, data: target.content }, newValue: null }])],
     )
     await client.query('COMMIT')
     return NextResponse.json({ deleted: true, promotedOrUnlinked: updates.length, version })
