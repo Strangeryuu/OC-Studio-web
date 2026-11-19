@@ -912,7 +912,7 @@ async function run() {
   assert(legacyReexport.data.periods[0].name==='旧时代年表' &&
     legacyReexport.data.meta[0].worldName==='旧版世界' &&
     legacyReexport.config.inspirations[0].title==='旧版灵感' &&
-    legacyReexport.journal.length===1 &&
+    legacyReexport.journal===undefined &&
     legacyReexport.cloud.settings.some(setting=>setting.key==='desktop-extras'),
     'Original desktop-only period/meta/inspiration/journal stores were lost in cloud migration')
   const badLegacy=await makeWorld('CI Invalid Archive')

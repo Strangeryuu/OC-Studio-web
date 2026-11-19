@@ -604,19 +604,16 @@ describe('original character information in cloud workspace', () => {
     expect(editor.getText()).toContain('未保存正文')
   })
 
-  it('shows the server revision history to a viewer', async () => {
+  it('hides modification history and never loads revision data', async () => {
     fake.list.mockResolvedValue([fixture(1, '只读角色')])
-    const fetchHistory = vi.fn().mockResolvedValue(new Response(JSON.stringify({ revisions: [
-      { version: 2, actor_name: '创作者', action: 'update', created_at: '2026-01-01T00:00:00Z' },
-    ] }), { status: 200 }))
+    const fetchHistory = vi.fn().mockResolvedValue(new Response(JSON.stringify({ revisions: [] }), { status: 200 }))
     stubCloudFetch(fetchHistory)
     await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'viewer' })); await Promise.resolve() })
     await click(button('只读角色'))
-    const details = container.querySelector('details')!
-    await act(async () => { details.open = true; details.dispatchEvent(new Event('toggle')); await Promise.resolve(); await Promise.resolve() })
-    expect(fetchHistory).toHaveBeenCalledWith(expect.stringContaining('/revisions'), { cache: 'no-store' })
-    expect(container.textContent).toContain('版本 2 · 创作者 · 修改')
+    expect(container.textContent).not.toContain('修改历史')
+    expect(fetchHistory.mock.calls.some(([url]) => String(url).includes('/revisions'))).toBe(false)
   })
+
 
   it('compares fields using the original form normalization', () => {
     const character = fixture(1, '甲').character

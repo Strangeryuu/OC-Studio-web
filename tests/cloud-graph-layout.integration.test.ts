@@ -88,14 +88,14 @@ describe('atomic PostgreSQL graph relayout and undo', () => {
     expect((await versions()).map(x => x.version)).toEqual([1, 1])
   })
 
-  it('commits all positions with one revision per changed entity; rejects stale and duplicate writes', async () => {
+  it('commits all positions without revision history; rejects stale and duplicate writes', async () => {
     const response = await post([b, a])
     expect(response.status).toBe(200)
     const data = await response.json() as { positions: { id: string; version: number }[] }
     expect(data.positions.map(x => x.version)).toEqual([2, 2])
     expect((await versions()).map(x => x.version)).toEqual([2, 2])
     const rev = await state.db!.query<{ count: string }>('SELECT count(*)::text AS count FROM entity_revisions')
-    expect(rev.rows[0].count).toBe('2')
+    expect(rev.rows[0].count).toBe('0')
     const before = await versions()
     const stale = await post([{ ...a, x: 30 }, { ...b, x: 30 }])
     expect(stale.status).toBe(409)
@@ -117,8 +117,8 @@ describe('atomic PostgreSQL graph relayout and undo', () => {
     ])).rejects.toThrow()
     expect(await versions()).toEqual(saved)
     const rev = await state.db!.query<{ count: string }>('SELECT count(*)::text AS count FROM entity_revisions')
-    expect(rev.rows[0].count).toBe('2')
+    expect(rev.rows[0].count).toBe('0')
     const audits = await state.db!.query<{ count: string }>('SELECT count(*)::text AS count FROM audit_logs')
-    expect(audits.rows[0].count).toBe('2')
+    expect(audits.rows[0].count).toBe('0')
   })
 })

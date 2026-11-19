@@ -102,7 +102,7 @@ describe('global image delete and replace with PostgreSQL transaction',()=>{
     expect((await edit('DELETE',before())).status).toBe(404)
     expect((await snapshot()).every(row=>row.version===1)).toBe(true)
   })
-  it('removes every matching link, soft-deletes the asset and keeps revisions',async()=>{
+  it('removes every matching link and soft-deletes the asset without revision history',async()=>{
     const result=await edit('DELETE',before())
     expect(result.status).toBe(200)
     const entities=await snapshot()
@@ -120,7 +120,7 @@ describe('global image delete and replace with PostgreSQL transaction',()=>{
       'SELECT deleted_at FROM media_assets WHERE id=$1',[asset])
     expect(media.rows[0].deleted_at).toBeTruthy()
     const rev=await state.db!.query('SELECT * FROM entity_revisions')
-    expect(rev.rows).toHaveLength(2)
+    expect(rev.rows).toHaveLength(0)
     expect((await get()).status).toBe(404)
   })
   it('replaces all references with a validated asset while preserving other fields',async()=>{
