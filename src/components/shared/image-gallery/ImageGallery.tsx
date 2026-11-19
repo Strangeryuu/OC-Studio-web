@@ -82,6 +82,7 @@ export function ImageGallery({
   const menuItems = (index: number): MediaMenuItem[] => {
     const url = images[index]
     const items: MediaMenuItem[] = [{ label: '查看大图', onSelect: () => setViewerIndex(index) }]
+    if (onAdd) items.push({ label: '添加图片', onSelect: uploadNew })
     if (onReplace) items.push({ label: '更换', onSelect: () => triggerFileUpload(index) })
     if (onReplace && enableCrop) {
       items.push({ label: '编辑', onSelect: () => void editExisting(index, url) })

@@ -3,7 +3,7 @@
 import { useLongPress } from '@/lib/useLongPress'
 import type { AlbumEntry } from './useAlbumData'
 import { useState } from 'react'
-import { Replace, Trash2 } from 'lucide-react'
+import { MediaActionButton } from './MediaActionButton'
 import { getDefaultImage } from '@/lib/image-service'
 import { getEntryImageUrl } from './album-utils'
 import { MediaContextMenu, type MediaMenuItem } from './MediaContextMenu'
@@ -90,15 +90,12 @@ export function AlbumCard({
         />
       </div>
       <div className="mt-1 truncate text-caption leading-4 text-ink-faint">{entry.sourceName}</div>
-      {(onReplace || onDelete) && <div className="mt-1 flex flex-wrap items-center gap-1">
-        {onReplace && <button type="button" onClick={onReplace}
-          aria-label={'替换图片 ' + entry.sourceName}
-          className="flex items-center gap-1 rounded-item px-1.5 py-1 text-caption text-ink-muted hover:bg-paper-alt">
-          <Replace size={13}/>替换</button>}
-        {onDelete && <button type="button" onClick={onDelete}
-          aria-label={'删除图片 ' + entry.sourceName}
-          className="flex items-center gap-1 rounded-item px-1.5 py-1 text-caption text-error hover:bg-paper-alt">
-          <Trash2 size={13}/>删除</button>}
+      {(onReplace || onDelete) && <div className="mt-1">
+        <MediaActionButton label={'图片操作 ' + entry.sourceName}
+          items={[
+            ...(onReplace ? [{ label: '替换整库图片', onSelect: onReplace }] : []),
+            ...(onDelete ? [{ label: '删除整库图片', danger: true, onSelect: onDelete }] : []),
+          ]} />
       </div>}
 
       {menuAt ? (

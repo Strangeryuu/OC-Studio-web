@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback } from 'react'
-import { ChevronLeft, ChevronRight, ImageIcon, Loader2, Replace, Trash2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ImageIcon, Loader2, MoreHorizontal } from 'lucide-react'
 import { resolveImageUrl } from '@/lib/image-service'
 import { useMediaMenu } from '@/lib/use-media-menu'
 
@@ -156,14 +156,14 @@ export function ImageGallerySlider({
               ))}
             </div>
           </div>
-          {(onReplaceAt || onRemoveAt) && <div className="absolute right-2 top-2 z-20 flex items-center gap-1">
-            {onReplaceAt && <button type="button" aria-label="替换当前图片"
-              onClick={() => onReplaceAt(currentIndex)}
-              className="rounded-full bg-paper/90 p-1.5 text-ink"><Replace size={14}/></button>}
-            {onRemoveAt && <button type="button" aria-label="删除当前图片"
-              onClick={() => onRemoveAt(currentIndex)}
-              className="rounded-full bg-paper/90 p-1.5 text-error"><Trash2 size={14}/></button>}
-          </div>}
+          {(onReplaceAt || onRemoveAt) && <button type="button"
+            aria-label="当前图片操作" title="图片操作" aria-haspopup="menu"
+            onClick={event => {
+              const rect=event.currentTarget.getBoundingClientRect()
+              onOpenMenu(currentIndex,{x:rect.right,y:rect.bottom})
+            }}
+            className="absolute right-2 top-2 z-20 rounded-control bg-paper p-1.5 text-ink">
+            <MoreHorizontal size={16}/></button>}
           {images.length > 1 ? (
             <button
               onClick={nextImage}

@@ -1,11 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import { collectBodyImageRefs } from '@/lib/image-refs'
 import { rewriteMediaReferences } from '@/lib/cloud/media-rewrite'
 import { resolveImageUrl } from '@/lib/image-service'
-import { BTN_QUIET } from '@/lib/ui-tokens'
+import { MediaActionButton } from '@/components/shared/MediaActionButton'
 
 /** Visible actions for previously uploaded pictures embedded in a TipTap document.
  * A local edit updates this editor's document. Global deletion is in the album.
@@ -18,6 +18,8 @@ export function WorkspaceBodyImageControls({ editor, document, editable, upload 
 }) {
   const [working, setWorking] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const picker = useRef<HTMLInputElement>(null)
+  const [replaceTarget, setReplaceTarget] = useState<string | null>(null)
   const pictures = collectBodyImageRefs(document)
 
   function change(oldUrl: string, newUrl: string | null) {
@@ -48,23 +50,20 @@ export function WorkspaceBodyImageControls({ editor, document, editable, upload 
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={resolveImageUrl(url)} alt={'正文图片' + (index + 1)}
           className="h-20 w-28 rounded-item object-cover" />
-        {editable && <div className="flex flex-wrap gap-1">
-          <label className={BTN_QUIET + ' cursor-pointer'}>
-            替换
-            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif"
-              aria-label={'替换正文第' + (index + 1) + '张图片'}
-              className="sr-only" disabled={working !== null}
-              onChange={event => { const file = event.target.files?.[0];event.target.value = '';void replace(url, file) }} />
-          </label>
-          <button type="button" className={BTN_QUIET}
-            disabled={working !== null}
-            onClick={() => {
-              if (window.confirm('确认从本词条正文移除图片？同一图片在其他词条的引用将保留。'))
-                change(url, null)
-            }}>删除</button>
-        </div>}
+        {editable && <MediaActionButton disabled={working !== null}
+          label={'正文图片' + (index + 1) + '操作'}
+          items={[
+            { label:'替换图片', onSelect:() => { setReplaceTarget(url);picker.current?.click() } },
+            { label:'删除图片', danger:true, onSelect:() => {
+              if (window.confirm('确认从本词条正文移除图片？同一图片在其他词条的引用将保留。')) change(url,null)
+            }},
+          ]} />}
       </div>)}
     </div>
+    <input ref={picker} type="file" className="sr-only"
+      aria-label="选择替换的正文图片" accept="image/png,image/jpeg,image/webp,image/gif"
+      disabled={!editable || working !== null}
+      onChange={event => { const file=event.target.files?.[0];event.target.value='';if(replaceTarget)void replace(replaceTarget,file) }} />
     {working && <p className="text-caption text-ink-muted">正在替换图片…</p>}
     {error && <p role="alert" className="text-caption text-error">{error}</p>}
   </div>

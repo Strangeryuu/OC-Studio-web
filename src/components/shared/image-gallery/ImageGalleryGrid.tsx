@@ -1,6 +1,6 @@
 'use client'
 
-import { Plus, ImageIcon, Loader2, Replace, Trash2 } from 'lucide-react'
+import { Plus, ImageIcon, Loader2, MoreHorizontal } from 'lucide-react'
 import { resolveImageUrl } from '@/lib/image-service'
 import { useMediaMenu } from '@/lib/use-media-menu'
 
@@ -66,16 +66,15 @@ export function ImageGalleryGrid({
                   (e.target as HTMLImageElement).src = '/images/defaults/character-avatar.svg'
                 }}
               />
-              {(onReplaceAt || onRemoveAt) && <div className="absolute right-1 top-1 z-10 flex items-center gap-1">
-                {onReplaceAt && <button type="button" title="替换图片"
-                  aria-label={'替换第'+(idx+1)+'张图片'}
-                  onClick={event => { event.stopPropagation(); onReplaceAt(idx) }}
-                  className="rounded-full bg-paper/90 p-1 text-ink"><Replace size={13}/></button>}
-                {onRemoveAt && <button type="button" title="删除图片"
-                  aria-label={'删除第'+(idx+1)+'张图片'}
-                  onClick={event => { event.stopPropagation(); onRemoveAt(idx) }}
-                  className="rounded-full bg-paper/90 p-1 text-error"><Trash2 size={13}/></button>}
-              </div>}
+              {(onReplaceAt || onRemoveAt) && <button type="button"
+                title="图片操作" aria-label={'第'+(idx+1)+'张图片操作'}
+                aria-haspopup="menu" onClick={event => {
+                  event.stopPropagation()
+                  const rect=event.currentTarget.getBoundingClientRect()
+                  onOpenMenu(idx,{x:rect.right,y:rect.bottom})
+                }}
+                className="absolute right-1 top-1 z-10 rounded-control bg-paper p-1.5 text-ink">
+                <MoreHorizontal size={15}/></button>}
             </div>
           ))}
 

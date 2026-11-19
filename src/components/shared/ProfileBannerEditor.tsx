@@ -12,7 +12,7 @@ import { ImageCropper } from './ImageCropper'
 import { StretchyHeader } from './StretchyHeader'
 import { FullscreenViewer } from './FullscreenViewer'
 import { MediaContextMenu, type MediaMenuItem } from './MediaContextMenu'
-import { MEDIA_IMG, BTN_QUIET } from '@/lib/ui-tokens'
+import { MEDIA_IMG } from '@/lib/ui-tokens'
 
 interface ProfileBannerEditorProps {
   headerUrl?: string
@@ -211,8 +211,10 @@ export function ProfileBannerEditor({
   const avatarLabel = avatarType === 'flag' ? '旗帜' : '头像'
   const headerHasActions = Boolean(onHeaderChange || (headerUrl && onHeaderRemove))
   // 角色带头像时只有一个“···”入口；独立的封面/旗帜编辑器沿用原有操作。
-  const headerActionsInAvatarMenu = avatarActionMenu && Boolean(onAvatarChange || avatarUrl)
-  const showHeaderButtons = showHeader && !hideHeaderActions && !headerActionsInAvatarMenu
+  const hasAvatarEditor = Boolean(onAvatarChange || avatarUrl)
+  const headerActionsInAvatarMenu = hasAvatarEditor
+  const showAvatarMenu = avatarActionMenu || hasAvatarEditor
+  const showStandaloneHeaderMenu = showHeader && !hideHeaderActions && !headerActionsInAvatarMenu && headerHasActions
 
   function removeHeader() {
     if (headerUrl && onHeaderRemove && window.confirm('确认从当前词条删除封面？其他词条中的同一图片仍保留。整库删除可在全局相册操作。')) onHeaderRemove()
@@ -241,7 +243,7 @@ export function ProfileBannerEditor({
       : []),
   ]
 
-  const combinedAvatarItems: MediaMenuItem[] = avatarActionMenu
+  const combinedAvatarItems: MediaMenuItem[] = (headerHasActions || headerUrl)
     ? [
         { label: avatarLabel, submenu: avatarItems },
         ...(headerHasActions || headerUrl ? [{ label: '封面', submenu: headerItems }] : []),
@@ -260,7 +262,14 @@ export function ProfileBannerEditor({
 
       {/* Header — 弹性头图（下拉拉伸 / 滚动折叠 / 视差都在 StretchyHeader 里） */}
       {showHeader ? (
-        <div {...headerMenuHandlers}>
+        <div className="relative" {...headerMenuHandlers}>
+          {showStandaloneHeaderMenu && <button type="button" title="封面操作" aria-label="封面操作"
+            aria-haspopup="menu" aria-expanded={menu?.target === 'header'}
+            onClick={event => { event.stopPropagation();const rect=event.currentTarget.getBoundingClientRect()
+              setMenu({x:rect.right,y:rect.bottom,target:'header'}) }}
+            className="absolute right-2 top-2 z-10 inline-flex h-8 w-8 items-center justify-center rounded-control border border-line bg-paper text-ink-muted hover:bg-[var(--oc-hover)] hover:text-ink">
+            <MoreHorizontal size={18} aria-hidden="true"/>
+          </button>}
           <StretchyHeader
             className="rounded-item bg-paper-card"
             onClick={headerUrl ? viewHeader : onHeaderChange ? pickHeader : undefined}
@@ -291,7 +300,7 @@ export function ProfileBannerEditor({
                 <Avatar src={avatarUrl} size="lg" type={avatarType} />
               </div>
             </button>
-            {avatarActionMenu && (onAvatarChange || (avatarUrl && onAvatarRemove)) && (
+            {showAvatarMenu && (onAvatarChange || (avatarUrl && onAvatarRemove)) && (
               <button
                 type="button"
                 aria-label={avatarLabel + '操作'}
@@ -319,18 +328,6 @@ export function ProfileBannerEditor({
         </div>
       ) : null}
 
-      {((showHeaderButtons && headerHasActions) ||
-        (!avatarActionMenu && (onAvatarChange || (avatarUrl && onAvatarRemove)))) &&
-        <div className="mt-8 flex flex-wrap items-center gap-2">
-        {showHeaderButtons && onHeaderChange && <button type="button" className={BTN_QUIET}
-          onClick={pickHeader}>{headerUrl ? '替换封面' : '上传封面'}</button>}
-        {showHeaderButtons && headerUrl && onHeaderRemove && <button type="button" className={BTN_QUIET}
-          onClick={removeHeader}>删除封面</button>}
-        {!avatarActionMenu && onAvatarChange && <button type="button" className={BTN_QUIET}
-          onClick={pickAvatar}>{avatarUrl ? '替换' : '上传'}{avatarLabel}</button>}
-        {!avatarActionMenu && avatarUrl && onAvatarRemove && <button type="button" className={BTN_QUIET}
-          onClick={removeAvatar}>删除{avatarLabel}</button>}
-      </div>}
       {/* Crop modals */}
       {headerRawFileUrl ? (
         <ImageCropper
