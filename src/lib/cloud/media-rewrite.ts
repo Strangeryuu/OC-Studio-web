@@ -7,6 +7,8 @@ type Walk = { value: unknown | typeof REMOVED; references: number }
 
 export function rewriteMediaReferences<T>(input: T, oldUrl: string, nextUrl: string | null): MediaRewriteResult<T> {
   if (!oldUrl.startsWith('/api/media/') || nextUrl === oldUrl) return { value: input, references: 0 }
+  const originalId = oldUrl.slice('/api/media/'.length)
+  const replacementId = nextUrl?.startsWith('/api/media/') ? nextUrl.slice('/api/media/'.length) : null
   function visit(value: unknown, arrayChild = false): Walk {
     if (typeof value === 'string') {
       if (value === oldUrl) return { value: nextUrl ?? (arrayChild ? REMOVED : ''), references: 1 }
@@ -46,6 +48,23 @@ export function rewriteMediaReferences<T>(input: T, oldUrl: string, nextUrl: str
     let references = 0
     const result: Record<string, unknown> = {}
     for (const [key, item] of Object.entries(row)) {
+      // Earlier cloud character records also persisted separate media UUIDs.
+      // Keep them consistent with the public URL fields so future edits pass
+      // the same-workspace media ownership checks after an asset is removed.
+      if ((key === 'avatarMediaId' || key === 'headerMediaId') && item === originalId) {
+        result[key] = replacementId
+        references += 1
+        continue
+      }
+      if ((key === 'portraitMediaIds' || key === 'galleryMediaIds') && Array.isArray(item)) {
+        const matches = item.filter(value => value === originalId).length
+        if (matches) {
+          result[key] = item.flatMap(value =>
+            value !== originalId ? [value] : replacementId ? [replacementId] : [])
+          references += matches
+          continue
+        }
+      }
       // Map views store one media URL per named layer. Empty URLs violate the
       // validated mapViews schema, so remove the affected layer altogether.
       if (key === 'mapViews' && nextUrl === null &&
