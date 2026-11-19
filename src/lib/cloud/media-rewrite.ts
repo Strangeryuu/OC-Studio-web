@@ -46,6 +46,19 @@ export function rewriteMediaReferences<T>(input: T, oldUrl: string, nextUrl: str
     let references = 0
     const result: Record<string, unknown> = {}
     for (const [key, item] of Object.entries(row)) {
+      // Map views store one media URL per named layer. Empty URLs violate the
+      // validated mapViews schema, so remove the affected layer altogether.
+      if (key === 'mapViews' && nextUrl === null &&
+          item !== null && typeof item === 'object' && !Array.isArray(item)) {
+        const views = item as Record<string, unknown>
+        const matched = Object.values(views).filter(url => url === oldUrl).length
+        if (matched) {
+          const kept = Object.fromEntries(Object.entries(views).filter(([,url]) => url !== oldUrl))
+          result[key] = Object.keys(kept).length ? kept : null
+          references += matched
+          continue
+        }
+      }
       const rewritten = visit(item)
       references += rewritten.references
       result[key] = rewritten.value === REMOVED ? '' : rewritten.value
