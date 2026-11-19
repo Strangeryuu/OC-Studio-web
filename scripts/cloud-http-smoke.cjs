@@ -174,9 +174,9 @@ async function run() {
   assert(createdShare.status===201,'Workspace owner could not create a public link')
   const guestPath=(await createdShare.json()).path
   assert(/^\/share\/[a-f0-9]{64}$/.test(guestPath),'Public link format is invalid')
-  const guestPage=await fetch(BASE+guestPath,{redirect:'manual'})
-  assert(guestPage.status===200,'Anonymous share page did not open')
-  const guestHtml=await guestPage.text()
+  const publicGuestResponse=await fetch(BASE+guestPath,{redirect:'manual'})
+  assert(publicGuestResponse.status===200,'Anonymous share page did not open')
+  const guestHtml=await publicGuestResponse.text()
   assert(guestHtml.includes('CI Private World')&&guestHtml.includes('游客只读'),
     'Anonymous share page did not display public workspace in read-only mode')
   const anonymousWrite=await fetch(BASE+'/api/workspaces/'+workspaceId+'/entities',{
