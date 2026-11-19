@@ -157,6 +157,7 @@ async function run() {
     assert.equal(row.content.graphPosition.x, expected.x, 'Conflict must leave all positions untouched')
   }
   await openSection(mobilePage, worldId, '关系图')
+  await mobilePage.locator('.react-flow__node').first().waitFor({ timeout: 15000 })
   assert((await mobilePage.locator('.react-flow__node').count()) >= 2,
     'Second device did not reload graph after layout')
 
