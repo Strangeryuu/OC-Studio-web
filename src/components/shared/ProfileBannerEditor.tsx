@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { ImageIcon } from 'lucide-react'
+import { ImageIcon, MoreHorizontal } from 'lucide-react'
 import { toast } from 'sonner'
 import { resolveImageUrl, saveBlobToDiskOrToast } from '@/lib/image-service'
 import { convertHeifToJpeg } from '@/lib/image-heif'
@@ -24,6 +24,8 @@ interface ProfileBannerEditorProps {
   avatarType?: 'avatar' | 'flag'
   /** 只画头像（模板里的「头像」组件用它；默认连头图一起画） */
   showHeader?: boolean
+  /** 角色头像操作收纳在头像旁的菜单按钮内；其他编辑器继续沿用原有布局。 */
+  avatarActionMenu?: boolean
   saveImage?: (blob: Blob, type: 'header' | 'avatar') => Promise<string | null>
 }
 
@@ -42,6 +44,7 @@ export function ProfileBannerEditor({
   onAvatarRemove,
   avatarType = 'avatar',
   showHeader = true,
+  avatarActionMenu = false,
   saveImage,
 }: ProfileBannerEditorProps) {
   const headerInputRef = useRef<HTMLInputElement>(null)
@@ -223,7 +226,7 @@ export function ProfileBannerEditor({
 
   const avatarItems: MediaMenuItem[] = [
     ...(avatarUrl ? [{ label: '查看大图', onSelect: viewAvatar }] : []),
-    ...(onAvatarChange ? [{ label: `更换${avatarLabel}`, onSelect: pickAvatar }] : []),
+    ...(onAvatarChange ? [{ label: `${avatarUrl ? '更换' : '上传'}${avatarLabel}`, onSelect: pickAvatar }] : []),
     ...(avatarUrl && onAvatarChange ? [{ label: '编辑', onSelect: () => void editAvatar() }] : []),
     ...(avatarUrl ? [{ label: '保存到…', onSelect: () => void save(avatarUrl, `${avatarLabel}.png`) }] : []),
     ...(onAvatarRemove && avatarUrl
@@ -274,6 +277,23 @@ export function ProfileBannerEditor({
                 <Avatar src={avatarUrl} size="lg" type={avatarType} />
               </div>
             </button>
+            {avatarActionMenu && (onAvatarChange || (avatarUrl && onAvatarRemove)) && (
+              <button
+                type="button"
+                aria-label={avatarLabel + '操作'}
+                title={avatarLabel + '操作'}
+                aria-haspopup="menu"
+                aria-expanded={menu?.target === 'avatar'}
+                className="ml-2 inline-flex h-8 w-8 items-center justify-center self-center rounded-control border border-line bg-paper text-ink-muted transition-colors hover:bg-[var(--oc-hover)] hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+                onClick={(event) => {
+                  const rect = event.currentTarget.getBoundingClientRect()
+                  setMenu(current => current?.target === 'avatar' ? null
+                    : { x: rect.right, y: rect.bottom, target: 'avatar' })
+                }}
+              >
+                <MoreHorizontal size={18} strokeWidth={2} aria-hidden="true" />
+              </button>
+            )}
           </div>
           <input
             ref={avatarInputRef}
@@ -285,14 +305,16 @@ export function ProfileBannerEditor({
         </div>
       ) : null}
 
-      {(onHeaderChange || onAvatarChange) && <div className="mt-8 flex flex-wrap items-center gap-2">
+      {((showHeader && (onHeaderChange || (headerUrl && onHeaderRemove))) ||
+        (!avatarActionMenu && (onAvatarChange || (avatarUrl && onAvatarRemove)))) &&
+        <div className="mt-8 flex flex-wrap items-center gap-2">
         {showHeader && onHeaderChange && <button type="button" className={BTN_QUIET}
           onClick={pickHeader}>{headerUrl ? '替换封面' : '上传封面'}</button>}
         {showHeader && headerUrl && onHeaderRemove && <button type="button" className={BTN_QUIET}
           onClick={removeHeader}>删除封面</button>}
-        {onAvatarChange && <button type="button" className={BTN_QUIET}
+        {!avatarActionMenu && onAvatarChange && <button type="button" className={BTN_QUIET}
           onClick={pickAvatar}>{avatarUrl ? '替换' : '上传'}{avatarLabel}</button>}
-        {avatarUrl && onAvatarRemove && <button type="button" className={BTN_QUIET}
+        {!avatarActionMenu && avatarUrl && onAvatarRemove && <button type="button" className={BTN_QUIET}
           onClick={removeAvatar}>删除{avatarLabel}</button>}
       </div>}
       {/* Crop modals */}

@@ -150,6 +150,7 @@ export function CharacterFrontmatter({
     return (
       <div className={compact ? 'flex flex-col gap-6 p-4' : 'flex flex-col gap-8'}>
         <ProfileBannerEditor
+          avatarActionMenu
           headerUrl={form.headerUrl}
           avatarUrl={form.avatarUrl}
           onHeaderChange={form.setHeaderUrl}
@@ -192,6 +193,7 @@ export function CharacterFrontmatter({
           case 'cover':
             return (
               <ProfileBannerEditor
+                avatarActionMenu
                 headerUrl={form.headerUrl}
                 avatarUrl={avatarEnabled ? undefined : form.avatarUrl}
                 onHeaderChange={form.setHeaderUrl}
@@ -203,6 +205,7 @@ export function CharacterFrontmatter({
           case 'avatar':
             return (
               <AvatarBlock
+                avatarActionMenu
                 value={form.avatarUrl}
                 onChange={form.setAvatarUrl}
                 onRemove={() => form.setAvatarUrl('')}

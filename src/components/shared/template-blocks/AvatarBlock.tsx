@@ -15,13 +15,15 @@ interface AvatarBlockProps {
   onRemove?: () => void
   /** 国家用旗帜，其余用头像 */
   avatarType?: 'avatar' | 'flag'
+  avatarActionMenu?: boolean
 }
 
-export function AvatarBlock({ value, onChange, onRemove, avatarType = 'avatar' }: AvatarBlockProps) {
+export function AvatarBlock({ value, onChange, onRemove, avatarType = 'avatar', avatarActionMenu = false }: AvatarBlockProps) {
   return (
     <div className="relative w-fit">
       <ProfileBannerEditor
         showHeader={false}
+        avatarActionMenu={avatarActionMenu}
         avatarType={avatarType}
         avatarUrl={value}
         onAvatarChange={onChange}

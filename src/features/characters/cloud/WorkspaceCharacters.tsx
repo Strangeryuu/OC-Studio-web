@@ -991,7 +991,7 @@ function OriginalCharacterEditor({ snapshot, adapter, characters, countries, cou
       </details>
     </div>}
     <fieldset disabled={!canEdit || disabled} className="flex min-w-0 flex-col gap-6">
-      <ProfileBannerEditor headerUrl={form.headerUrl} avatarUrl={form.avatarUrl}
+      <ProfileBannerEditor avatarActionMenu headerUrl={form.headerUrl} avatarUrl={form.avatarUrl}
         onHeaderChange={canEdit && !disabled ? form.setHeaderUrl : undefined}
         onAvatarChange={canEdit && !disabled ? form.setAvatarUrl : undefined}
         onHeaderRemove={canEdit && !disabled ? () => form.setHeaderUrl('') : undefined}
