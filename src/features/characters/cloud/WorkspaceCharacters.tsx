@@ -58,6 +58,7 @@ import {
 } from '@/features/relations/cloud/workspace-graph-mutations'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { WorkspaceDeleteAction } from '@/components/cloud/WorkspaceDeleteAction'
+import { WorkspacePresence } from '@/components/cloud/WorkspacePresence'
 
 const WorkspaceHome = dynamic(
   () => import('@/features/dashboard/cloud/WorkspaceHome').then(mod => mod.WorkspaceHome),
@@ -732,6 +733,10 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
             return row.entityId
           })
         }} />}
+      {['character', 'country', 'event', 'world', 'category', 'novel', 'map', 'table', 'relations'].includes(section) &&
+        <WorkspacePresence workspaceId={workspaceId}
+          scope={section === 'category' && activeCategory ? 'category:' + activeCategory.id : section === 'category' ? 'world' : section}
+          editing={canEdit} />}
       {section === 'album' && <WorkspaceAlbum workspaceId={workspaceId} worldName={workspaceName ?? '世界'}
         characters={characterList.rows} countries={countryList.rows}
         events={eventList.rows} notes={noteList.rows}
