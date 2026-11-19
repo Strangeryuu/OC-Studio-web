@@ -20,6 +20,23 @@ jobs:
           bash -n deploy/update.sh deploy/backup.sh scripts/cloud-deploy-backup-check.sh
           bash scripts/cloud-deploy-backup-check.sh
           docker compose --env-file deploy/.env.example -f deploy/compose.yaml config --quiet
+      - name: Verify first-deploy paired backup with real PostgreSQL container
+        shell: bash
+        run: |
+          cp deploy/.env.example deploy/.env
+          mkdir -p deploy/data/media
+          printf 'backup-acceptance-image\\n' > deploy/data/media/ci-media.txt
+          cleanup() {
+            docker compose --env-file deploy/.env -f deploy/compose.yaml down -v || true
+            rm -rf deploy/backups deploy/data deploy/.env deploy/.update.lock deploy/.backup.lock
+          }
+          trap cleanup EXIT
+          bash deploy/backup.sh
+          backup_dir="$(find deploy/backups -mindepth 1 -maxdepth 1 -type d ! -name '.staging.*' | head -n 1)"
+          test -n "$backup_dir"
+          test -s "$backup_dir/postgres.dump"
+          ( cd "$backup_dir" && sha256sum -c SHA256SUMS )
+          test "$(tar -xOzf "$backup_dir/media.tgz" media/ci-media.txt)" = 'backup-acceptance-image'
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
