@@ -42,6 +42,7 @@ sudo mkdir -p /opt/ocstudio/data/media
 sudo install -m 0644 ocstudio-deploy-src/deploy/compose.yaml /opt/ocstudio/compose.yaml
 sudo install -m 0755 ocstudio-deploy-src/deploy/update.sh /opt/ocstudio/update.sh
 sudo install -m 0755 ocstudio-deploy-src/deploy/backup.sh /opt/ocstudio/backup.sh
+# 如需容器内 Sendmail 模式，按 docs/web-local-sendmail-relay.md 配置可选中继。
 sudo cp ocstudio-deploy-src/deploy/.env.example /opt/ocstudio/.env
 sudo chown -R 10001:10001 /opt/ocstudio/data/media
 sudo chmod 700 /opt/ocstudio/data/media
@@ -91,6 +92,8 @@ sudo systemctl list-timers ocstudio-update.timer
 此定时器定期运行更新脚本，发现已通过 CI 的新 `:dev` 镜像才更新。无需把 VPS SSH 私钥提供给 GitHub，也不用开暴露在公网的部署 webhook。如果希望正式环境每次更新都人工审核，关闭 timer，并将 `IMAGE_TAG` 固定为已经验收的 SHA 标签。
 
 部署脚本/Compose 文件自身有改动时，请手动从 GitHub 同步到 VPS；尤其要确保 `update.sh` 与 `backup.sh` 同步更新。自动更新的是已发布的**应用镜像**。
+
+Web 镜像现在预装 `msmtp-mta`，提供 `/usr/sbin/sendmail`。需要使用 **本机 Sendmail** 模式时，遵循 [msmtp 中继配置步骤](./web-local-sendmail-relay.md)：将 `deploy/compose.mail.yaml` 安装到 `/opt/ocstudio/compose.mail.yaml`，并为非 root Web 用户准备专属的 SMTP 配置与授权码文件。新版 `update.sh` 会自动加载可选中继配置并验证文件权限。独立使用管理后台的 SMTP 模式时无需这套额外挂载。
 
 ## 四、数据保存、备份及升级注意事项
 
