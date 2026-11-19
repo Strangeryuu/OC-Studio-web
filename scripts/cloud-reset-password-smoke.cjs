@@ -18,11 +18,9 @@ function jsonPost(path,body) {
 }
 
 async function main(){
-  const before = await jsonPost('/api/auth/sign-in/email',{
-    email:'ci-created@example.test',password:'CI_newUser_Password_456789',
-  })
-  assert(before.status===200,'Password recovery fixture is missing')
-
+  // The preceding PostgreSQL HTTP acceptance script already created and
+  // successfully authenticated this account. Avoid a second sign-in here:
+  // Better Auth may apply its rate limits across the two smoke processes.
   const request = await jsonPost('/api/auth/request-password-reset',{
     email:'ci-created@example.test',redirectTo:ORIGIN+'/reset-password',
   })
