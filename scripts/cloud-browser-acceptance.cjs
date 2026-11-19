@@ -12,12 +12,17 @@ let desktopPage
 let mobilePage
 
 async function login(context) {
+  // Use the same Better Auth credential endpoint already validated by the
+  // PostgreSQL HTTP smoke, but retain each browser context's separate cookie jar.
+  // Browser acceptance here tests graph/timeline behavior, not login animations.
+  const loginResponse = await context.request.post(BASE + '/api/auth/sign-in/email', {
+    headers: { Origin: BASE },
+    data: { email: 'ci-admin@example.test', password: PASSWORD },
+  })
+  assert.equal(loginResponse.status(), 200,
+    'Better Auth browser context login returned HTTP ' + loginResponse.status())
   const page = await context.newPage()
   await page.goto(BASE + '/login', { waitUntil: 'domcontentloaded' })
-  await page.getByLabel('邮箱').fill('ci-admin@example.test')
-  await page.getByLabel('密码').fill(PASSWORD)
-  await page.getByRole('button', { name: '登录工作台' }).click()
-  await page.waitForURL(url => !url.pathname.endsWith('/login'), { timeout: 20000 })
   return page
 }
 async function requestOk(res, label, expected = 201) {
@@ -58,7 +63,7 @@ async function run() {
     data: { name: 'CI Browser Graph / Timeline World' },
   }), 'create workspace')
   const worldId = world.workspace.id
-  for (const [title, x] of [['CI Touch Alpha', 100], ['CI Touch Beta', 330]]) {
+  for (const [title, x] of [['CI Touch Alpha', 90], ['CI Touch Beta', 210]]) {
     await requestOk(await desktop.request.post(BASE + '/api/workspaces/' + worldId + '/entities', {
       headers: { Origin: BASE },
       data: { kind: 'character', title, data: characterData(title, x) },
