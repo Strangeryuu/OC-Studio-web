@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback } from 'react'
-import { ChevronLeft, ChevronRight, ImageIcon, Loader2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ImageIcon, Loader2, Replace, Trash2 } from 'lucide-react'
 import { resolveImageUrl } from '@/lib/image-service'
 import { useMediaMenu } from '@/lib/use-media-menu'
 
@@ -23,6 +23,8 @@ interface ImageGallerySliderProps {
   onOpenMenu: (index: number, at: { x: number; y: number }) => void
   uploading: boolean
   onUploadClick: () => void
+  onReplaceAt?: (index: number) => void
+  onRemoveAt?: (index: number) => void
 }
 
 /** slider 模式：左右滑动/鼠标拖拽切换 + 圆点导航 + 全屏查看 */
@@ -32,6 +34,8 @@ export function ImageGallerySlider({
   onOpenMenu,
   uploading,
   onUploadClick,
+  onReplaceAt,
+  onRemoveAt,
 }: ImageGallerySliderProps) {
   const [sliderIndex, setSliderIndex] = useState(0)
   const touchStartRef = useRef<number>(0)
@@ -152,6 +156,14 @@ export function ImageGallerySlider({
               ))}
             </div>
           </div>
+          {(onReplaceAt || onRemoveAt) && <div className="absolute right-2 top-2 z-20 flex items-center gap-1">
+            {onReplaceAt && <button type="button" aria-label="替换当前图片"
+              onClick={() => onReplaceAt(currentIndex)}
+              className="rounded-full bg-paper/90 p-1.5 text-ink"><Replace size={14}/></button>}
+            {onRemoveAt && <button type="button" aria-label="删除当前图片"
+              onClick={() => onRemoveAt(currentIndex)}
+              className="rounded-full bg-paper/90 p-1.5 text-error"><Trash2 size={14}/></button>}
+          </div>}
           {images.length > 1 ? (
             <button
               onClick={nextImage}

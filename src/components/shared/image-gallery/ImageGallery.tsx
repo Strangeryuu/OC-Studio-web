@@ -92,10 +92,14 @@ export function ImageGallery({
         void save(url, '图片.png')
       },
     })
-    if (onRemove) items.push({ label: '移除', danger: true, onSelect: () => onRemove(index) })
+    if (onRemove) items.push({ label: '移除', danger: true, onSelect: () => removeAt(index) })
     return items
   }
 
+  const removeAt = (index: number) => {
+    if (onRemove && window.confirm('确认从当前词条移除这张图片？整库删除请在全局相册操作。'))
+      onRemove(index)
+  }
   const openMenu = (index: number, at: { x: number; y: number }) =>
     setMenuAt({ x: at.x, y: at.y, index })
 
@@ -108,6 +112,8 @@ export function ImageGallery({
           onOpenMenu={openMenu}
           uploading={uploading}
           onUploadClick={uploadNew}
+          onReplaceAt={onReplace ? index => void triggerFileUpload(index) : undefined}
+          onRemoveAt={onRemove ? removeAt : undefined}
         />
       ) : showGrid ? (
         <ImageGalleryGrid
@@ -120,6 +126,8 @@ export function ImageGallery({
           onOpenMenu={openMenu}
           uploading={uploading}
           onUploadClick={uploadNew}
+          onReplaceAt={onReplace ? index => void triggerFileUpload(index) : undefined}
+          onRemoveAt={onRemove ? removeAt : undefined}
         />
       ) : null}
 
