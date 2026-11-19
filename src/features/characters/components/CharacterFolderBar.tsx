@@ -40,6 +40,7 @@ export function CharacterFolderBar({
   onDelete,
   onCreate,
   noun = '角色',
+  readOnly = false,
 }: {
   folders: CharacterFolder[]
   ungrouped: number
@@ -53,6 +54,8 @@ export function CharacterFolderBar({
   onCreate: (name: string) => Promise<void>
   /** 文案里的实体称呼（角色 / 条目），只影响提示语 */
   noun?: string
+  /** Hide management actions for read-only cloud members. */
+  readOnly?: boolean
 }) {
   const [menu, setMenu] = useState<{ name: string; at: { x: number; y: number } } | null>(null)
   const [renaming, setRenaming] = useState<string | null>(null)
@@ -127,6 +130,7 @@ export function CharacterFolderBar({
             }
           }}
           onContextMenu={(event) => {
+            if (readOnly) return
             event.preventDefault()
             setMenu({ name: folder.name, at: { x: event.clientX, y: event.clientY } })
           }}
@@ -161,7 +165,7 @@ export function CharacterFolderBar({
               </span>
             </button>
           )}
-          {renaming === folder.name ? null : (
+          {renaming === folder.name || readOnly ? null : (
             <button
               type="button"
               onClick={(event) => {
@@ -184,7 +188,7 @@ export function CharacterFolderBar({
               <X size={12} strokeWidth={2} />
             </button>
           )}
-          {menu && menu.name === folder.name ? (
+          {!readOnly && menu && menu.name === folder.name ? (
             <MediaContextMenu
               at={menu.at}
               onClose={() => setMenu(null)}
@@ -211,7 +215,7 @@ export function CharacterFolderBar({
       })}
 
       {/* 和标签一样：末尾一个输入框，回车就新建 —— 空文件夹靠清单留住 */}
-      <div className="flex items-center gap-1 rounded-item bg-paper-alt px-2 py-[3px] text-caption transition-colors focus-within:bg-paper-card">
+      {!readOnly && <div className="flex items-center gap-1 rounded-item bg-paper-alt px-2 py-[3px] text-caption transition-colors focus-within:bg-paper-card">
         <input
           value={createDraft}
           onChange={(event) => setCreateDraft(event.target.value)}
@@ -241,7 +245,7 @@ export function CharacterFolderBar({
         >
           <Plus size={12} strokeWidth={2} />
         </button>
-      </div>
+      </div>}
 
       <AlertDialog open={deleting !== null} onOpenChange={(open) => { if (!open) setDeleting(null) }}>
         <AlertDialogContent>
