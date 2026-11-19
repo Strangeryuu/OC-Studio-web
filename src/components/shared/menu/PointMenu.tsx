@@ -123,12 +123,60 @@ function SubmenuRow({
   container: HTMLElement | undefined
   itemClassName?: string
 }) {
+  const [open, setOpen] = useState(false)
+  // Base UI closes a hover-open submenu after the trigger's closeDelay even
+  // when the pointer has reached the separately portaled submenu. Keep track
+  // of the popup itself, and only close when the pointer leaves both surfaces.
+  const insidePopupRef = useRef(false)
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const cancelPendingClose = useCallback(() => {
+    if (closeTimerRef.current !== null) {
+      clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = null
+    }
+  }, [])
+
+  const scheduleClose = useCallback(() => {
+    cancelPendingClose()
+    closeTimerRef.current = setTimeout(() => {
+      closeTimerRef.current = null
+      if (!insidePopupRef.current) setOpen(false)
+    }, SUBMENU_CLOSE_DELAY_MS)
+  }, [cancelPendingClose])
+
+  useEffect(() => () => cancelPendingClose(), [cancelPendingClose])
+
   return (
-    <Menu.SubmenuRoot>
+    <Menu.SubmenuRoot
+      open={open}
+      onOpenChange={(next, details) => {
+        if (next) {
+          cancelPendingClose()
+          setOpen(true)
+          return
+        }
+        // Transient hover/focus changes are expected as the pointer crosses
+        // from its trigger into the submenu's different portal.
+        if (details.reason === 'trigger-hover') {
+          if (insidePopupRef.current) return
+          scheduleClose()
+          return
+        }
+        if (details.reason === 'focus-out') return
+        if (details.reason === 'outside-press') {
+          const target = details.event.target
+          if (target instanceof Element && target.closest('[role="menu"]')) return
+        }
+        cancelPendingClose()
+        setOpen(false)
+      }}
+    >
       <Menu.SubmenuTrigger
         openOnHover
         delay={80}
         closeDelay={SUBMENU_CLOSE_DELAY_MS}
+        onPointerEnter={cancelPendingClose}
         disabled={item.disabled}
         label={item.label}
         className={rowClass(item, itemClassName)}
@@ -146,7 +194,18 @@ function SubmenuRow({
           collisionPadding={8}
           className={POSITIONER}
         >
-          <Menu.Popup className={cn(POPUP, 'min-w-32')} onClick={stopMenuClick}>
+          <Menu.Popup
+            className={cn(POPUP, 'min-w-32')}
+            onClick={stopMenuClick}
+            onPointerEnter={() => {
+              insidePopupRef.current = true
+              cancelPendingClose()
+            }}
+            onPointerLeave={() => {
+              insidePopupRef.current = false
+              scheduleClose()
+            }}
+          >
             <MenuRows items={item.submenu ?? []} container={container} itemClassName={itemClassName} />
           </Menu.Popup>
         </Menu.Positioner>
