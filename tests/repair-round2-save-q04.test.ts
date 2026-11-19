@@ -289,7 +289,7 @@ describe('Q04 自身保存回执不得覆盖脏草稿', () => {
 
     // B 仍在待写草稿里：计时器到点会继续保存
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1100)
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 100)
     })
     expect(textOf(saved.current)).toBe('版本B')
     expect(textOf(editor.current())).toBe('版本B')
@@ -300,7 +300,7 @@ describe('Q04 自身保存回执不得覆盖脏草稿', () => {
       draft.handleContentChange('')
     })
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1100)
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 100)
     })
     expect(textOf(saved.current)).toBe('版本C')
     expect(textOf(editor.current())).toBe('版本C')

@@ -242,7 +242,7 @@ describe('国家表单：成员关系也进入保存与 dirty（F05）', () => {
     expect(form?.dirty).toBe(true)
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1600)
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 100)
     })
 
     expect(onSave).toHaveBeenCalledTimes(1)
@@ -266,7 +266,7 @@ describe('国家表单：成员关系也进入保存与 dirty（F05）', () => {
     expect(form?.dirty).toBe(true)
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1600)
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 100)
     })
 
     expect(onSave).toHaveBeenCalledTimes(1)
@@ -319,7 +319,7 @@ describe('国家表单：成员关系也进入保存与 dirty（F05）', () => {
 
     // 新修订继续保存；最终磁盘版本必须是 B
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1600)
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 100)
     })
     expect(onSave).toHaveBeenCalledTimes(2)
     expect(onSave.mock.calls[1]?.[1]?.document).toEqual(fakeDoc('版本 B').toJSON())
@@ -450,9 +450,9 @@ describe('国家表单：成员关系也进入保存与 dirty（F05）', () => {
       form?.handleDocChange()
     })
 
-    // 第一次由 1.5s 自动保存触发并失败
+    // 第一次由五分钟自动保存触发并失败
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1600)
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 100)
     })
     expect(onSave).toHaveBeenCalledTimes(1)
     expect(form?.dirty).toBe(true)
