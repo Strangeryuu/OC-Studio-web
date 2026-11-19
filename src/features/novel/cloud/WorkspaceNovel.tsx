@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { BookOpen, BookPlus, BookText, FileDown, Plus, Search, Trash2 } from 'lucide-react'
+import { BookOpen, BookPlus, BookText, FileDown, Plus, Search, Trash2, Menu, ChevronLeft } from 'lucide-react'
 import type { Editor } from '@tiptap/core'
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors,
   type DragEndEvent } from '@dnd-kit/core'
@@ -18,6 +18,10 @@ import { buildDefaultEntry } from '@/features/world/services'
 import { newWorldEntryData } from '@/lib/entity-defaults'
 import { CoverCard } from '@/components/shared/cover/CoverCard'
 import { CoverFlow } from '@/components/shared/CoverFlow'
+import { EntityEditorShell } from '@/components/shared/EntityEditorShell'
+import { PageToolbar } from '@/components/shared/PageToolbar'
+import { ListShell } from '@/components/shared/ListShell'
+import { useDevice } from '@/lib/use-device'
 import { SortViewControls, normalizeViewMode, type ViewMode } from '@/components/shared/SortViewControls'
 import { TreeRow } from '@/components/shared/TreeRow'
 import { EditorCore } from '@/components/editor/EditorCore'
@@ -179,8 +183,9 @@ function CloudBookInfo({ snapshot, adapter, canEdit, disabled, onSaved }: Mutabl
 }
 
 /** Original Tiptap editor and chapter outline with the same cloud save pipeline as notes. */
-function CloudChapterEditor({ snapshot, adapter, onSaved, canEdit, disabled }: MutableNovelProps & {
+function CloudChapterEditor({ snapshot, adapter, onSaved, canEdit, disabled, onEditorReady }: MutableNovelProps & {
   snapshot: OriginalNoteSnapshot
+  onEditorReady?: (editor: Editor | null) => void
 }) {
   const baseline = useRef(snapshot)
   const [title, setTitle] = useState(snapshot.entity.title)
@@ -191,6 +196,7 @@ function CloudChapterEditor({ snapshot, adapter, onSaved, canEdit, disabled }: M
   const [saving, setSaving] = useState(false)
   const editor = useRef<Editor | null>(null)
   const bodyBaseline = useRef<Editor['state']['doc'] | null>(null)
+  useEffect(() => () => onEditorReady?.(null), [onEditorReady])
   const inFlight = useRef<Promise<void> | null>(null)
   const fields = useRef({title,outline})
   fields.current={title,outline}
@@ -282,6 +288,7 @@ function CloudChapterEditor({ snapshot, adapter, onSaved, canEdit, disabled }: M
       editable={canWrite} upload={file => upload(file, file.name)} />
     <EditorCore plain imageUploads={false} localReferences={false}
       content={worldBodyOf(snapshot.entity)} onReady={value=>{
+        onEditorReady?.(value)
         editor.current=value
         bodyBaseline.current=value.state.doc
         value.setEditable(writable)
@@ -350,6 +357,10 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
   const [busy,setBusy]=useState(false)
   const [uploading,setUploading]=useState(false)
   const [deleting,setDeleting]=useState(false)
+  const [listOpen,setListOpen]=useState(true)
+  const [mobileListOpen,setMobileListOpen]=useState(false)
+  const [bodyEditor,setBodyEditor]=useState<Editor|null>(null)
+  const {isMobile}=useDevice()
   const pending=useRef<Promise<void>|null>(null)
   const writable=props.canEdit&&!props.disabled&&!busy&&!props.loading
   const sensors=useSensors(
@@ -555,7 +566,43 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
     finally{setBusy(false)}
   }
 
-  if(!root) return <section className="flex min-w-0 flex-col gap-4 border-t border-line pt-4">
+  const chapterPanel=root?<div className="flex h-full min-h-0 flex-col bg-paper-alt">
+    <div className="flex h-12 shrink-0 items-center justify-between border-b border-line px-3">
+      <strong className="truncate text-ui">{root.entity.title}</strong>
+      {isMobile?<button type="button" aria-label="收起目录" onClick={()=>setMobileListOpen(false)}><ChevronLeft size={16}/></button>
+        :<button type="button" aria-label="折叠目录" onClick={()=>setListOpen(false)}><ChevronLeft size={16}/></button>}
+    </div>
+      <aside className="min-h-0 flex-1 overflow-y-auto p-3">
+        <div className="mb-3 flex items-center justify-between">
+          <strong className="text-ui">章节目录</strong>
+          {props.canEdit&&<button type="button" title="添加章节" disabled={!writable}
+            onClick={()=>create(activeBookId)}><Plus size={15}/></button>}
+        </div>
+        <div className="mb-2 flex items-center gap-1 border-b border-line"><Search size={12}/>
+          <input value={query} aria-label="搜索章节" onChange={event=>setQuery(event.target.value)}
+            placeholder="搜索章节" className="min-w-0 w-full bg-transparent px-1 py-1 text-ui" />
+        </div>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onChapterDragEnd}>
+          <ChapterNodes nodes={visibleChapterTree} depth={0} selectedId={activeChapterId}
+            onSelect={id=>afterSaving(()=>setActiveChapterId(id))} canEdit={props.canEdit}
+            canDelete={props.canDelete} busy={busy} sortable={writable && !query.trim()}
+            onCreateChild={create} onDelete={id=>void remove(id)} />
+        </DndContext>
+        {props.canEdit && <p className="mt-2 text-micro text-ink-faint">拖动章节左侧手柄可在本书内调整顺序；搜索时暂停排序。</p>}
+        {chapterTree.length===0&&<p className="text-caption text-ink-faint">暂无章节</p>}
+        <p className="mt-3 text-caption text-ink-faint">{chapters.length} 章 · {countNovelWords(exported)} 字</p>
+      </aside>
+    <details className="max-h-[42%] shrink-0 overflow-y-auto border-t border-line" open>
+      <summary className="cursor-pointer px-3 py-2 text-caption text-ink-muted">作品信息</summary>
+      <div className="px-3 pb-3">
+        <CloudBookInfo key={root.entityId} snapshot={root} adapter={props.adapter}
+          onSaved={props.onSaved} canEdit={props.canEdit} disabled={props.disabled} />
+      </div>
+    </details>
+  </div>:undefined
+
+  if(!root) return <ListShell header={()=><PageToolbar title="小说书架" />}>
+    <section className="flex min-w-0 flex-col gap-4 px-4 pt-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <h2 className="font-serif text-lg font-semibold">小说</h2>
       <div className="flex flex-wrap items-center gap-2">
@@ -588,11 +635,26 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
           meta={book.chapters+' 章 · '+book.words+' 字'} imageSrc={book.cover}
           aspect={2/3} photoHeight={100} isMobile={false} onSelect={()=>openBook(book.id)}/>)}
       </div>}
-  </section>
+  </section></ListShell>
 
-  return <section className="flex min-w-0 flex-col gap-4 border-t border-line pt-3">
+  return <div className="flex h-full min-h-0 flex-col">
+    <div className="md:hidden h-[calc(60px+var(--safe-top))] shrink-0" aria-hidden />
+    {isMobile&&mobileListOpen&&<div className="fixed inset-0 z-50">
+      <button type="button" aria-label="关闭章节目录" className="absolute inset-0 bg-[var(--oc-scrim)]"
+        onClick={()=>setMobileListOpen(false)}/>
+      <aside className="absolute inset-y-0 left-0 w-[280px] max-w-[85vw]">{chapterPanel}</aside>
+    </div>}
+    <EntityEditorShell title="编辑章节"
+      onBack={()=>afterSaving(()=>{setActiveBookId(null);setActiveChapterId(null);setPreview(false);setQuery('')})}
+      list={isMobile?undefined:chapterPanel} listOpen={!isMobile&&listOpen}
+      onToggleList={()=>setListOpen(value=>!value)}
+      editor={preview?null:bodyEditor}
+      headerRight={<div className="flex items-center gap-2">
+        {isMobile&&<button type="button" aria-label="章节目录" onClick={()=>setMobileListOpen(true)}><Menu size={16}/></button>}
+        <span className="hidden text-caption text-ink-muted sm:inline">{chapters.length} 章 · {countNovelWords(exported)} 字</span>
+      </div>}>
+    <section className="flex h-full min-h-0 min-w-0 flex-col gap-3">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <button type="button" className={BTN_QUIET} onClick={()=>afterSaving(()=>{setActiveBookId(null);setActiveChapterId(null);setPreview(false);setQuery('')})}>← 书架</button>
       <span className="font-serif text-lg font-semibold">{root.entity.title}</span>
       <div className="flex flex-wrap items-center gap-1">
         <button type="button" className={BTN_QUIET} onClick={()=>afterSaving(()=>setPreview(value=>!value))}>
@@ -677,32 +739,12 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
         <NovelReader pages={pages} format={format} layout={readingLayout}
           background={resolveNovelBackground(readingBackground)} meta={readingMeta} />
       </div>
-    </div>:<div className="grid min-w-0 gap-4 lg:grid-cols-[14rem_minmax(0,1fr)]">
-      <aside className="min-w-0 rounded-panel border border-line bg-paper-alt p-3">
-        <div className="mb-3 flex items-center justify-between">
-          <strong className="text-ui">章节目录</strong>
-          {props.canEdit&&<button type="button" title="添加章节" disabled={!writable}
-            onClick={()=>create(activeBookId)}><Plus size={15}/></button>}
-        </div>
-        <div className="mb-2 flex items-center gap-1 border-b border-line"><Search size={12}/>
-          <input value={query} aria-label="搜索章节" onChange={event=>setQuery(event.target.value)}
-            placeholder="搜索章节" className="min-w-0 w-full bg-transparent px-1 py-1 text-ui" />
-        </div>
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onChapterDragEnd}>
-          <ChapterNodes nodes={visibleChapterTree} depth={0} selectedId={activeChapterId}
-            onSelect={id=>afterSaving(()=>setActiveChapterId(id))} canEdit={props.canEdit}
-            canDelete={props.canDelete} busy={busy} sortable={writable && !query.trim()}
-            onCreateChild={create} onDelete={id=>void remove(id)} />
-        </DndContext>
-        {props.canEdit && <p className="mt-2 text-micro text-ink-faint">拖动章节左侧手柄可在本书内调整顺序；搜索时暂停排序。</p>}
-        {chapterTree.length===0&&<p className="text-caption text-ink-faint">暂无章节</p>}
-        <p className="mt-3 text-caption text-ink-faint">{chapters.length} 章 · {countNovelWords(exported)} 字</p>
-      </aside>
-      <div className="min-w-0">
-        <CloudBookInfo key={root.entityId} snapshot={root} adapter={props.adapter}
-          onSaved={props.onSaved} canEdit={props.canEdit} disabled={props.disabled} />
+    </div>:<div className="min-h-0 flex-1 overflow-y-auto">
+
+      <div className="mx-auto w-full max-w-3xl px-4 py-4 md:px-8">
+
         {selected?<CloudChapterEditor key={selected.entityId} snapshot={selected} adapter={props.adapter}
-          onSaved={props.onSaved} canEdit={props.canEdit} disabled={props.disabled} />:
+          onSaved={props.onSaved} canEdit={props.canEdit} disabled={props.disabled} onEditorReady={setBodyEditor} />:
           <div className="p-8 text-center text-ui text-ink-faint">
             选择章节开始写作
             {props.canEdit&&<button type="button" className={BTN_PRIMARY} disabled={!writable}
@@ -710,5 +752,6 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
           </div>}
       </div>
     </div>}
-  </section>
+    </section></EntityEditorShell>
+  </div>
 }
