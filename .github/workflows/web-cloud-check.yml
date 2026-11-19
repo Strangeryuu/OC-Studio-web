@@ -95,10 +95,10 @@ jobs:
         run: node scripts/cloud-ci-seed-user.cjs
       - name: 构建真实 PostgreSQL Web 服务
         run: npm run build:web
-      - name: 安装 Chromium 进行桌面/手机模拟与双会话浏览器验收
+      - name: 使用运行器自带 Chrome 进行浏览器验收
         run: |
           npm install --no-save --package-lock=false playwright@1.56.1
-          npx playwright install --with-deps chromium
+          google-chrome --version
       - name: 使用真实 PostgreSQL 完成登录、HTTP 和浏览器联调
         run: |
           mkdir -p /tmp/ocstudio-ci-media
