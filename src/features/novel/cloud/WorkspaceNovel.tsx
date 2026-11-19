@@ -20,6 +20,7 @@ import { CoverCard } from '@/components/shared/cover/CoverCard'
 import { CoverFlow } from '@/components/shared/CoverFlow'
 import { EntityEditorShell } from '@/components/shared/EntityEditorShell'
 import { useAutoSave } from '@/components/layout/use-auto-save'
+import { saveFailed, saveSucceeded } from '@/lib/save-outcome'
 import { PageToolbar } from '@/components/shared/PageToolbar'
 import { ListShell } from '@/components/shared/ListShell'
 import { useDevice } from '@/lib/use-device'
@@ -117,7 +118,11 @@ function CloudBookInfo({ snapshot, adapter, canEdit, disabled, onSaved }: Mutabl
     if (dirty && canEdit) return save()
   }), [dirty, canEdit, save])
   useWorkspaceDraftGuard(dirty || busy, '小说作品信息')
-  useAutoSave({dirty:dirty&&canEdit,saving:busy,save:()=>save()})
+  const saveForAutosave=useCallback(async()=>{
+    try{await save();return saveSucceeded()}
+    catch(error){return saveFailed(error)}
+  },[save])
+  useAutoSave({dirty:dirty&&canEdit,saving:busy,save:saveForAutosave})
   const upload = useWorkspaceImageUpload(snapshot.workspaceId, writable,
     setBusy, setError)
 
