@@ -13,7 +13,7 @@ const validName = (name: unknown): name is string =>
   typeof name === 'string' && name.length <= 60 && name.trim().length > 0 && name.trim() === name
 const validVersion = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
-const entry = (value: unknown): value is { id: string; expectedVersion: number } => {
+const entry = (value: unknown): value is { id: string; expectedVersion: number; order?: number; folder?: string | null } => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const row = value as Record<string, unknown>
   return isUuid(row.id) && validVersion(row.expectedVersion) && row.expectedVersion > 0
