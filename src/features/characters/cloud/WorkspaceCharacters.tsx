@@ -742,7 +742,8 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
         events={eventList.rows} notes={noteList.rows}
         loading={characterList.loading || countryList.loading || eventList.loading || noteList.loading}
         error={graphError || characterList.error || countryList.error || eventList.error || noteList.error}
-        onNavigate={(kind,id) => navigate(kind,id)} onRefresh={refreshGraph} />}
+        onNavigate={(kind,id) => navigate(kind,id)} onRefresh={refreshGraph}
+        canManageMedia={canDelete} />}
       {section === 'novel' && <WorkspaceNovel workspaceId={workspaceId} focusEntryId={novelFocusId}
         notes={noteList.rows} loading={noteList.loading} error={noteList.error}
         adapter={noteAdapter} canEdit={canEdit} canDelete={role === 'owner' || role === 'admin'} disabled={busy}
