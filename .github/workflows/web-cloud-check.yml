@@ -54,7 +54,7 @@ jobs:
 
   postgres-schema:
     name: 独立 PostgreSQL 业务迁移自检
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     services:
       postgres:
