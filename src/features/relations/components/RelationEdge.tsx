@@ -41,7 +41,9 @@ export function RelationEdge({
   style,
 }: EdgeProps) {
   const { settings } = useSettings()
-  const edgeStyle = settings.edgeStyle
+  // Cloud graph uses an in-view display preference; desktop keeps settings as source.
+  const edgeStyle = data?.edgeStyle === 'curve' || data?.edgeStyle === 'orthogonal'
+    ? data.edgeStyle : settings.edgeStyle
   const sourceNode = useInternalNode(source)
   const targetNode = useInternalNode(target)
 
