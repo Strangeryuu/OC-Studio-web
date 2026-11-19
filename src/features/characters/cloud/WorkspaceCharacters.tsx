@@ -58,7 +58,6 @@ import {
   type WorkspaceGraphChange, type WorkspaceGraphPlan,
 } from '@/features/relations/cloud/workspace-graph-mutations'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { WorkspaceDeleteAction } from '@/components/cloud/WorkspaceDeleteAction'
 import { WorkspacePresence } from '@/components/cloud/WorkspacePresence'
 import { WorkspaceBodyImageControls } from '@/components/cloud/WorkspaceBodyImageControls'
 
