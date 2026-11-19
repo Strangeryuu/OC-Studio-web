@@ -16,9 +16,18 @@ ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     HOSTNAME=0.0.0.0 \
     PORT=3000 \
+    HOME=/home/ocstudio \
     MEDIA_ROOT=/data/media
-RUN groupadd --system --gid 10001 ocstudio && \
-    useradd --system --uid 10001 --gid 10001 --no-create-home ocstudio && \
+# msmtp-mta provides /usr/sbin/sendmail. It forwards mail via a configured
+# authenticated SMTP relay; see deploy/compose.mail.yaml (opt-in) and docs.
+# Keep only the sendmail-compatible client in the Web image, not a mail daemon.
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      ca-certificates msmtp-mta && \
+    rm -rf /var/lib/apt/lists/* && \
+    test -x /usr/sbin/sendmail && \
+    groupadd --system --gid 10001 ocstudio && \
+    useradd --system --uid 10001 --gid 10001 --home-dir /home/ocstudio --create-home ocstudio && \
     mkdir -p /data/media && chown -R 10001:10001 /data
 COPY --from=builder --chown=10001:10001 /app/.next/standalone ./
 COPY --from=builder --chown=10001:10001 /app/.next/static ./.next/static
