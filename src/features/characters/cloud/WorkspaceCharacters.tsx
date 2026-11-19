@@ -37,6 +37,7 @@ import { TimelineView } from '@/features/timeline/components/TimelineView'
 import { useDelayedFlag } from '@/lib/use-delayed-flag'
 import { buildDefaultCountry } from '@/features/countries/services'
 import { WorkspaceNavigation, type WorkspaceSection } from '@/components/cloud/WorkspaceNavigation'
+import { WorkspaceEntityCatalog } from '@/components/cloud/WorkspaceEntityCatalog'
 import { WorkspaceEntityHistory } from '@/components/cloud/WorkspaceEntityHistory'
 import { insertWorkspaceBodyImage, useWorkspaceDraftGuard, useWorkspaceImageUpload } from '@/components/cloud/workspace-editor-guards'
 
@@ -763,25 +764,34 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
         notes={noteList.rows} referenceItems={references} loading={noteList.loading} error={noteList.error}
         adapter={noteAdapter} canEdit={canEdit} canDelete={role === 'owner' || role === 'admin'} disabled={busy}
         onCreated={noteList.append} onSaved={noteList.replace} onRefresh={refreshGraph} />}
-      {section === 'character' && <WorkspaceEntryList label="角色" rows={characterList.rows} loading={characterList.loading} error={characterList.error}
-        getLabel={row => row.character.name} selectedId={selectedId} busy={busy} onSelect={id => select(id, 'character')}
+      {section === 'character' && <WorkspaceEntityCatalog workspaceId={workspaceId} kind="character"
+        rows={characterList.rows.map(row => ({ entityId: row.entityId, version: row.version, data: row.character }))}
+        countries={countries} selectedId={selectedId} loading={characterList.loading} error={characterList.error}
+        busy={busy} onSelect={id => select(id, 'character')}
         onDelete={canDelete ? row => removeWorkspaceEntry('character', row.entityId, row.version) : undefined}
+        onUpdated={async () => characterList.reset(await characterAdapter.list())}
         onCreate={canEdit ? () => void openAfterSaving('character', async () => {
           const row = await characterAdapter.create(buildDefaultCharacter(newCharacterData()))
           characterList.append(row)
           return row.entityId
         }) : undefined} />}
-      {section === 'country' && <WorkspaceEntryList label="国家" rows={countryList.rows} loading={countryList.loading} error={countryList.error}
-        getLabel={row => row.entity.name} selectedId={selectedId} busy={busy} onSelect={id => select(id, 'country')}
+      {section === 'country' && <WorkspaceEntityCatalog workspaceId={workspaceId} kind="country"
+        rows={countryList.rows.map(row => ({ entityId: row.entityId, version: row.version, data: row.entity }))}
+        selectedId={selectedId} loading={countryList.loading} error={countryList.error}
+        busy={busy} onSelect={id => select(id, 'country')}
         onDelete={canDelete ? row => removeWorkspaceEntry('country', row.entityId, row.version) : undefined}
+        onUpdated={async () => countryList.reset(await countryAdapter.list())}
         onCreate={canEdit ? () => void openAfterSaving('country', async () => {
           const row = await countryAdapter.create(buildDefaultCountry(newCountryData()))
           countryList.append(row)
           return row.entityId
         }) : undefined} />}
-      {section === 'event' && <WorkspaceEntryList label="事件" rows={eventList.rows} loading={eventList.loading} error={eventList.error}
-        getLabel={row => row.entity.title} selectedId={selectedId} busy={busy} onSelect={id => select(id, 'event')}
+      {section === 'event' && <WorkspaceEntityCatalog workspaceId={workspaceId} kind="event"
+        rows={eventList.rows.map(row => ({ entityId: row.entityId, version: row.version, data: row.entity }))}
+        selectedId={selectedId} loading={eventList.loading} error={eventList.error}
+        busy={busy} onSelect={id => select(id, 'event')}
         onDelete={canDelete ? row => removeWorkspaceEntry('event', row.entityId, row.version) : undefined}
+        onUpdated={async () => eventList.reset(await eventAdapter.list())}
         onCreate={canEdit ? () => void openAfterSaving('event', async () => {
           const row = await eventAdapter.create(buildDefaultEvent(newEventData()))
           eventList.append(row)
