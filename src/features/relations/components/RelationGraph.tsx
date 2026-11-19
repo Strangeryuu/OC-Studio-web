@@ -83,6 +83,7 @@ const WorkspaceGraphExportDialog = dynamic(
 )
 
 interface WorkspaceGraphSource {
+  workspaceId?: string
   worldName?: string
   nodes: GraphNode[]
   edges: GraphEdge[]
@@ -155,6 +156,13 @@ export function RelationGraph({
   const mouseMode = settings.mouseMode
   const [workspaceEdgeStyle, setWorkspaceEdgeStyle] = useState(settings.edgeStyle)
   const edgeStyle = workspace ? workspaceEdgeStyle : settings.edgeStyle
+  useEffect(() => {
+    if (!workspace?.workspaceId) return
+    try {
+      const preference = window.localStorage.getItem('ocstudio:graph-line-style:' + workspace.workspaceId)
+      if (preference === 'curve' || preference === 'orthogonal') setWorkspaceEdgeStyle(preference)
+    } catch { /* private browsing may prohibit storage */ }
+  }, [workspace?.workspaceId])
   const persistPosition = workspace ? workspace.savePosition : saveNodePosition
   const canDrag = Boolean(persistPosition) && !isMobile
   const connection = graphConnectionBehavior(isMobile, canConnectRelations)
@@ -654,8 +662,13 @@ export function RelationGraph({
 
   const handleEdgeStyleChange = useCallback(
     (value: EdgeStyle) => {
-      if (workspace) setWorkspaceEdgeStyle(value)
-      else updateSetting('edgeStyle', value)
+      if (workspace) {
+        setWorkspaceEdgeStyle(value)
+        if (workspace.workspaceId) {
+          try { window.localStorage.setItem('ocstudio:graph-line-style:' + workspace.workspaceId, value) }
+          catch { /* private browsing may prohibit storage */ }
+        }
+      } else updateSetting('edgeStyle', value)
     },
     [workspace, updateSetting],
   )
