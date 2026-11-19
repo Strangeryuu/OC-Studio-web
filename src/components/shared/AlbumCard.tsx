@@ -99,7 +99,7 @@ export function AlbumCard({
           aria-label={'删除图片 ' + entry.sourceName}
           className="flex items-center gap-1 rounded px-1.5 py-1 text-caption text-error hover:bg-paper-alt">
           <Trash2 size={13}/>删除</button>}
-      </div>
+      </div>}
 
       {menuAt ? (
         <MediaContextMenu at={menuAt} items={menuItems} onClose={() => setMenuAt(null)} />
