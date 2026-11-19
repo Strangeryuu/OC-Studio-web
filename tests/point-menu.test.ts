@@ -138,6 +138,34 @@ describe('PointMenu', () => {
     expect(onSelect).toHaveBeenCalledWith('夹 B')
   })
 
+
+  it('keeps a submenu available while pointer crosses into its portal', () => {
+    vi.useFakeTimers()
+    try {
+      render()
+      const trigger = menuItems()[1]
+      act(() => press('ArrowRight', trigger))
+      expect(menus()).toHaveLength(2)
+      const sub = menus()[1]
+      // Focus handoff across portals must not be mistaken for dismissal.
+      act(() => {
+        trigger.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: sub }))
+        sub.dispatchEvent(new PointerEvent('pointerenter', { bubbles: false }))
+        vi.advanceTimersByTime(250)
+      })
+      expect(menus()).toHaveLength(2)
+      expect(onClose).not.toHaveBeenCalled()
+      act(() => {
+        click(menuItems(sub)[0])
+        vi.advanceTimersByTime(150)
+      })
+      expect(onSelect).toHaveBeenCalledWith('夹 A')
+      expect(onClose).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('Enter 执行普通项', () => {
     render()
     act(() => menuItems()[0].focus())

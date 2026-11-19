@@ -15,13 +15,6 @@ export function useInputMenuContext() {
   return useContext(InputMenuContext)
 }
 
-interface SelectionSnapshot {
-  startContainer: Node | null
-  startOffset: number
-  endContainer: Node | null
-  endOffset: number
-}
-
 /**
  * 输入框 / textarea 的右键菜单（剪切 / 复制 / 粘贴 / 全选）。
  *
@@ -36,9 +29,6 @@ export function GlobalContextMenu({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false)
   const [position, setPosition] = useState({ x: 0, y: 0 })
   const targetRef = useRef<HTMLElement | null>(null)
-  const initialSelRef = useRef<SelectionSnapshot | null>(null)
-  const openedAtRef = useRef(0)
-  const cooldownUntilRef = useRef(0)
 
   const openMenuAt = useCallback((target: HTMLElement, x: number, y: number) => {
     targetRef.current = target
@@ -47,27 +37,10 @@ export function GlobalContextMenu({ children }: { children: ReactNode }) {
     setPosition({ x, y })
     setOpen(true)
 
-    const sel = window.getSelection()
-    if (sel && sel.rangeCount > 0) {
-      const r = sel.getRangeAt(0)
-      initialSelRef.current = {
-        startContainer: r.startContainer,
-        startOffset: r.startOffset,
-        endContainer: r.endContainer,
-        endOffset: r.endOffset,
-      }
-    } else {
-      initialSelRef.current = null
-    }
-    openedAtRef.current = Date.now()
   }, [])
 
   const handleContextMenu = useCallback(
     (e: MouseEvent) => {
-      if (Date.now() < cooldownUntilRef.current) {
-        e.preventDefault()
-        return
-      }
       const target = e.target as HTMLElement
       if (target.closest?.('.ProseMirror')) return
 
@@ -100,31 +73,6 @@ export function GlobalContextMenu({ children }: { children: ReactNode }) {
 
   const close = useCallback(() => setOpen(false), [])
 
-  useEffect(() => {
-    if (!open) return
-    const handler = () => {
-      if (Date.now() - openedAtRef.current < 100) return
-      const sel = window.getSelection()
-      if (!sel || sel.isCollapsed) return
-      if (sel.rangeCount === 0 || !initialSelRef.current) return
-      const r = sel.getRangeAt(0)
-      const init = initialSelRef.current
-      if (
-        r.startContainer !== init.startContainer ||
-        r.startOffset !== init.startOffset ||
-        r.endContainer !== init.endContainer ||
-        r.endOffset !== init.endOffset
-      ) {
-        if (cooldownUntilRef.current < Date.now()) {
-          cooldownUntilRef.current = Date.now() + 300
-        }
-        // 选区已经变了：立刻收（不等淡出）
-        setOpen(false)
-      }
-    }
-    document.addEventListener('selectionchange', handler)
-    return () => document.removeEventListener('selectionchange', handler)
-  }, [open])
 
   const handleCut = useCallback(() => {
     const el = targetRef.current

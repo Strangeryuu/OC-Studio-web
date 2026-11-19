@@ -161,6 +161,41 @@ async function run() {
   assert((await mobilePage.locator('.react-flow__node').count()) >= 2,
     'Second device did not reload graph after layout')
 
+  // Real pointer travel from the integrated avatar action menu into a portaled
+  // submenu must not dismiss either menu. This exercises the common PointMenu
+  // used by media controls and editor context menus in an actual browser.
+  await openSection(desktopPage, worldId, '角色')
+  await desktopPage.getByRole('button', { name: 'CI Touch Alpha', exact: true }).click()
+  await desktopPage.getByRole('button', { name: '头像操作' }).waitFor({ timeout: 15000 })
+  await desktopPage.getByRole('button', { name: '头像操作' }).click()
+  const avatarCategory = desktopPage.getByRole('menuitem', { name: '头像', exact: true })
+  await avatarCategory.hover()
+  const avatarUpload = desktopPage.getByRole('menuitem', { name: '上传头像', exact: true })
+  await avatarUpload.waitFor({ timeout: 5000 })
+  await avatarUpload.hover()
+  await desktopPage.waitForTimeout(650)
+  assert(await avatarUpload.isVisible(), 'Avatar submenu disappeared while choosing an action')
+  assert(await avatarCategory.isVisible(), 'Avatar parent menu disappeared during submenu hover')
+  const avatarFileChooser = desktopPage.waitForEvent('filechooser', { timeout: 5000 })
+  await avatarUpload.click()
+  await avatarFileChooser
+
+  // Right-click insertion submenu must also stay open after the selection
+  // changes as focus moves from the editor to its nested menu.
+  const editorBody = desktopPage.locator('.ProseMirror[contenteditable="true"]').first()
+  await editorBody.waitFor({ timeout: 15000 })
+  await editorBody.click({ button: 'right', position: { x: 25, y: 25 } })
+  const insertMenu = desktopPage.getByRole('menuitem', { name: '插入', exact: true })
+  await insertMenu.hover()
+  const separator = desktopPage.getByRole('menuitem', { name: '分割线', exact: true })
+  await separator.waitFor({ timeout: 5000 })
+  await separator.hover()
+  await desktopPage.waitForTimeout(650)
+  assert(await separator.isVisible(), 'Editor insertion submenu disappeared before selection')
+  await separator.click()
+  await editorBody.locator('hr').first().waitFor({ timeout: 5000 })
+  await desktopPage.screenshot({ path: '/tmp/ocstudio-browser-context-submenu.png' })
+
   await openSection(desktopPage, worldId, '时间线')
   await desktopPage.getByRole('button', { name: '导出图片' }).click()
   const panel = desktopPage.getByRole('dialog', { name: '导出中心 · 时间线' })
@@ -174,7 +209,7 @@ async function run() {
   await desktopPage.screenshot({ path: '/tmp/ocstudio-browser-timeline-export.png' })
   await panel.getByRole('button', { name: '返回时间线' }).click()
   await panel.waitFor({ state: 'hidden' })
-  process.stdout.write('Chromium browser acceptance passed: desktop timeline export; mobile touch drag; two-device layout version conflict.\n')
+  process.stdout.write('Chromium browser acceptance passed: desktop timeline export; stable avatar/editor submenus; mobile touch drag; two-device layout version conflict.\n')
 }
 run().catch(async error => {
   process.stderr.write('Browser acceptance failed: ' + (error.stack || error) + '\n')

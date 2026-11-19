@@ -27,6 +27,8 @@ import { MENU, MENU_ITEM_BASE } from '@/lib/ui-tokens'
 
 /** 淡出时长（ms）：与 globals.css 的 `--oc-duration-fast` = 150ms 一致 */
 const FADE_MS = 150
+/** Give pointer travel between the parent row and its portaled submenu time to complete. */
+const SUBMENU_CLOSE_DELAY_MS = 450
 
 /** 菜单浮层：`MENU` 皮肤 + 只在关闭时淡出（进场保持「点开就在」，不拖） */
 const POPUP = `${MENU} pointer-events-auto z-50 flex flex-col select-none outline-none transition-opacity duration-fast ease-quiet data-ending-style:opacity-0`
@@ -124,6 +126,9 @@ function SubmenuRow({
   return (
     <Menu.SubmenuRoot>
       <Menu.SubmenuTrigger
+        openOnHover
+        delay={80}
+        closeDelay={SUBMENU_CLOSE_DELAY_MS}
         disabled={item.disabled}
         label={item.label}
         className={rowClass(item, itemClassName)}
@@ -135,7 +140,8 @@ function SubmenuRow({
           side="right"
           align="start"
           alignOffset={-4}
-          sideOffset={2}
+          // Overlap the trigger edge: even slow diagonal pointer travel must not cross a dead zone.
+          sideOffset={-2}
           positionMethod="fixed"
           collisionPadding={8}
           className={POSITIONER}
@@ -257,6 +263,17 @@ export function PointMenu({
          * 子菜单的开关交给 `Menu.SubmenuRoot` 自己管。
          */
         if (details.reason === 'sibling-open') return
+        // A child popup can briefly move focus through the overlay root while
+        // its sibling portal mounts. Only explicit dismissal should close the
+        // entire menu. Pointer hover/blur must never dismiss a user's choices.
+        if (details.reason === 'focus-out') {
+          if (!(details.event instanceof KeyboardEvent && details.event.key === 'Tab')) return
+        } else if (
+          details.reason !== 'escape-key' &&
+          details.reason !== 'item-press' &&
+          details.reason !== 'outside-press' &&
+          details.reason !== 'close-press'
+        ) return
         requestClose(
           details.reason === 'escape-key'
             ? 'escape'
