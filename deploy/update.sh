@@ -22,6 +22,21 @@ if ! flock -n 9; then
 fi
 
 compose=(docker compose --env-file .env -f compose.yaml)
+if [[ -f compose.mail.yaml ]]; then
+  # Optional local Sendmail relay. Fail before migrations if the non-root
+  # Web container cannot read its confidential host-mounted mail files.
+  for mail_file in mail/msmtprc mail/smtp-password; do
+    if [[ ! -f "$mail_file" ]]; then
+      echo "Mail relay configuration is missing: $mail_file" >&2
+      exit 1
+    fi
+    if [[ "$(stat -c '%u:%a' "$mail_file")" != '10001:600' ]]; then
+      echo "Expected UID 10001 and mode 600 on $mail_file (chown 10001:10001; chmod 600)." >&2
+      exit 1
+    fi
+  done
+  compose+=(-f compose.mail.yaml)
+fi
 echo "Pulling verified OC Studio app and migration images..."
 "${compose[@]}" --profile maintenance pull migrate web
 
@@ -40,7 +55,10 @@ if [[ -n "$running_cid" ]]; then
 fi
 
 if [[ -n "$running_id" && "$running_id" == "$wanted_id" && "$running_health" == "healthy" ]]; then
-  echo "Web image is already running and healthy ($web_image); no deployment needed."
+  # Compose will recreate the Web container only if its configuration
+  # changed (for example, when the optional Sendmail relay is enabled).
+  "${compose[@]}" up -d --no-deps --wait web
+  echo "Web image is running and healthy ($web_image); Compose configuration checked."
   exit 0
 fi
 
