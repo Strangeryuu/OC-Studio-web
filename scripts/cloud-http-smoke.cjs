@@ -39,11 +39,7 @@ async function run() {
   const cookies = login.headers.getSetCookie().map(entry => entry.split(';')[0])
   assert(cookies.length > 0, 'Login response must set a session cookie')
   const cookie = cookies.join('; ')
-  if (process.env.CI_BROWSER_COOKIE_PATH) {
-    // CI-only ephemeral session handoff. Never print credentials or upload this file.
-    const { writeFile } = require('node:fs/promises')
-    await writeFile(process.env.CI_BROWSER_COOKIE_PATH, cookie, { mode: 0o600 })
-  }
+
 
   // Site role and invite-code registration: the Better Auth admin.createUser
   // endpoint may specify a role and therefore needs the user:set-role grant.
