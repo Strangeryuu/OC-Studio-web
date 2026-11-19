@@ -606,21 +606,25 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
     finally { pendingGraphWrite.current = null; setBusy(false) }
   }
 
-  async function changeGraphNodeImage(type: RelationNodeType, id: number, file: File): Promise<void> {
+  async function changeGraphNodeImage(type: RelationNodeType, id: number, file: File | null): Promise<void> {
     if (!canEdit || busy || transition.current || pendingGraphWrite.current)
       throw new Error('当前无法更换图谱节点图片')
     setBusy(true)
     const write = (async () => {
-      const form = new FormData()
-      form.append('file', file, file.name)
-      const response = await fetch('/api/workspaces/' + workspaceId + '/media', {
-        method: 'POST', body: form,
-      })
-      if (!response.ok) throw new Error('上传图片失败，请检查文件格式、大小及访问权限')
-      const body: { asset?: { url?: unknown } } = await response.json()
-      const url = body.asset?.url
-      if (typeof url !== 'string' || cloudMediaUrlId(url) === null)
-        throw new Error('上传图片返回了无效的云端文件地址')
+      let url = ''
+      if (file) {
+        const form = new FormData()
+        form.append('file', file, file.name)
+        const response = await fetch('/api/workspaces/' + workspaceId + '/media', {
+          method: 'POST', body: form,
+        })
+        if (!response.ok) throw new Error('上传图片失败，请检查文件格式、大小及访问权限')
+        const body: { asset?: { url?: unknown } } = await response.json()
+        const uploadedUrl = body.asset?.url
+        if (typeof uploadedUrl !== 'string' || cloudMediaUrlId(uploadedUrl) === null)
+          throw new Error('上传图片返回了无效的云端文件地址')
+        url = uploadedUrl
+      }
 
       if (type === 'character') {
         const row = characterList.rows.find(item => item.character.id === id)

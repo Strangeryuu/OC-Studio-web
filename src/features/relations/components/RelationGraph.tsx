@@ -94,7 +94,7 @@ interface WorkspaceGraphSource {
   savePositions?: (positions: Array<{ entityType: RelationNodeType; entityId: number; x: number; y: number }>) => Promise<void>
   createNode?: (type: RelationEdgeType, name: string, position: { x: number; y: number }) => Promise<void>
   deleteNode?: (type: RelationNodeType, id: number) => Promise<void>
-  changeNodeImage?: (type: RelationNodeType, id: number, file: File) => Promise<void>
+  changeNodeImage?: (type: RelationNodeType, id: number, file: File | null) => Promise<void>
   createRelation?: (source: { entityType: RelationNodeType; entityId: number }, target: { entityType: RelationNodeType; entityId: number }, label: string) => Promise<CreateRelationResult>
   deleteRelation?: (selection: EdgeStyleSelection) => Promise<boolean>
   patchRelation?: (selection: EdgeStyleSelection, patch: EdgeStylePatchInput) => Promise<boolean>
@@ -1023,6 +1023,28 @@ export function RelationGraph({
           onSelect: () => {
             setImageTarget(menuNode.id)
             imageInputRef.current?.click()
+          },
+        }] : []),
+        ...(canChangeImages &&
+          (menuNode.data.avatarUrl || menuNode.data.flagUrl || menuNode.data.imageUrl) ? [{
+          label: '移除节点图片',
+          danger: true,
+          icon: <Trash2 size={13} strokeWidth={2} />,
+          onSelect: () => {
+            if (!window.confirm('确定移除此节点的图片？其他词条中引用的图片将保留，整库删除请使用全局相册。')) return
+            void (async () => {
+              try {
+                if (workspace) {
+                  if (!workspace.changeNodeImage) throw new Error('当前关系图无法修改节点图片')
+                  await workspace.changeNodeImage(menuNode.data.entityType, menuNode.data.entityId, null)
+                } else {
+                  await setGraphNodeImage(menuNode.data.entityType, menuNode.data.entityId, '')
+                  await refresh({ silent: true })
+                }
+              } catch (cause) {
+                toast.error('移除图片失败', { description: cause instanceof Error ? cause.message : String(cause) })
+              }
+            })()
           },
         }] : []),
         ...(canDeleteNodes ? [{
