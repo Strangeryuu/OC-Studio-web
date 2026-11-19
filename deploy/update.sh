@@ -47,12 +47,10 @@ fi
 "${compose[@]}" up -d db
 
 if [[ -n "$running_id" ]]; then
-  # Back up both sources of persistent data before applying DB migrations.
-  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-  mkdir -p backups
+  # Publish one verified PostgreSQL + media backup pair before any migration.
+  # This child shares the caller's update lock while holding its own backup lock.
   echo "Backing up PostgreSQL and private media before updating..."
-  "${compose[@]}" exec -T db sh -ec 'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "backups/postgres-$stamp.dump"
-  tar -czf "backups/media-$stamp.tgz" -C data media
+  OCSTUDIO_UPDATE_IN_PROGRESS=1 bash ./backup.sh
 fi
 
 echo "Applying Better Auth and business database migrations..."
