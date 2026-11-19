@@ -1,6 +1,7 @@
 'use client'
 import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
 import { Plus, Trash2, RefreshCw } from 'lucide-react'
+import { WorkspaceDeleteAction } from '@/components/cloud/WorkspaceDeleteAction'
 import { SortableList, DragHandle, useSortableItem, moveId } from '@/components/shared/list-dnd'
 import { categoryIconOf, CATEGORY_ICON_LABELS, CATEGORY_ICON_NAMES } from '@/lib/categories/icons'
 import { newCategoryId, type Category } from '@/lib/categories/types'
@@ -15,7 +16,7 @@ import { BTN_PRIMARY, BTN_QUIET, FIELD_INPUT } from '@/lib/ui-tokens'
 type Tab='categories'|'templates'
 function CategoryLine({item,canEdit,templates,onEdit,onRemove,onToggle}:{
   item:Category;canEdit:boolean;templates:TemplateDoc[]
-  onEdit:(c:Category)=>void;onRemove:(id:string)=>void;onToggle:(id:string)=>void
+  onEdit:(c:Category)=>void;onRemove:(id:string)=>Promise<void>;onToggle:(id:string)=>void
 }){
   const sort=useSortableItem(item.id,!canEdit)
   return <li ref={sort.setNodeRef} style={sort.style}
@@ -31,8 +32,9 @@ function CategoryLine({item,canEdit,templates,onEdit,onRemove,onToggle}:{
         {item.enabled?'已启用':'已隐藏'}</button>
       {!item.builtin&&<>
         <button type="button" className={BTN_QUIET} onClick={()=>onEdit(item)}>编辑</button>
-        <button type="button" aria-label={'删除分类'+item.name} className={BTN_QUIET}
-          onClick={()=>onRemove(item.id)}><Trash2 size={14}/></button>
+        <WorkspaceDeleteAction compact label={'分类「'+item.name+'」'}
+          description={'删除分类「'+item.name+'」后，原有词条将保留在世界观目录中，可继续编辑。'}
+          onConfirm={()=>onRemove(item.id)} />
       </>}
     </>}
   </li>
@@ -88,8 +90,8 @@ export function WorkspaceCustomizationPanel({workspaceId,canManage,onSaved}:{
     finally{setLoading(false)}
   },[workspaceId])
   useEffect(()=>{void load()},[load])
-  const save=useCallback(async(next:WorkspaceCustomization)=>{
-    if(!canManage||busy)return
+  const save=useCallback(async(next:WorkspaceCustomization):Promise<boolean>=>{
+    if(!canManage||busy)return false
     setBusy(true);setError(null)
     try{
       const response=await fetch('/api/workspaces/'+workspaceId+'/customization',{
@@ -101,7 +103,8 @@ export function WorkspaceCustomizationPanel({workspaceId,canManage,onSaved}:{
         throw new Error(result.error==='VERSION_CONFLICT'?'其他成员已更新配置，请刷新后重试':
           result.error??'保存失败')
       setData(result.customization);setVersion(result.version);onSaved?.()
-    }catch(cause){setError(cause instanceof Error?cause.message:'保存失败')}
+      return true
+    }catch(cause){setError(cause instanceof Error?cause.message:'保存失败');return false}
     finally{setBusy(false)}
   },[canManage,busy,version,workspaceId,onSaved])
   const updateCategories=(items:Category[])=>void save({...data,categories:items})
@@ -152,9 +155,9 @@ export function WorkspaceCustomizationPanel({workspaceId,canManage,onSaved}:{
         }}>
         <ul>{ordered.map(item=><CategoryLine key={item.id} item={item} templates={data.templates}
           canEdit={canManage&&!busy} onEdit={setEditCategory}
-          onToggle={toggleCategory} onRemove={id=>{
-            if(window.confirm('移除分类后，原有词条仍保留在世界观目录。确定删除？'))
-              updateCategories(data.categories.filter(item=>item.id!==id))
+          onToggle={toggleCategory} onRemove={async id=>{
+            const saved=await save({...data,categories:data.categories.filter(item=>item.id!==id)})
+            if(!saved)throw new Error('分类删除未完成，请检查错误提示')
           }}/>)}</ul>
       </SortableList>
       {canManage&&<button type="button" className={BTN_PRIMARY} disabled={busy}

@@ -57,6 +57,7 @@ import {
   type WorkspaceGraphChange, type WorkspaceGraphPlan,
 } from '@/features/relations/cloud/workspace-graph-mutations'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { WorkspaceDeleteAction } from '@/components/cloud/WorkspaceDeleteAction'
 
 const WorkspaceHome = dynamic(
   () => import('@/features/dashboard/cloud/WorkspaceHome').then(mod => mod.WorkspaceHome),
@@ -201,7 +202,7 @@ function useWorkspaceRows<T extends { entityId: string }>(adapter: { list: () =>
 }
 
 function WorkspaceEntryList<T extends { entityId: string }>({ label, rows, getLabel, selectedId, loading,
-  error, busy, onCreate, onSelect }: {
+  error, busy, onCreate, onSelect, onDelete }: {
   label: string
   rows: T[]
   getLabel: (row: T) => string
@@ -211,6 +212,7 @@ function WorkspaceEntryList<T extends { entityId: string }>({ label, rows, getLa
   busy: boolean
   onCreate?: () => void
   onSelect: (entityId: string) => void
+  onDelete?: (row: T) => Promise<void>
 }) {
   const showLoading = useDelayedFlag(loading)
   return <section className="flex flex-col gap-4 border-t border-line pt-5">
@@ -222,9 +224,15 @@ function WorkspaceEntryList<T extends { entityId: string }>({ label, rows, getLa
     {error && <p role="alert" className="text-ui text-error">{error}</p>}
     {showLoading && <p className="text-ui text-ink-muted">正在读取{label}…</p>}
     {!loading && <div className="flex flex-wrap gap-2">
-      {rows.map(row => <button type="button" key={row.entityId} className={BTN_QUIET}
-        aria-pressed={selectedId === row.entityId} disabled={busy}
-        onClick={() => onSelect(row.entityId)}>{getLabel(row)}</button>)}
+      {rows.map(row => <div key={row.entityId} className="flex items-center gap-1 rounded-item border border-line/60 px-1 py-0.5">
+        <button type="button" className={BTN_QUIET}
+          aria-pressed={selectedId === row.entityId} disabled={busy}
+          onClick={() => onSelect(row.entityId)}>{getLabel(row)}</button>
+        {onDelete && <WorkspaceDeleteAction compact disabled={busy}
+          label={label + '「' + getLabel(row) + '」'}
+          description={'「' + getLabel(row) + '」将移入回收站，可恢复。相关引用会同步整理；有子词条时会保留子项并调整其层级。'}
+          onConfirm={() => onDelete(row)} />}
+      </div>)}
       {rows.length === 0 && !error && <p className="text-ui text-ink-muted">暂无{label}</p>}
     </div>}
   </section>
@@ -264,6 +272,7 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const canEdit = role !== 'viewer'
+  const canDelete = role === 'owner' || role === 'admin'
   const character = characterList.rows.find(row => row.entityId === selectedId)
   const country = countryList.rows.find(row => row.entityId === selectedId)
   const event = eventList.rows.find(row => row.entityId === selectedId)
@@ -327,6 +336,67 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
       : kind === 'event' ? eventList.rows.find(row => row.entity.id === id)
       : noteList.rows.find(row => row.entity.id === id && isCodexEntry(row.entity))
     if (target) select(target.entityId, kind)
+  }
+
+  // The table endpoint atomically promotes child entries and clears linked references.
+  // Version checks protect both the target and all affected entities from stale deletions.
+  async function removeWorkspaceEntry(kind: 'character' | 'country' | 'event' | 'worldEntry',
+    entityId: string, expectedVersion: number): Promise<void> {
+    if (!canDelete || busy || transition.current || pendingGraphWrite.current) {
+      throw new Error('目前没有删除权限，或其他修改仍在保存')
+    }
+    transition.current = true
+    setBusy(true)
+    setError(null)
+    const readRows = () => Promise.all([
+      characterAdapter.list(), countryAdapter.list(), eventAdapter.list(), noteAdapter.list(),
+    ])
+    const applyRows = (rows: Awaited<ReturnType<typeof readRows>>) => {
+      characterList.reset(rows[0])
+      countryList.reset(rows[1])
+      eventList.reset(rows[2])
+      noteList.reset(rows[3])
+    }
+    try {
+      await flushPendingSaves()
+      const rows = await readRows()
+      const snapshots = [
+        ...rows[0].map(row => ({ kind: 'character', entityId: row.entityId, version: row.version })),
+        ...rows[1].map(row => ({ kind: 'country', entityId: row.entityId, version: row.version })),
+        ...rows[2].map(row => ({ kind: 'event', entityId: row.entityId, version: row.version })),
+        ...rows[3].filter(row => isCodexEntry(row.entity))
+          .map(row => ({ kind: 'worldEntry', entityId: row.entityId, version: row.version })),
+      ]
+      const target = snapshots.find(row => row.entityId === entityId && row.kind === kind)
+      if (!target || target.version !== expectedVersion) {
+        applyRows(rows)
+        throw new Error('条目已发生变更，请重新查看内容并再次确认删除')
+      }
+      const response = await fetch('/api/workspaces/' + workspaceId + '/table/' + entityId, {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expectedVersion: target.version,
+          expectedVersions: Object.fromEntries(snapshots.map(row => [row.entityId, row.version])),
+        }),
+      })
+      if (!response.ok) {
+        const result: { error?: string } = await response.json().catch(() => ({}))
+        throw new Error(result.error === 'VERSION_CONFLICT'
+          ? '相关记录已被其他成员修改，请刷新后再次确认删除'
+          : result.error === 'TABLE_DELETE_CONFLICT'
+            ? '关联内容过多或层级有冲突，请在树表中检查后重试'
+            : '删除失败：' + (result.error ?? response.status))
+      }
+      applyRows(await readRows())
+      if (selectedId === entityId) setSelectedId(null)
+    } catch (cause) {
+      try { applyRows(await readRows()) } catch { /* network disconnected; retain local rows */ }
+      setError(cause instanceof Error ? cause.message : '删除失败')
+      throw cause
+    } finally {
+      transition.current = false
+      setBusy(false)
+    }
   }
 
   function createNote(parentId: number | null, category?: Category | null) {
@@ -674,6 +744,7 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
         onCreated={noteList.append} onSaved={noteList.replace} onRefresh={refreshGraph} />}
       {section === 'character' && <WorkspaceEntryList label="角色" rows={characterList.rows} loading={characterList.loading} error={characterList.error}
         getLabel={row => row.character.name} selectedId={selectedId} busy={busy} onSelect={id => select(id, 'character')}
+        onDelete={canDelete ? row => removeWorkspaceEntry('character', row.entityId, row.version) : undefined}
         onCreate={canEdit ? () => void openAfterSaving('character', async () => {
           const row = await characterAdapter.create(buildDefaultCharacter(newCharacterData()))
           characterList.append(row)
@@ -681,6 +752,7 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
         }) : undefined} />}
       {section === 'country' && <WorkspaceEntryList label="国家" rows={countryList.rows} loading={countryList.loading} error={countryList.error}
         getLabel={row => row.entity.name} selectedId={selectedId} busy={busy} onSelect={id => select(id, 'country')}
+        onDelete={canDelete ? row => removeWorkspaceEntry('country', row.entityId, row.version) : undefined}
         onCreate={canEdit ? () => void openAfterSaving('country', async () => {
           const row = await countryAdapter.create(buildDefaultCountry(newCountryData()))
           countryList.append(row)
@@ -688,6 +760,7 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
         }) : undefined} />}
       {section === 'event' && <WorkspaceEntryList label="事件" rows={eventList.rows} loading={eventList.loading} error={eventList.error}
         getLabel={row => row.entity.title} selectedId={selectedId} busy={busy} onSelect={id => select(id, 'event')}
+        onDelete={canDelete ? row => removeWorkspaceEntry('event', row.entityId, row.version) : undefined}
         onCreate={canEdit ? () => void openAfterSaving('event', async () => {
           const row = await eventAdapter.create(buildDefaultEvent(newEventData()))
           eventList.append(row)
@@ -695,6 +768,10 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
         }) : undefined} />}
       {section === 'world' && <WorkspaceNoteTree entries={worldNotes} selectedId={note?.entity.id} loading={noteList.loading}
         error={noteList.error} busy={busy} onSelect={id => navigate('world', id)}
+        onDelete={canDelete ? entry => {
+          const row = noteList.rows.find(item => item.entity.id === entry.id)
+          return row ? removeWorkspaceEntry('worldEntry', row.entityId, row.version) : Promise.reject(new Error('词条已变更，请刷新'))
+        } : undefined}
         onCreate={canEdit ? () => createNote(null) : undefined} />}
       {section === 'table' && <WorkspaceTreeTable workspaceId={workspaceId}
         characters={characterList.rows} countries={countryList.rows} events={eventList.rows} notes={noteList.rows}
@@ -769,6 +846,10 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
           const found=noteList.rows.find(row=>row.entity.id===id)
           if(found)select(found.entityId,'category')
         }}
+        onDelete={canDelete ? entry => {
+          const row = noteList.rows.find(item => item.entity.id === entry.id && item.entity.category === activeCategory.name)
+          return row ? removeWorkspaceEntry('worldEntry', row.entityId, row.version) : Promise.reject(new Error('词条已变更，请刷新'))
+        } : undefined}
         onCreate={canEdit?()=>createNote(null,activeCategory):undefined}/>}
       {section === 'category' && activeCategory && categoryNote &&
         <OriginalNoteEditor key={categoryNote.entityId} snapshot={categoryNote} adapter={noteAdapter}

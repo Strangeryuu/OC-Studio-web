@@ -2,13 +2,14 @@
 
 import { useMemo, useState } from 'react'
 import { TreeRow } from '@/components/shared/TreeRow'
+import { WorkspaceDeleteAction } from '@/components/cloud/WorkspaceDeleteAction'
 import { BTN_QUIET, FIELD_INPUT } from '@/lib/ui-tokens'
 import { useDelayedFlag } from '@/lib/use-delayed-flag'
 import type { WorldEntry } from '@/types'
 import { buildTree, type TreeNode } from '../components/world-tree-utils'
 import { filterEntriesWithAncestors } from '../components/world-content-utils'
 
-export function WorkspaceNoteTree({ entries, selectedId, busy, loading, error, onSelect, onCreate }: {
+export function WorkspaceNoteTree({ entries, selectedId, busy, loading, error, onSelect, onCreate, onDelete }: {
   entries: WorldEntry[]
   selectedId?: number
   busy: boolean
@@ -16,6 +17,7 @@ export function WorkspaceNoteTree({ entries, selectedId, busy, loading, error, o
   error: string | null
   onSelect: (id: number) => void
   onCreate?: () => void
+  onDelete?: (entry: WorldEntry) => Promise<void>
 }) {
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
@@ -38,6 +40,10 @@ export function WorkspaceNoteTree({ entries, selectedId, busy, loading, error, o
     return <div key={entry.id} role="none">
       <TreeRow title={entry.title} selected={entry.id === selectedId} depth={depth}
         onClick={select} expanded={open}
+        actions={onDelete ? <WorkspaceDeleteAction compact disabled={busy}
+          label={'词条「' + entry.title + '」'}
+          description={'「' + entry.title + '」将移入回收站，可恢复。子词条会保留并提升到上一层，相关引用也会更新。'}
+          onConfirm={() => onDelete(entry)} /> : undefined}
         rowProps={{ role: 'treeitem', 'aria-label': entry.title, 'aria-selected': entry.id === selectedId, 'aria-expanded': children.length ? open : undefined, tabIndex: 0,
           onKeyDown: event => {
             if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
