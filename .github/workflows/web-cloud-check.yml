@@ -95,7 +95,11 @@ jobs:
         run: node scripts/cloud-ci-seed-user.cjs
       - name: 构建真实 PostgreSQL Web 服务
         run: npm run build:web
-      - name: 使用真实 PostgreSQL 完成登录与工作台 HTTP 联调
+      - name: 安装 Chromium 进行桌面/手机模拟与双会话浏览器验收
+        run: |
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: 使用真实 PostgreSQL 完成登录、HTTP 和浏览器联调
         run: |
           mkdir -p /tmp/ocstudio-ci-media
           # CI-only sendmail captures the reset email for a real one-time token test.
@@ -119,8 +123,21 @@ jobs:
             tail -n 45 /tmp/ocstudio-web-server.log
             exit 1
           }
+          node scripts/cloud-browser-acceptance.cjs || {
+            # Browser screenshots contain only isolated test fixtures.
+            tail -n 80 /tmp/ocstudio-web-server.log
+            exit 1
+          }
         env:
           MEDIA_ROOT: /tmp/ocstudio-ci-media
+      - name: 上传浏览器验收截图
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cloud-browser-acceptance
+          path: /tmp/ocstudio-browser-*.png
+          if-no-files-found: ignore
+          retention-days: 7
 
   first-run-onboarding:
     name: 全新实例管理员初始化验收

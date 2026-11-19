@@ -44,6 +44,12 @@ import { useTimelineContainerWidth } from '../hooks/useTimelineContainerWidth'
 import { useTimelineDrag } from '../hooks/useTimelineDrag'
 import { usePeriodEditor } from '../hooks/usePeriodEditor'
 import { useCloudPeriods } from '../hooks/useCloudPeriods'
+import dynamic from 'next/dynamic'
+
+const WorkspaceTimelineExportDialog = dynamic(
+  () => import('../cloud/WorkspaceTimelineExportDialog').then(mod => mod.WorkspaceTimelineExportDialog),
+  { ssr: false },
+)
 import { DraggableNode, StaticNode } from './EventNode'
 import { ParticipantTracks, TRACK_ROW_HEIGHT, type ParticipantTrackRow } from './ParticipantTracks'
 import { PeriodBar } from './PeriodBar'
@@ -51,9 +57,7 @@ import { EmptyTimeline } from './EmptyTimeline'
 import { BucketView } from './BucketView'
 import { TimelineToolbar } from './TimelineToolbar'
 import { useOptionalExportCenter } from '@/components/shared/export/ExportCenterHost'
-import { renderTimelineCanvas } from '../export-timeline'
-import { saveBlobAs } from '@/features/map/export'
-import { toast } from 'sonner'
+import type { WorkspaceTimelineExportSource } from '@/components/shared/export/TimelinePanel'
 
 interface TimelineViewProps {
   onSelectEvent: (id: number) => void
@@ -69,6 +73,7 @@ interface TimelineViewProps {
     error: string | null
     saveTime?: (id: number, time: string, endTime?: string) => Promise<void>
     workspaceId?: string
+    worldName?: string
     canEditPeriods?: boolean
   }
 }
@@ -80,7 +85,7 @@ export function TimelineView({ onSelectEvent, onSelectCharacter, onSelectCountry
   const { settings, updateSetting } = useSettings()
   const [editMode, setEditMode] = useState(false)
   const openExportCenter = useOptionalExportCenter()
-  const [exportingTimeline, setExportingTimeline] = useState(false)
+  const [workspaceExportOpen, setWorkspaceExportOpen] = useState(false)
   const [filterMajor, setFilterMajor] = useState(false)
   const [characterFilter, setCharacterFilter] = useState<number | 'all'>('all')
   const [countryFilter, setCountryFilter] = useState<number | 'all'>('all')
@@ -378,28 +383,8 @@ export function TimelineView({ onSelectEvent, onSelectCharacter, onSelectCountry
   const tracksHeight = trackRows.length * TRACK_ROW_HEIGHT
   const canvasHeight = Math.max(300, eventBottom + (trackRows.length > 0 ? 12 + tracksHeight : 0) + 32)
 
-  // 云端复用原版离屏时间线画布渲染，导出当前筛选结果。
-  // 仅点击下载时运行；桌面版继续保留统一导出中心。
-  const exportWorkspaceTimeline = async () => {
-    if (exportingTimeline) return
-    setExportingTimeline(true)
-    try {
-      const canvas = await renderTimelineCanvas({
-        events,
-        periods,
-        title: '世界观时间线',
-        density: 'normal',
-      })
-      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
-      if (!blob) throw new Error('生成时间线 PNG 失败')
-      const saved = await saveBlobAs(blob, 'OC时间线.png')
-      if (saved) toast.success('时间线 PNG 已导出')
-    } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : '时间线 PNG 导出失败')
-    } finally {
-      setExportingTimeline(false)
-    }
-  }
+  const timelineExportSource: WorkspaceTimelineExportSource | null = workspace
+    ? { events, periods, worldName: workspace.worldName ?? '世界观' } : null
 
   // 工具栏 props 只写一次：三个渲染分支共用同一份，避免三处重复
   const toolbarProps = {
@@ -422,7 +407,7 @@ export function TimelineView({ onSelectEvent, onSelectCharacter, onSelectCountry
     onCountryFilterChange: setCountryFilter,
     countryOptions,
     onAddPeriod: canEditPeriods ? periodEditor.openNewPeriodDialog : undefined,
-    onExport: workspace ? () => void exportWorkspaceTimeline() : openExportCenter ? () => openExportCenter({ tab: 'timeline' }) : undefined,
+    onExport: workspace ? () => setWorkspaceExportOpen(true) : openExportCenter ? () => openExportCenter({ tab: 'timeline' }) : undefined,
   }
 
   /** 空态/全被筛掉时的工具栏：导航与缩放都不展示 */
@@ -778,6 +763,9 @@ export function TimelineView({ onSelectEvent, onSelectCharacter, onSelectCountry
         </div>
       ) : null}
 
+      {timelineExportSource && workspaceExportOpen && (
+        <WorkspaceTimelineExportDialog source={timelineExportSource} onClose={() => setWorkspaceExportOpen(false)} />
+      )}
       <PeriodDialog
         key={periodEditor.editingPeriod?.id ?? 'new'}
         open={periodEditor.periodDialogOpen}

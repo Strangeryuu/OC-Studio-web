@@ -40,13 +40,23 @@ function stamp(): string {
   return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`
 }
 
-export function TimelinePanel() {
+export interface WorkspaceTimelineExportSource {
+  events: TimelineEvent[]
+  periods: Period[]
+  worldName: string
+}
+
+export function TimelinePanel({ workspace }: { workspace?: WorkspaceTimelineExportSource } = {}) {
   const [titleOverride, setTitleOverride] = useState<string | null>(null)
-  const [worldName, setWorldName] = useState('')
+  const [desktopWorldName, setDesktopWorldName] = useState('')
   const [density, setDensity] = useState<TimelineExportDensity>('normal')
-  const [events, setEvents] = useState<TimelineEvent[]>([])
-  const [periods, setPeriods] = useState<Period[]>([])
-  const [loaded, setLoaded] = useState(false)
+  const [desktopEvents, setDesktopEvents] = useState<TimelineEvent[]>([])
+  const [desktopPeriods, setDesktopPeriods] = useState<Period[]>([])
+  const [desktopLoaded, setDesktopLoaded] = useState(false)
+  const events = workspace?.events ?? desktopEvents
+  const periods = workspace?.periods ?? desktopPeriods
+  const worldName = workspace?.worldName ?? desktopWorldName
+  const loaded = Boolean(workspace) || desktopLoaded
   const [figure, setFigure] = useState<Figure | null>(null)
   const [status, setStatus] = useState<'loading' | 'busy' | 'ready' | 'error'>('loading')
   const [error, setError] = useState('')
@@ -57,19 +67,20 @@ export function TimelinePanel() {
   const title = titleOverride ?? defaultTitle
 
   useEffect(() => {
+    if (workspace) return
     void Promise.all([getTimelineEvents(), db.periods.toArray(), db.meta.get(1)])
       .then(([eventRows, periodRows, meta]) => {
-        setEvents(eventRows)
-        setPeriods(periodRows.filter((period) => !period.deleted))
-        setWorldName((meta?.worldName ?? '').trim())
-        setLoaded(true)
+        setDesktopEvents(eventRows)
+        setDesktopPeriods(periodRows.filter((period) => !period.deleted))
+        setDesktopWorldName((meta?.worldName ?? '').trim())
+        setDesktopLoaded(true)
       })
       .catch((reason: unknown) => {
         setError(reason instanceof Error ? reason.message : String(reason))
         setStatus('error')
-        setLoaded(true)
+        setDesktopLoaded(true)
       })
-  }, [])
+  }, [workspace])
 
   useEffect(() => {
     if (!loaded) return

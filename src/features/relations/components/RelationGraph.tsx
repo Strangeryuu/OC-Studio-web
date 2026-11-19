@@ -596,7 +596,7 @@ export function RelationGraph({
     if (filteredNodes.length === 0 || !canRelayout) return
 
     const snapshot = new Map<string, { x: number; y: number; entityType: RelationNodeType; entityId: number }>()
-    for (const node of nodes) {
+    for (const node of filteredNodes) {
       const entityType = node.data?.entityType as RelationNodeType | undefined
       const entityId = node.data?.entityId as number | undefined
       if (!entityType || entityId === undefined) continue
@@ -629,11 +629,14 @@ export function RelationGraph({
     rfRef.current?.fitView({ padding: 0.2, duration: 200, minZoom: MIN_ZOOM })
 
     void persist(updates).then(() => {
+      let undoStarted = false
       toast('已整理布局', {
         duration: 8000,
         action: {
           label: '撤销',
           onClick: () => {
+            if (undoStarted) return
+            undoStarted = true
             const restored = [...snapshot.values()].map(item => ({
               entityType: item.entityType, entityId: item.entityId, x: item.x, y: item.y,
             }))
@@ -654,8 +657,8 @@ export function RelationGraph({
       toast.error('保存整理布局失败', {
         description: error instanceof Error ? error.message : String(error),
       })
-      // A cloud batch may have saved some nodes before a version conflict.
-      // Refresh the authoritative positions rather than leaving optimistic UI.
+      // The transaction rolls back the entire batch on conflict/failure.
+      // Reload in case COMMIT succeeded but the response was interrupted.
       if (workspace) void refresh({ silent: true })
     })
   }, [filteredNodes, rawEdges, nodes, setNodes, canRelayout, workspace, refresh])
