@@ -44,7 +44,7 @@ OC Studio Web 面向原创角色、小说设定与世界观资料管理，提供
 | 📋 表格 | 角色、国家、事件、词条的树形总览和快捷编辑；安全删除及子项提升 |
 | 🗺️ 地图 | 地图底图、国家 / 事件锚点、国界与道路、地图生成器、多视图、`.ocmap` 与 PNG 导出 |
 | ⏳ 时间线 | 事件与相关角色 / 国家的时间信息展示、跳转和部分编辑 |
-| 🕸️ 关系图 | 跨角色、国家、事件、词条的关系可视化与节点位置保存 |
+| 🕸️ 关系图 | 复用原版关系编辑/节点/力布局及全套 PNG 导出；云端版本化保存、私有换图，支持手机拖线和长按节点菜单（真机交互仍需验收） |
 | 🖼️ 全局相册 | 自动汇总私有图片，来源 / 标签筛选、全屏预览及移动端长按操作 |
 
 ### 云端增强功能
@@ -203,6 +203,7 @@ npm run build:web  # Next.js 生产构建
 
 - [Web 移植开发进度](docs/web-dev-progress.md)
 - [与上游逐模块功能差距及后续验收](docs/web-parity-audit-2026-11-19.md)
+- [关系图与原版源码逐项对照及手机手势验收](docs/web-graph-parity-2026-11-19.md)
 - [高级功能验收清单](docs/web-advanced-acceptance.md)
 - [Docker / GHCR / VPS 部署](docs/web-docker-deployment.md)
 - [Web Docker Sendmail 邮件中继配置](docs/web-local-sendmail-relay.md)
