@@ -43,7 +43,7 @@
 
 在 `/login` 点击“忘记密码？”，输入注册邮箱；如邮件配置正常，用户会收到限时重置链接。点击后进入 `/reset-password` 设置新密码。Better Auth 颁发的重置令牌默认有效一小时，成功修改密码后令牌一次性失效。
 
-- **本机 Sendmail**：需要在运行 Node Web 的主机或容器内配置可工作的 `/usr/sbin/sendmail`；可通过受信任的 `SENDMAIL_PATH` 环境变量指定绝对路径。**仅在 VPS 宿主机装好 MTA 而容器内部没有对应程序时，需要同时提供容器内的执行环境**。
+- **本机 Sendmail**：当前 Web Docker 镜像已预装 `msmtp-mta`，提供 `/usr/sbin/sendmail`；实际投递需在 VPS 上安全挂载 `msmtprc` 和 SMTP 授权码。使用方法见 [Docker 内置 Sendmail 客户端配置](./web-local-sendmail-relay.md)。可以使用受信任的 `SENDMAIL_PATH` 指定其他容器内绝对路径。
 - **SMTP**：填写服务商 SMTP 主机、端口、加密方式、账号和密码。465 通常直接 TLS；587 通过 STARTTLS。TLS 连接校验服务端证书，密码由服务器使用 `BETTER_AUTH_SECRET` 派生密钥进行 AES-256-GCM 加密后存储。变更 `BETTER_AUTH_SECRET` 前必须先安排密钥/邮件设置迁移，否则旧 SMTP 密文将无法解密。
 
 **邮件发送模式都需先用测试邮箱检查实际投递、垃圾邮件情况和重置后的登录。** CI 测试通过本地受控 Sendmail 捕获邮件并验证一次性令牌与密码哈希，不会发送真实互联网邮件。
@@ -59,7 +59,7 @@
 
 从最新 `web-dev` Web 镜像开始，平台管理员可进入 `/admin/mail` 保存配置，并点击 **发送测试邮件**。测试只发送至**当前登录平台管理员账号的注册邮箱**，不触发密码重置，单账号测试请求至少间隔 15 秒。返回“发件服务已接受”表示 SMTP 服务器回复成功或本机 MTA 返回成功，最终到达收件箱仍取决于发件服务商的投递、收件方过滤与域名信誉。
 
-**Docker 安装优先使用 SMTP 模式。** `node:24-bookworm-slim` Web 镜像默认没有 `/usr/sbin/sendmail`，即使 VPS 宿主机安装了 Postfix/Sendmail，容器内也不会自动出现该程序。现在后台会显示 Web **容器内**的可执行文件检测结果；如需真正使用本机方式，请在自己维护的 Web 镜像里安装并配置 MTA，保证可连接外部邮件服务、发件域名已正确配置。若目标是低运维成本，推荐使用服务商的 SMTP 提交服务。
+**Docker 镜像现已预装 `msmtp-mta` Sendmail 兼容程序。** 它需要配置 SMTP 中继服务器才能投递外部邮件；可以按 [部署指南](./web-local-sendmail-relay.md) 启用 `compose.mail.yaml`、挂载安全的授权码文件。管理员后台的 SMTP 模式依然可独立使用，适合已有服务商授权码的部署。
 
 ### SMTP 推荐配置
 
