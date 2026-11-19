@@ -82,6 +82,8 @@ interface WorkspaceGraphSource {
   error: string | null
   refresh: (options?: RefreshOptions) => Promise<void>
   savePosition?: (type: RelationNodeType, id: number, x: number, y: number) => Promise<void>
+  createNode?: (type: RelationEdgeType, name: string, position: { x: number; y: number }) => Promise<void>
+  deleteNode?: (type: RelationNodeType, id: number) => Promise<void>
   createRelation?: (source: { entityType: RelationNodeType; entityId: number }, target: { entityType: RelationNodeType; entityId: number }, label: string) => Promise<CreateRelationResult>
   deleteRelation?: (selection: EdgeStyleSelection) => Promise<boolean>
   patchRelation?: (selection: EdgeStyleSelection, patch: EdgeStylePatchInput) => Promise<boolean>
@@ -131,6 +133,8 @@ export function RelationGraph({
   const local = useGraphData(!workspace)
   const { nodes: rawNodes, edges: rawEdges, loading, error, refresh } = workspace ?? local
   const canMutateGraph = workspace === undefined
+  const canCreateNodes = canMutateGraph || Boolean(workspace?.createNode)
+  const canDeleteNodes = canMutateGraph || Boolean(workspace?.deleteNode)
   const canConnectRelations = canMutateGraph || Boolean(workspace?.createRelation)
   const canDeleteRelations = canMutateGraph || Boolean(workspace?.deleteRelation)
   const canPatchRelations = canMutateGraph || Boolean(workspace?.patchRelation)
@@ -729,18 +733,23 @@ export function RelationGraph({
             : { x: 0, y: 0 }
         const position = { x: anchor.x - size.w / 2, y: anchor.y - size.h / 2 }
 
-        let entityId: number
-        if (type === 'character') {
-          entityId = await createCharacter({ ...newCharacterData(), name })
-        } else if (type === 'country') {
-          entityId = await createCountry({ ...newCountryData(), name })
+        if (workspace) {
+          if (!workspace.createNode) throw new Error('当前关系图已暂停编辑，请稍后重试')
+          // Cloud creates one versioned entity with its initial graphPosition.
+          await workspace.createNode(type, name, position)
         } else {
-          entityId = await createEvent({ ...newEventData(), title: name })
+          let entityId: number
+          if (type === 'character') {
+            entityId = await createCharacter({ ...newCharacterData(), name })
+          } else if (type === 'country') {
+            entityId = await createCountry({ ...newCountryData(), name })
+          } else {
+            entityId = await createEvent({ ...newEventData(), title: name })
+          }
+          await saveNodePosition(type, entityId, position.x, position.y)
         }
-
-        await saveNodePosition(type, entityId, position.x, position.y)
         setCreateOpen(false)
-        await refresh({ silent: true })
+        if (!workspace) await refresh({ silent: true })
         toast.success(`已创建「${name}」`)
       } catch (err) {
         toast.error('创建失败', { description: err instanceof Error ? err.message : String(err) })
@@ -748,7 +757,7 @@ export function RelationGraph({
         setCreating(false)
       }
     },
-    [creating, refresh],
+    [creating, refresh, workspace],
   )
 
   const confirmDelete = useCallback(async () => {
@@ -759,9 +768,14 @@ export function RelationGraph({
       if (deleteTarget.kind === 'node') {
         const node = rawNodes.find((item) => item.id === deleteTarget.nodeId)
         if (!node) return
-        await deleteGraphNode(node.data.entityType, node.data.entityId)
+        if (workspace) {
+          if (!workspace.deleteNode) throw new Error('当前关系图已暂停编辑，请稍后重试')
+          await workspace.deleteNode(node.data.entityType, node.data.entityId)
+        } else {
+          await deleteGraphNode(node.data.entityType, node.data.entityId)
+        }
         setFocusNodeId(null)
-        await refresh({ silent: true })
+        if (!workspace) await refresh({ silent: true })
         toast.success('已移到回收站')
       } else {
         const { selection } = deleteTarget
@@ -943,8 +957,8 @@ export function RelationGraph({
             setImageTarget(menuNode.id)
             imageInputRef.current?.click()
           },
-        },
-        {
+        }] : []),
+        ...(canDeleteNodes ? [{
           label: '删除',
           danger: true,
           icon: <Trash2 size={13} strokeWidth={2} />,
@@ -1153,7 +1167,7 @@ export function RelationGraph({
           />
         </div>
         <div className="absolute right-3 top-3">
-          <RelationToolsBar onCreate={canMutateGraph ? () => setCreateOpen(true) : undefined} onMore={setMoreMenu} />
+          <RelationToolsBar onCreate={canCreateNodes ? () => setCreateOpen(true) : undefined} onMore={setMoreMenu} />
         </div>
         <div className="absolute bottom-3 left-3">
           <RelationControlBar
