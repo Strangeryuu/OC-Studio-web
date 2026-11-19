@@ -8,6 +8,7 @@ import { SignOutButton } from '@/components/cloud/SignOutButton'
 import { THEME_BOOT_SCRIPT } from '@/lib/theme/boot'
 import { setupNeeded } from '@/lib/cloud/server/site-admin'
 import { isSiteAdmin } from '@/lib/cloud/site-policy'
+import { currentCloudUser } from '@/lib/cloud/server/authorization'
 import '../globals.css'
 
 export const dynamic = 'force-dynamic'
@@ -22,6 +23,8 @@ export default async function StudioLayout({ children }: { children: React.React
   if(await setupNeeded())redirect('/setup')
   const session = await auth.api.getSession({ headers: requestHeaders })
   if (!session || session.user.banned) redirect('/login')
+  const actor=await currentCloudUser()
+  if(!actor)redirect('/login')
   return (
     <html lang="zh-CN" className="h-full antialiased" suppressHydrationWarning>
       <head><script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} /></head>
@@ -31,7 +34,7 @@ export default async function StudioLayout({ children }: { children: React.React
             <Link href="/" className="font-semibold">OC Studio Cloud</Link>
             <nav className="flex items-center gap-4 text-sm">
               <a href="/join" className="opacity-80 hover:opacity-100">接受邀请</a>
-              {isSiteAdmin(session.user.role) &&
+              {isSiteAdmin(actor.role) &&
                 <a href="/admin" className="opacity-80 hover:opacity-100">管理员菜单</a>}
               <SignOutButton />
             </nav>
