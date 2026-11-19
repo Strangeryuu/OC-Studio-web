@@ -160,6 +160,10 @@ export function RelationGraph({
   const connection = graphConnectionBehavior(isMobile, canConnectRelations)
   const canTouchConnect = connection.connectOnClick
   const prevVisible = useRef(false)
+  // Undo actions fire after async entity writes. Use the latest cloud callbacks
+  // (and their fresh entity versions), not the closure from the old render.
+  const workspaceRef = useRef(workspace)
+  useEffect(() => { workspaceRef.current = workspace }, [workspace])
 
   /* ── 显示开关（不落盘：与地图的图层开关同一口径，重开回到默认） ── */
   const [visibleTypes, setVisibleTypes] = useState<Record<RelationNodeType, boolean>>({
@@ -603,8 +607,9 @@ export function RelationGraph({
 
     const persist = (positions: typeof updates): Promise<void> => {
       if (workspace) {
-        if (!workspace.savePositions) return Promise.reject(new Error('当前关系图已暂停编辑'))
-        return workspace.savePositions(positions)
+        const savePositions = workspaceRef.current?.savePositions
+        if (!savePositions) return Promise.reject(new Error('当前关系图已暂停编辑'))
+        return savePositions(positions)
       }
       return Promise.all(positions.map(item =>
         saveNodePosition(item.entityType, item.entityId, item.x, item.y))).then(() => undefined)
