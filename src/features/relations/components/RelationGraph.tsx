@@ -1,5 +1,6 @@
 'use client'
 
+import dynamic from 'next/dynamic'
 import { useState, useCallback, useMemo, useEffect, useRef, type ChangeEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import {
@@ -75,7 +76,13 @@ import {
 } from './relation-graph-utils'
 import type { GraphEdge, GraphEdgeData, GraphNode, GraphNodeData, RelationEdgeType, RelationNodeType } from '../types'
 
+const WorkspaceGraphExportDialog = dynamic(
+  () => import('../cloud/WorkspaceGraphExportDialog').then(mod => mod.WorkspaceGraphExportDialog),
+  { ssr: false },
+)
+
 interface WorkspaceGraphSource {
+  worldName?: string
   nodes: GraphNode[]
   edges: GraphEdge[]
   loading: boolean
@@ -169,6 +176,7 @@ export function RelationGraph({
   const [savingRelation, setSavingRelation] = useState(false)
   const openExportCenter = useOptionalExportCenter()
   const [exportingWorkspaceGraph, setExportingWorkspaceGraph] = useState(false)
+  const [exportCenterOpen, setExportCenterOpen] = useState(false)
   const [edgePanel, setEdgePanel] = useState<{
     selection: EdgeStyleSelection
     anchor: { x: number; y: number }
@@ -933,7 +941,11 @@ export function RelationGraph({
       onSelect: () => openExportCenter({ tab: 'graph' }),
     }] : []),
     ...(workspace ? [{
-      label: exportingWorkspaceGraph ? '导出中…' : '导出 PNG（原版渲染）',
+      label: '导出图片…',
+      icon: <ImageDown size={13} strokeWidth={2} />,
+      onSelect: () => setExportCenterOpen(true),
+    }, {
+      label: exportingWorkspaceGraph ? '导出中…' : '快速导出 PNG',
       icon: <ImageDown size={13} strokeWidth={2} />,
       onSelect: () => void exportWorkspaceGraph(),
     }] : []),
@@ -1240,6 +1252,15 @@ export function RelationGraph({
             document.body,
           )
         : null}
+
+      {workspace && exportCenterOpen ? (
+        <WorkspaceGraphExportDialog
+          source={{ nodes: rawNodes, edges: rawEdges,
+            worldName: workspace.worldName ?? '世界观',
+            edgeStyle, onEdgeStyleChange: handleEdgeStyleChange }}
+          onClose={() => setExportCenterOpen(false)}
+        />
+      ) : null}
 
       {draft ? (
         <RelationCreateDialog
