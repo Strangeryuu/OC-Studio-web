@@ -117,3 +117,7 @@ logs/
 # 都是工作产物，不是产品文档 —— 留在本地按需查看，不进仓库
 docs/review-*/
 docs/*-执行prompt.md
+
+# VPS local SMTP relay credentials (never commit)
+/deploy/mail/
+/mail/
