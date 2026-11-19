@@ -132,8 +132,9 @@ export function TimelineView({ onSelectEvent, onSelectCharacter, onSelectCountry
     : localTimeline.events, [workspaceEvents, characters, countries, timelineFilter, localTimeline.events])
   const cloudPeriods = useCloudPeriods(workspace?.workspaceId, workspace?.canEditPeriods ?? false)
   const canEditPeriods = !workspace || workspace.canEditPeriods === true
-  const loading = workspace ? workspace.loading || cloudPeriods.loading : localTimeline.loading
-  const error = workspace ? workspace.error || cloudPeriods.error : localTimeline.error
+  // Loading optional period settings must never block the main event timeline.
+  const loading = workspace ? workspace.loading : localTimeline.loading
+  const error = workspace ? workspace.error : localTimeline.error
   const periodEditor = usePeriodEditor(!workspace, workspace ? cloudPeriods : undefined)
   const periods = periodEditor.periods
 
