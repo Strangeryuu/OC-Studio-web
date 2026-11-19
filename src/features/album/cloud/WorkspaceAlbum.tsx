@@ -1,7 +1,13 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Download, ExternalLink, Eye, Images, Menu, RefreshCw, Search } from 'lucide-react'
+import { Download, ExternalLink, Eye, Images, Menu, RefreshCw, Search, Trash2, Replace } from 'lucide-react'
+import { cloudMediaUrlId } from '@/lib/cloud/character-media'
+import {
+  AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { BTN_DANGER, BTN_PRIMARY, FIELD_INPUT } from '@/lib/ui-tokens'
 import { AlbumCard } from '@/components/shared/AlbumCard'
 import { MobileActionSheet, type ActionItem } from '@/components/shared/MobileActionSheet'
 import { useMediaDownload } from '@/lib/use-media-download'
@@ -35,6 +41,7 @@ export interface WorkspaceAlbumProps {
   error?: string | null
   onNavigate: (kind: 'character' | 'event' | 'country' | 'world', id: number) => void
   onRefresh: () => Promise<void>
+  canManageMedia?: boolean
 }
 
 export function WorkspaceAlbum(props: WorkspaceAlbumProps) {
@@ -52,6 +59,14 @@ export function WorkspaceAlbum(props: WorkspaceAlbumProps) {
   const [tags, setTags] = useState<CloudWorkspaceTag[]>([])
   const [worldCover, setWorldCover] = useState('')
   const [tagRefresh, setTagRefresh] = useState(0)
+  const [mediaAction, setMediaAction] = useState<{mode:'delete'|'replace';entry:AlbumEntry}|null>(null)
+  const [mediaPreview, setMediaPreview] = useState<{
+    affected:{id:string;title:string;kind:string;version:number;references:number}[];
+    coverVersion:number|null;references:number
+  }|null>(null)
+  const [mediaFile, setMediaFile] = useState<File|null>(null)
+  const [mediaBusy, setMediaBusy] = useState(false)
+  const [mediaError, setMediaError] = useState<string|null>(null)
   const { isMobile } = useDevice()
   const { save, saving } = useMediaDownload()
   const [actionSheet, setActionSheet] = useState<{open:boolean;title:string;actions:ActionItem[]}>(
@@ -140,6 +155,73 @@ export function WorkspaceAlbum(props: WorkspaceAlbumProps) {
     isMobile={mobile} refreshing={refreshing} onRefresh={() => void refresh()}
     onCloseMobileTree={() => setDrawer(false)} onCollapseTree={() => setCollapsed(true)} />
 
+  function manageMedia(entry: AlbumEntry, mode: 'delete'|'replace') {
+    if (!props.canManageMedia || !cloudMediaUrlId(entry.url)) return
+    setMediaAction({entry, mode})
+    setMediaPreview(null)
+    setMediaFile(null)
+    setMediaError(null)
+  }
+  useEffect(() => {
+    if (!mediaAction) return
+    const id = cloudMediaUrlId(mediaAction.entry.url)
+    if (!id) return
+    let active = true
+    void fetch('/api/workspaces/' + props.workspaceId + '/media/' + id, { cache:'no-store' })
+      .then(async response => {
+        if (!response.ok) throw new Error('图片引用信息读取失败，请刷新重试')
+        return response.json() as Promise<NonNullable<typeof mediaPreview>>
+      })
+      .then(result => { if (active) setMediaPreview(result) })
+      .catch(cause => { if (active) setMediaError(cause instanceof Error ? cause.message : '读取失败') })
+    return () => { active = false }
+  }, [mediaAction, props.workspaceId])
+
+  async function confirmMediaAction() {
+    if (!mediaAction || !mediaPreview || mediaBusy || !props.canManageMedia) return
+    if (mediaAction.mode === 'replace' && !mediaFile) {
+      setMediaError('请先选择替换图片')
+      return
+    }
+    const assetId = cloudMediaUrlId(mediaAction.entry.url)
+    if (!assetId) return
+    setMediaBusy(true)
+    setMediaError(null)
+    try {
+      let replaceWith: string | undefined
+      if (mediaAction.mode === 'replace' && mediaFile) {
+        const form = new FormData()
+        form.append('file', mediaFile)
+        const uploaded = await fetch('/api/workspaces/' + props.workspaceId + '/media', {
+          method:'POST', body:form,
+        })
+        const result: {asset?:{id?:string};error?:string} = await uploaded.json().catch(() => ({}))
+        if (!uploaded.ok || !result.asset?.id) throw new Error('上传替换图片失败：' + (result.error ?? uploaded.status))
+        replaceWith = result.asset.id
+      }
+      const response = await fetch('/api/workspaces/' + props.workspaceId + '/media/' + assetId, {
+        method:mediaAction.mode === 'replace' ? 'PATCH' : 'DELETE',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          confirmEverywhere:true,
+          expectedVersions:Object.fromEntries(mediaPreview.affected.map(item => [item.id,item.version])),
+          coverVersion:mediaPreview.coverVersion,
+          ...(replaceWith ? {replaceWith} : {}),
+        }),
+      })
+      const result: {error?:string} = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(result.error === 'VERSION_CONFLICT'
+        ? '词条版本已被其他成员更新，请刷新后重新确认'
+        : '图片操作失败：' + (result.error ?? response.status))
+      setMediaAction(null)
+      setViewerIndex(null)
+      setTagRefresh(value => value + 1)
+      await props.onRefresh()
+    } catch (cause) {
+      setMediaError(cause instanceof Error ? cause.message : '网络异常，请刷新核对操作结果')
+    } finally { setMediaBusy(false) }
+  }
+
   function openActionSheet(entry: AlbumEntry, index: number) {
     const actions: ActionItem[] = [
       { id: 'view', label: '查看大图', icon: <Eye size={20}/>,
@@ -148,6 +230,12 @@ export function WorkspaceAlbum(props: WorkspaceAlbumProps) {
         icon: <Download size={20}/>,
         onPress: () => { void save(entry.url, entry.sourceName) } },
     ]
+    if (props.canManageMedia && cloudMediaUrlId(entry.url)) {
+      actions.push({ id:'replace', label:'替换图片（全部引用）',icon:<Replace size={20}/>,
+        onPress:() => manageMedia(entry,'replace') })
+      actions.push({ id:'delete', label:'删除图片（全部引用）',icon:<Trash2 size={20}/>,
+        onPress:() => manageMedia(entry,'delete') })
+    }
     if (entry.sourceType !== 'world') actions.push({
       id: 'navigate', label: '跳转到来源', icon: <ExternalLink size={20}/>,
       onPress: () => navigate(entry.sourceId, entry.sourceType),
@@ -222,7 +310,9 @@ export function WorkspaceAlbum(props: WorkspaceAlbumProps) {
                   <AlbumCard key={item.sourceType + ':' + item.sourceId + ':' + item.category + ':' + index}
                     entry={item} isMobile={isMobile} onNavigate={item.sourceType === 'world' ? undefined : navigate}
                     onLongPress={() => openActionSheet(item,index)}
-                    onViewImage={() => setViewerIndex(index)} />)}
+                    onViewImage={() => setViewerIndex(index)}
+                    onReplace={props.canManageMedia ? () => manageMedia(item,'replace') : undefined}
+                    onDelete={props.canManageMedia ? () => manageMedia(item,'delete') : undefined} />)}
               </div>}
         </div>
       </div>
@@ -232,5 +322,44 @@ export function WorkspaceAlbum(props: WorkspaceAlbumProps) {
     <MobileActionSheet open={actionSheet.open}
       onClose={() => setActionSheet(prev => ({...prev,open:false}))}
       title={actionSheet.title} actions={actionSheet.actions} />
+    <AlertDialog open={mediaAction !== null} onOpenChange={open => {
+      if (!open && !mediaBusy) { setMediaAction(null); setMediaPreview(null) }
+    }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{mediaAction?.mode === 'replace' ? '替换全局图片' : '删除全局图片'}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {mediaAction?.mode === 'replace' ? '替换' : '删除'}后将同时更新本世界观中
+            其他词条、正文、相册、封面及地图中的同一张图片引用，并记录修改历史。
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        {mediaPreview ? <div className="space-y-2 text-ui">
+          <p>涉及 <strong>{mediaPreview.affected.length} 个词条</strong>、
+            <strong>{mediaPreview.references} 处图片引用</strong>
+            {mediaPreview.coverVersion !== null ? '，包含世界观封面' : ''}。</p>
+          {mediaPreview.affected.length > 0 && <p className="max-h-28 overflow-y-auto text-caption text-ink-muted">
+            关联词条：{mediaPreview.affected.slice(0,20).map(item => item.title).join('、')}
+            {mediaPreview.affected.length > 20 ? ' 等' : ''}
+          </p>}
+        </div> : <p className="text-caption text-ink-muted">正在核对图片引用…</p>}
+        {mediaAction?.mode === 'replace' && <label className="flex flex-col gap-2 text-ui">
+          新图片
+          <input type="file" aria-label="选择替换图片"
+            accept="image/png,image/jpeg,image/webp,image/gif" disabled={mediaBusy}
+            className={FIELD_INPUT}
+            onChange={event => setMediaFile(event.target.files?.[0] ?? null)} />
+        </label>}
+        {mediaError && <p role="alert" className="text-ui text-error">{mediaError}</p>}
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={mediaBusy}>取消</AlertDialogCancel>
+          <button type="button" disabled={!mediaPreview || mediaBusy ||
+            (mediaAction?.mode === 'replace' && !mediaFile)}
+            className={mediaAction?.mode === 'replace' ? BTN_PRIMARY : BTN_DANGER}
+            onClick={() => void confirmMediaAction()}>
+            {mediaBusy ? '同步中…' : mediaAction?.mode === 'replace' ? '确认替换全部引用' : '确认删除全部引用'}
+          </button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </section>
 }
