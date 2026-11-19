@@ -5,6 +5,7 @@ export const dynamic='force-dynamic'
 const options=[
   {url:'/admin/users',name:'用户管理',description:'创建账号、调整账号角色及禁用用户'},
   {url:'/admin/invites',name:'注册码管理',description:'生成、管理及撤销用户注册码'},
+  {url:'/admin/backups',name:'自动备份',description:'配置备份周期、世界观范围与归档下载'},
   {url:'/admin/mail',name:'找回密码邮件',description:'选择本机发送或 SMTP 并配置服务器'},
   {url:'/',name:'全部世界观',description:'管理员可以查看和编辑全站资料库'},
 ]

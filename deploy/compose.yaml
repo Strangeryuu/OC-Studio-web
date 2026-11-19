@@ -38,11 +38,14 @@ services:
       HOSTNAME: 0.0.0.0
       PORT: "3000"
       MEDIA_ROOT: /data/media
+      BACKUP_ROOT: /data/backups
+      BACKUP_WORKER_TOKEN: ${BACKUP_WORKER_TOKEN:-}
     depends_on:
       db:
         condition: service_healthy
     volumes:
       - ./data/media:/data/media
+      - ./backups:/data/backups
     ports:
       - "127.0.0.1:${HTTP_PORT:-3000}:3000"
     healthcheck:
@@ -51,6 +54,25 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
+
+  backup-worker:
+    image: alpine:3.20
+    restart: unless-stopped
+    environment:
+      BACKUP_WORKER_TOKEN: ${BACKUP_WORKER_TOKEN:-}
+    depends_on:
+      web:
+        condition: service_healthy
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        while :; do
+          if [ -n "$BACKUP_WORKER_TOKEN" ]; then
+            wget -q -O /dev/null --header="Authorization: Bearer $BACKUP_WORKER_TOKEN" --post-data='' http://web:3000/api/internal/backup-run || true
+          fi
+          sleep 300
+        done
 
 volumes:
   postgres-data:
