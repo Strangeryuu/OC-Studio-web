@@ -1040,8 +1040,19 @@ export function RelationGraph({
   if (rawNodes.length === 0) {
     return (
       <div className={CENTER_STATE}>
-        <span className="font-serif text-body leading-5 text-ink-faint">暂无关系数据，请先创建角色、事件或国家，并添加关联关系</span>
-        <button onClick={() => void refresh()} className="px-1.5 py-1 text-ui text-ink-muted transition-colors hover:text-ink">刷新</button>
+        <span className="font-serif text-body leading-5 text-ink-faint">暂无关系数据，可以创建角色、事件或国家开始绘制关系图</span>
+        <div className="flex items-center gap-3">
+          {canCreateNodes && <button type="button" onClick={() => setCreateOpen(true)}
+            className="rounded-control border border-line px-3 py-1.5 text-ui text-ink">
+            新建节点
+          </button>}
+          <button onClick={() => void refresh()} className="px-1.5 py-1 text-ui text-ink-muted transition-colors hover:text-ink">刷新</button>
+        </div>
+        <RelationNodeCreateDialog
+          open={createOpen} busy={creating}
+          onCreate={(type, name) => void handleCreateNode(type, name)}
+          onClose={() => setCreateOpen(false)}
+        />
       </div>
     )
   }
