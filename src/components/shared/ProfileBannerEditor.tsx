@@ -266,7 +266,7 @@ export function ProfileBannerEditor({
       {/* Avatar */}
       {onAvatarChange || avatarUrl ? (
         <div className={showHeader ? 'absolute -bottom-6 left-4' : 'relative w-fit'}>
-          <div className="relative inline-block">
+          <div className="relative inline-flex items-center">
             <button
               type="button"
               {...avatarMenuHandlers}
