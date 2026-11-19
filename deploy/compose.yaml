@@ -45,7 +45,7 @@ services:
         condition: service_healthy
     volumes:
       - ./data/media:/data/media
-      - ./backups:/data/backups
+      - ./data/scheduled-backups:/data/backups
     ports:
       - "127.0.0.1:${HTTP_PORT:-3000}:3000"
     healthcheck:

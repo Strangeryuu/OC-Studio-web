@@ -13,6 +13,15 @@ if [[ ! -d data/media ]]; then
   echo "Create data/media and grant UID/GID 10001 ownership before starting." >&2
   exit 1
 fi
+# Scheduled backups are written by the non-root web service (UID 10001).
+mkdir -p data/scheduled-backups
+if [[ "$(stat -c '%u' data/scheduled-backups)" != '10001' ]]; then
+  chown 10001:10001 data/scheduled-backups || {
+    echo "Run: sudo chown -R 10001:10001 $(pwd)/data/scheduled-backups" >&2
+    exit 1
+  }
+fi
+chmod 700 data/scheduled-backups
 
 # Serializes systemd timer executions and manual invocations.
 exec 9>.update.lock
@@ -58,6 +67,7 @@ if [[ -n "$running_id" && "$running_id" == "$wanted_id" && "$running_health" == 
   # Compose will recreate the Web container only if its configuration
   # changed (for example, when the optional Sendmail relay is enabled).
   "${compose[@]}" up -d --no-deps --wait web
+  "${compose[@]}" up -d --no-deps backup-worker
   echo "Web image is running and healthy ($web_image); Compose configuration checked."
   exit 0
 fi
@@ -86,6 +96,7 @@ fi
 for _ in $(seq 1 30); do
   status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid" 2>/dev/null || true)"
   if [[ "$status" == "healthy" ]]; then
+    "${compose[@]}" up -d --no-deps backup-worker
     echo "OC Studio deployment is healthy ($web_image)."
     exit 0
   fi
