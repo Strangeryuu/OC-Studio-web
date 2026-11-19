@@ -47,6 +47,7 @@ import {
   deleteGraphNode,
   deleteRelationBetween,
   createRelationBetween,
+  type CreateRelationResult,
   saveNodePosition,
   setGraphNodeImage,
   updateEdgeStyle,
@@ -81,6 +82,9 @@ interface WorkspaceGraphSource {
   error: string | null
   refresh: (options?: RefreshOptions) => Promise<void>
   savePosition?: (type: RelationNodeType, id: number, x: number, y: number) => Promise<void>
+  createRelation?: (source: { entityType: RelationNodeType; entityId: number }, target: { entityType: RelationNodeType; entityId: number }, label: string) => Promise<CreateRelationResult>
+  deleteRelation?: (selection: EdgeStyleSelection) => Promise<boolean>
+  patchRelation?: (selection: EdgeStyleSelection, patch: EdgeStylePatchInput) => Promise<boolean>
 }
 
 interface RelationGraphProps {
@@ -127,6 +131,9 @@ export function RelationGraph({
   const local = useGraphData(!workspace)
   const { nodes: rawNodes, edges: rawEdges, loading, error, refresh } = workspace ?? local
   const canMutateGraph = workspace === undefined
+  const canConnectRelations = canMutateGraph || Boolean(workspace?.createRelation)
+  const canDeleteRelations = canMutateGraph || Boolean(workspace?.deleteRelation)
+  const canPatchRelations = canMutateGraph || Boolean(workspace?.patchRelation)
   const { settings, updateSetting } = useSettings()
   const { isMobile } = useDevice()
   const mouseMode = settings.mouseMode
@@ -338,7 +345,7 @@ export function RelationGraph({
    * 所以两者打开的永远是同一个面板、同一套数据。
    */
   const openEdgePanel = useCallback((edge: Edge, point: { x: number; y: number }) => {
-    if (!canMutateGraph) return
+    if (!canDeleteRelations) return
     const [sourceType, sourceIdRaw] = edge.source.split('-')
     const [targetType, targetIdRaw] = edge.target.split('-')
     if (!isEdgeNodeType(sourceType) || !isEdgeNodeType(targetType)) return
@@ -361,7 +368,7 @@ export function RelationGraph({
       },
       anchor: point,
     })
-  }, [canMutateGraph])
+  }, [canDeleteRelations])
 
   /* ── 导航 / 节点动作 ─────────────────────────────────────── */
 
@@ -675,7 +682,9 @@ export function RelationGraph({
       if (!draft || savingRelation) return
       setSavingRelation(true)
       try {
-        const result = await createRelationBetween(draft.source, draft.target, relation)
+        const result = workspace?.createRelation
+          ? await workspace.createRelation(draft.source, draft.target, relation)
+          : await createRelationBetween(draft.source, draft.target, relation)
         if (!result.ok) {
           if (result.reason === 'duplicate') toast('这两个条目已经有关联')
           else if (result.reason === 'missing') toast.error('条目已不存在')
@@ -685,14 +694,14 @@ export function RelationGraph({
         }
         setDraft(null)
         // 静默刷新：新边直接出现，画布不闪、视口与缩放保留
-        await refresh({ silent: true })
+        if (!workspace) await refresh({ silent: true })
       } catch (err) {
         toast.error('添加关系失败', { description: err instanceof Error ? err.message : String(err) })
       } finally {
         setSavingRelation(false)
       }
     },
-    [draft, savingRelation, refresh],
+    [draft, savingRelation, refresh, workspace],
   )
 
   /* ── 新建 / 删 / 换图 ───────────────────────────────────── */
@@ -755,14 +764,16 @@ export function RelationGraph({
         toast.success('已移到回收站')
       } else {
         const { selection } = deleteTarget
-        const ok = await deleteRelationBetween(
-          { entityType: selection.sourceType, entityId: selection.sourceId },
-          { entityType: selection.targetType, entityId: selection.targetId },
-          selection.relation,
-        )
+        const ok = workspace?.deleteRelation
+          ? await workspace.deleteRelation(selection)
+          : await deleteRelationBetween(
+              { entityType: selection.sourceType, entityId: selection.sourceId },
+              { entityType: selection.targetType, entityId: selection.targetId },
+              selection.relation,
+            )
         if (ok) toast.success('已删除关系')
         else toast('这条关系没有可删的数据')
-        await refresh({ silent: true })
+        if (!workspace) await refresh({ silent: true })
       }
     } catch (err) {
       toast.error('删除失败', { description: err instanceof Error ? err.message : String(err) })
@@ -770,7 +781,7 @@ export function RelationGraph({
       setDeleting(false)
       setDeleteTarget(null)
     }
-  }, [deleteTarget, deleting, rawNodes, refresh])
+  }, [deleteTarget, deleting, rawNodes, refresh, workspace])
 
   const handleEdgePatch = useCallback(
     (patch: EdgeStylePatchInput) => {
@@ -790,16 +801,22 @@ export function RelationGraph({
           },
         }
       })
-      void updateEdgeStyle(
-        { entityType: selection.sourceType, entityId: selection.sourceId },
-        { entityType: selection.targetType, entityId: selection.targetId },
-        patch,
-      ).then((ok) => {
+      const mutation = workspace?.patchRelation
+        ? workspace.patchRelation(selection, patch)
+        : updateEdgeStyle(
+            { entityType: selection.sourceType, entityId: selection.sourceId },
+            { entityType: selection.targetType, entityId: selection.targetId },
+            patch,
+          )
+      void mutation.then((ok) => {
         if (!ok) toast.error('这条关系已不在数据里')
-        void refresh({ silent: true })
+        if (!workspace) void refresh({ silent: true })
+      }).catch((error: unknown) => {
+        setEdgePanel(null)
+        toast.error('修改关系失败', { description: error instanceof Error ? error.message : String(error) })
       })
     },
-    [edgePanel, refresh],
+    [edgePanel, refresh, workspace],
   )
 
   const handleImageSelected = useCallback(
@@ -968,7 +985,7 @@ export function RelationGraph({
   const edgeSelection = edgePanel?.selection
   const edgeCanStyle =
     edgeSelection !== undefined &&
-    edgeSelection.kind !== 'reference' &&
+    canPatchRelations && edgeSelection.kind !== 'reference' &&
     ((edgeSelection.sourceType === edgeSelection.targetType &&
       (edgeSelection.sourceType === 'character' ||
         edgeSelection.sourceType === 'event' ||
@@ -1011,10 +1028,10 @@ export function RelationGraph({
         onEdgeMouseEnter={(_event, edge) => setHoveredEdgeId(edge.id)}
         onEdgeMouseLeave={() => setHoveredEdgeId(null)}
         onMove={handleMove}
-        onConnect={canMutateGraph ? handleConnect : undefined}
+        onConnect={canConnectRelations ? handleConnect : undefined}
         // 移动端只读（docs/关系图.md）：禁拖、禁连、禁框选；点节点就是打开
         nodesDraggable={canDrag}
-        nodesConnectable={canMutateGraph && !isMobile}
+        nodesConnectable={canConnectRelations && !isMobile}
         // 双击是「打开条目」，不能再让画布顺手放大一次
         zoomOnDoubleClick={false}
         elementsSelectable={!isMobile}
