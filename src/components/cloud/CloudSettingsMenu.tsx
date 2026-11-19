@@ -37,7 +37,7 @@ export function CloudSettingsMenu({ isAdmin }: { isAdmin: boolean }) {
       <ChevronDown size={13} aria-hidden className={`transition-transform ${open ? 'rotate-180' : ''}`} />
     </button>
     {open && <div role="dialog" aria-label="设置菜单"
-      className="absolute right-0 top-[calc(100%+0.6rem)] z-50 w-[min(21rem,calc(100vw-2rem))] max-h-[min(75vh,36rem)] overflow-y-auto rounded-panel border border-line bg-paper p-4 text-ink ${FLOAT_SHADOW}">
+      className={`absolute right-0 top-[calc(100%+0.6rem)] z-50 w-[min(21rem,calc(100vw-2rem))] max-h-[min(75vh,36rem)] overflow-y-auto rounded-panel border border-line bg-paper p-4 text-ink ${FLOAT_SHADOW}`}>
       <div className="flex items-center gap-2 border-b border-line pb-3">
         <SunMoon size={17} className="text-ink-muted" aria-hidden />
         <h2 className="text-ui font-semibold">外观与设置</h2>
