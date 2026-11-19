@@ -4,7 +4,6 @@ import {join} from 'node:path'
 import {tmpdir} from 'node:os'
 
 const fake=vi.hoisted(()=>({query:vi.fn(),connect:vi.fn(),export:vi.fn()}))
-vi.mock('server-only',()=>({}))
 vi.mock('@/lib/cloud/server/db',()=>({pool:{query:fake.query,connect:fake.connect}}))
 vi.mock('@/lib/cloud/server/backup-io',()=>({exportWorkspaceBackup:fake.export}))
 
