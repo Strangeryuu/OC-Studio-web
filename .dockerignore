@@ -22,3 +22,7 @@ data
 backups
 *.dump
 *.sql.gz
+
+# Never copy local SMTP relay credentials into Docker image build context.
+deploy/mail/
+mail/
