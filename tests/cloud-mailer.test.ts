@@ -8,7 +8,7 @@ vi.mock('@/lib/cloud/server/db',()=>({
   pool:{query:async()=>({rows:[{value:{mode:db.mode,from:db.from,
     host:'',port:587,secure:false,username:''}}]})}
 }))
-import { encryptMailPassword,decryptMailPassword,sendPasswordResetMail } from '@/lib/cloud/server/mailer'
+import { encryptMailPassword,decryptMailPassword,sendPasswordResetMail,sendMailTest,localMailStatus } from '@/lib/cloud/server/mailer'
 describe('secure email reset delivery',()=>{
   let dir:string
   let previousPath:string|undefined
@@ -52,6 +52,28 @@ process.stdin.on('end',()=>fs.writeFileSync(${JSON.stringify(out)},raw))
     expect(text).toContain('From: no-reply@example.test')
     expect(text).toContain(url)
     expect(text).toContain('Subject: =?UTF-8?B?')
+  })
+  it('sends a distinct admin diagnostic message to the designated mailbox',async()=>{
+    const state=await localMailStatus()
+    expect(state.available).toBe(true)
+    const receipt=await sendMailTest('admin@example.test')
+    expect(receipt).toMatchObject({mode:'local',from:'no-reply@example.test'})
+    const raw=readFileSync(join(dir,'email.txt'),'utf8')
+    expect(raw).toContain('To: admin@example.test')
+    expect(raw).toContain('MIME-Version: 1.0')
+    expect(raw).not.toContain('reset-password?token=')
+  })
+  it('detects a missing sendmail executable without pretending delivery',async()=>{
+    const working=process.env.SENDMAIL_PATH
+    process.env.SENDMAIL_PATH=join(dir,'does-not-exist')
+    try {
+      expect((await localMailStatus()).available).toBe(false)
+      await expect(sendMailTest('admin@example.test')).rejects.toMatchObject({
+        code:'MAIL_LOCAL_EXECUTABLE_MISSING',
+      })
+    } finally {
+      process.env.SENDMAIL_PATH=working
+    }
   })
   it('rejects newline-injected email and reset URLs',async()=>{
     await expect(sendPasswordResetMail('attacker@example.test\r\nBcc: hidden@example.test',
