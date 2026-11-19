@@ -8,8 +8,7 @@
  * 参数 `mode` / `columns` / `title` 由模板给，缺省值按调用方传的回落。
  */
 import { useRef } from 'react'
-import { Plus } from 'lucide-react'
-import { ADD_ACTION } from '@/lib/ui-tokens'
+import { MediaActionButton } from '@/components/shared/MediaActionButton'
 import { ImageGallery, type ImageGalleryHandle } from '../image-gallery/ImageGallery'
 import { ComponentSection } from '../ComponentSection'
 
@@ -50,14 +49,8 @@ export function GalleryBlock({
       divider={false}
       title={showTitle ? title : undefined}
       action={
-        onAdd ? <button
-          type="button"
-          onClick={() => gallery.current?.add()}
-          className={ADD_ACTION}
-        >
-          <Plus size={12} strokeWidth={2} />
-          <span>添加</span>
-        </button> : undefined
+        onAdd ? <MediaActionButton label="相册图片操作"
+          items={[{label:'添加图片',onSelect:()=>gallery.current?.add()}]} /> : undefined
       }
     >
       <ImageGallery

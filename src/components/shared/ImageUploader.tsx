@@ -11,7 +11,6 @@ import { FullscreenViewer } from './FullscreenViewer'
 import { MediaContextMenu, type MediaMenuItem } from './MediaContextMenu'
 import { OverlayIconButton } from './OverlayIconButton'
 import { toast } from 'sonner'
-import { BTN_QUIET } from '@/lib/ui-tokens'
 
 export interface ImageUploaderProps {
   value?: string
@@ -200,7 +199,7 @@ export function ImageUploader({
             />
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={currentSrc} alt="" className="h-full w-full object-cover pointer-events-none" />
-            <span className="absolute right-1 top-1 opacity-0 transition-opacity group-hover/image:opacity-100">
+            <span className="absolute right-1 top-1 opacity-100">
               <OverlayIconButton
                 label="图片操作"
                 onClick={(event) => {
@@ -225,12 +224,6 @@ export function ImageUploader({
         )}
       </div>
 
-      {currentSrc && <div className="flex flex-wrap items-center gap-2">
-        <button type="button" className={BTN_QUIET} onClick={() => void handleClick()}>替换图片</button>
-        {onRemove && <button type="button" className={BTN_QUIET} onClick={() => {
-          if (window.confirm('确认移除此图片？如需全局删除，请在全局相册操作。')) onRemove()
-        }}>删除图片</button>}
-      </div>}
       {menuAt ? (
         <MediaContextMenu at={menuAt} onClose={() => setMenuAt(null)} items={menuItems} />
       ) : null}

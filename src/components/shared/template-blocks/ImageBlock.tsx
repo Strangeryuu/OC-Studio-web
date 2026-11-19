@@ -8,8 +8,7 @@
  * 图片的交互仍然复用 `ImageGallery`：单击看大图、右键 / 长按菜单、更换 / 移除。
  */
 import { useRef } from 'react'
-import { Plus } from 'lucide-react'
-import { ADD_ACTION } from '@/lib/ui-tokens'
+import { MediaActionButton } from '@/components/shared/MediaActionButton'
 import { ImageGallery, type ImageGalleryHandle } from '../image-gallery/ImageGallery'
 import { ComponentSection } from '../ComponentSection'
 
@@ -38,10 +37,11 @@ export function ImageBlock({
       divider={false}
       title={showTitle ? title : undefined}
       action={
-        <button type="button" onClick={() => gallery.current?.add()} className={ADD_ACTION}>
-          <Plus size={12} strokeWidth={2} />
-          <span>{value ? '更换' : '添加'}</span>
-        </button>
+        <MediaActionButton label="单张图片操作" items={[{
+          label:value?'更换图片':'添加图片',onSelect:()=>gallery.current?.add(),
+        },...(value?[{label:'删除图片',danger:true,onSelect:()=>{
+          if(window.confirm('确认从当前词条删除图片？其他词条的图片仍保留。'))onRemove()
+        }}]:[])]}/>
       }
     >
       <div className={width === 'half' ? 'w-full sm:w-1/2' : 'w-full'}>
