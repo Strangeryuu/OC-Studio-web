@@ -6,6 +6,7 @@ import { getImageUrl } from '@/lib/image-service'
 import { NODE_HANDLE, NODE_WRAPPER } from '@/lib/ui-tokens'
 import { NODE_CARD_SIZE, NODE_SIZE } from '../layout'
 import { NodeOpenButton } from './NodeOpenButton'
+import { useTouchNodeMenu, type TouchNodeMenuPoint } from './useTouchNodeMenu'
 
 /**
  * 事件节点（docs/关系图.md §4）：**96 × 64 封面卡 + 名字**，尺寸写死在 `NODE_SIZE`。
@@ -21,6 +22,8 @@ export function EventNode({ data, selected }: NodeProps) {
   const showImage = Boolean(url) && url !== failedSrc
   const size = NODE_SIZE.event
   const onOpen = data.onOpen as (() => void) | undefined
+  const onTouchMenu = data.onTouchMenu as ((point: TouchNodeMenuPoint) => void) | undefined
+  const touchMenu = useTouchNodeMenu(onTouchMenu)
 
   return (
     <>
@@ -29,7 +32,7 @@ export function EventNode({ data, selected }: NodeProps) {
       <Handle id="bottom" type="source" position={Position.Bottom} className={NODE_HANDLE} />
       <Handle id="left" type="source" position={Position.Left} className={NODE_HANDLE} />
       <div
-        className={`${NODE_WRAPPER} relative`}
+        className={`${NODE_WRAPPER} relative`} {...touchMenu}
         style={{ width: size.w, height: size.h }}
         title={subtitle ? `${label} · ${subtitle}` : label}
       >
