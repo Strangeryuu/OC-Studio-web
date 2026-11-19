@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronDown, Settings2, Shield, SunMoon } from 'lucide-react'
+import { Check, ChevronDown, Settings, Shield, SunMoon } from 'lucide-react'
 import { useSettings } from '@/lib/settings'
 import { THEME_PRESETS, normalizeThemePreset } from '@/lib/theme/presets'
 
@@ -31,7 +31,7 @@ export function CloudSettingsMenu({ isAdmin }: { isAdmin: boolean }) {
       aria-haspopup="dialog" onClick={() => setOpen(value => !value)}
       className={`flex h-9 items-center gap-1 rounded-item border px-2.5 text-ui transition-colors hover:bg-[var(--oc-hover)]
         ${open ? 'border-line-hover bg-paper-card text-ink' : 'border-line text-ink-muted'}`}>
-      <Settings2 size={17} strokeWidth={1.9} aria-hidden />
+      <Settings size={17} strokeWidth={1.9} aria-hidden />
       <span className="hidden sm:inline">设置</span>
       <ChevronDown size={13} aria-hidden className={`transition-transform ${open ? 'rotate-180' : ''}`} />
     </button>
