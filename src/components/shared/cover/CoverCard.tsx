@@ -310,7 +310,7 @@ export function CoverCard({
       </button>
 
       {actions ? (
-        <div className="absolute right-2 top-2 z-10 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+        <div className="absolute right-2 top-2 z-10 flex items-center gap-0.5 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
           {actions}
         </div>
       ) : null}
