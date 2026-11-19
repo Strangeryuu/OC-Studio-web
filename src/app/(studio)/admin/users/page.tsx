@@ -13,7 +13,7 @@ export default async function AdminUsersPage() {
   )
   if (!result.rows[0]?.role?.split(',').includes('admin')) notFound()
   const users = await pool.query<AdminUserRow>(
-    'SELECT id,name,email,role,banned FROM "user" ORDER BY email LIMIT 100',
+    'SELECT id,name,email,role,banned FROM "user" WHERE deleted_at IS NULL ORDER BY email LIMIT 100',
   )
   return <AdminUsers initialUsers={users.rows} selfId={actor.id}/>
 }

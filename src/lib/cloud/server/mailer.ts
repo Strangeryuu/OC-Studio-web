@@ -142,3 +142,17 @@ export async function sendMailTest(to:string):Promise<{mode:MailMode;from:string
   await deliver(config,raw,to)
   return {mode:config.mode,from:config.from}
 }
+
+/** Invite-only registration welcome message; uses the site's existing mail transport. */
+export async function sendWelcomeMail(to: string, name: string): Promise<void> {
+  const config = await readMailSettings()
+  if (!config) throw new MailTransportError('MAIL_NOT_CONFIGURED', 'config')
+  const displayName = noCRLF(name).slice(0, 100)
+  const raw = message(config.from, to, '欢迎加入 OC Studio',
+    '你好，' + displayName + '：\r\n\r\n' +
+    '欢迎注册 OC Studio！你的账号已经创建成功。\r\n' +
+    '现在可以登录，创建自己的世界观资料库，或加入受邀协作项目。\r\n\r\n' +
+    '如这次注册并非由你发起，请联系站点管理员。\r\n\r\n' +
+    '—— OC Studio')
+  await deliver(config, raw, to)
+}

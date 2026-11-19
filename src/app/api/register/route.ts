@@ -2,6 +2,7 @@ import { randomUUID,createHash } from 'node:crypto'
 import { hashPassword } from 'better-auth/crypto'
 import { NextResponse } from 'next/server'
 import { pool } from '@/lib/cloud/server/db'
+import { sendWelcomeMail } from '@/lib/cloud/server/mailer'
 import { mutationOriginAllowed } from '@/lib/cloud/server/origin'
 import { validNewAccount,validInviteCode } from '@/lib/cloud/site-policy'
 export const runtime='nodejs'
@@ -11,6 +12,8 @@ export async function POST(request:Request){
   const b=input&&typeof input==='object'&&!Array.isArray(input)?input as Record<string,unknown>:{}
   if(!validNewAccount(b.name,b.email,b.password)||!validInviteCode(b.inviteCode))
     return NextResponse.json({error:'INVALID_REGISTRATION'},{status:400})
+  if(typeof b.confirmPassword!=='string'||b.password!==b.confirmPassword)
+    return NextResponse.json({error:'PASSWORD_MISMATCH'},{status:400})
   const code=(b.inviteCode as string).trim().toLowerCase()
   const hash=createHash('sha256').update(code).digest()
   const passwordHash=await hashPassword(b.password as string)
@@ -40,7 +43,16 @@ export async function POST(request:Request){
     await client.query('UPDATE registration_invites SET used_count=used_count+1 WHERE id=$1',[invite.id])
     await client.query('INSERT INTO registration_redemptions(invite_id,user_id) VALUES($1,$2)',[invite.id,id])
     await client.query('COMMIT')
-    return NextResponse.json({created:true},{status:201})
+    // Registration is durable before mail delivery. A temporary mail failure
+    // must not consume an invite without an account or roll back the signup.
+    let welcomeEmailSent = false
+    try {
+      await sendWelcomeMail((b.email as string).trim().toLowerCase(), (b.name as string).trim())
+      welcomeEmailSent = true
+    } catch (error) {
+      console.error('[ocstudio/welcome-mail] delivery failed', error instanceof Error ? error.name : 'UnknownError')
+    }
+    return NextResponse.json({created:true,welcomeEmailSent},{status:201})
   }catch(error){
     await client.query('ROLLBACK')
     if(error&&typeof error==='object'&&'code' in error&&error.code==='23505')
