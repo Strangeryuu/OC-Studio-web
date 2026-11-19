@@ -12,15 +12,19 @@ let desktopPage
 let mobilePage
 
 async function login(context) {
-  // Use the same Better Auth credential endpoint already validated by the
-  // PostgreSQL HTTP smoke, but retain each browser context's separate cookie jar.
-  // Browser acceptance here tests graph/timeline behavior, not login animations.
-  const loginResponse = await context.request.post(BASE + '/api/auth/sign-in/email', {
-    headers: { Origin: BASE },
-    data: { email: 'ci-admin@example.test', password: PASSWORD },
-  })
-  assert.equal(loginResponse.status(), 200,
-    'Better Auth browser context login returned HTTP ' + loginResponse.status())
+  // Reuse the isolated CI session created by HTTP smoke. Two browser contexts
+  // still have separate cookie jars, avoiding the Better Auth login rate limit.
+  const { readFileSync } = require('node:fs')
+  const cookieHeader = readFileSync(process.env.CI_BROWSER_COOKIE_PATH, 'utf8')
+  const cookies = cookieHeader.split(';').map(part => {
+    const entry = part.trim()
+    const i = entry.indexOf('=')
+    if (i <= 0) return null
+    return { name: entry.slice(0, i), value: entry.slice(i + 1),
+      url: BASE, httpOnly: true, sameSite: 'Lax' }
+  }).filter(Boolean)
+  assert(cookies.length > 0, 'CI session cookie file is empty')
+  await context.addCookies(cookies)
   const page = await context.newPage()
   await page.goto(BASE + '/login', { waitUntil: 'domcontentloaded' })
   return page
