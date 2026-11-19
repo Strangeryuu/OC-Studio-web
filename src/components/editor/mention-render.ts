@@ -51,7 +51,7 @@ export function createMentionRender() {
 
   return () => ({
     onStart: (props: SuggestionProps<ReferableEntity>) => {
-      if (!props.clientRect || props.items.length === 0) return
+      if (!props.clientRect) return
       if (isComposing(props.editor)) return
       const startRect = props.clientRect()
       if (!startRect || isDegenerateRect(startRect)) return
@@ -69,6 +69,7 @@ export function createMentionRender() {
         popup.style.top = `${rect.bottom + 4}px`
       }
       renderMentionGroups(popup, currentItems, props.command)
+      if (props.items.length === 0) renderEmptyMention(popup)
       paintSelection(popup, selectedIndex)
       ;(document.getElementById('overlay-root') ?? document.body).appendChild(popup)
       document.addEventListener('pointerdown', (e) => {
@@ -85,18 +86,19 @@ export function createMentionRender() {
     },
     onUpdate: (props: SuggestionProps<ReferableEntity>) => {
       if (isComposing(props.editor)) return
-      if (!popup || props.items.length === 0) { closePopup(); return }
+      if (!popup) return
       const rect = props.clientRect?.()
       if (!rect || isDegenerateRect(rect)) { closePopup(); return }
       currentItems = groupMentionItems(props.items)
       currentCommand = props.command
-      selectedIndex = Math.min(selectedIndex, props.items.length - 1)
+      selectedIndex = Math.min(selectedIndex, Math.max(0, props.items.length - 1))
       if (rect) {
         popup.style.left = `${rect.left}px`
         popup.style.top = `${rect.bottom + 4}px`
       }
       popup.innerHTML = ''
       renderMentionGroups(popup, currentItems, props.command)
+      if (props.items.length === 0) renderEmptyMention(popup)
       paintSelection(popup, selectedIndex)
       if (rect) {
         const adjusted = adjustSuggestionPosition(rect, popup.offsetWidth, popup.offsetHeight)
@@ -110,7 +112,7 @@ export function createMentionRender() {
     onKeyDown: (props: SuggestionKeyDownProps) => {
       if (props.event.key === 'Escape') { closePopup(); return true }
       if (props.event.key === 'ArrowDown') {
-        selectedIndex = Math.min(selectedIndex + 1, currentItems.length - 1)
+        selectedIndex = Math.min(selectedIndex + 1, Math.max(0, currentItems.length - 1))
         if (popup) paintSelection(popup, selectedIndex)
         return true
       }
@@ -209,3 +211,11 @@ function paintSelection(container: HTMLElement, selectedIndex: number) {
 
 
 
+
+/** A missing match should provide feedback instead of silently closing the menu. */
+function renderEmptyMention(container: HTMLElement) {
+  const empty = document.createElement('p')
+  empty.className = 'px-3 py-2 text-caption text-ink-muted'
+  empty.textContent = '暂无匹配的角色、事件或国家'
+  container.appendChild(empty)
+}

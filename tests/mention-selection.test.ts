@@ -44,3 +44,21 @@ test('mention keyboard selection follows visible grouped rows on start and updat
     render.onExit()
   }
 })
+
+
+test('mention displays a helpful empty state when no cloud references match', () => {
+  const render = createMentionRender()()
+  const props = {
+    items: [], command: vi.fn(), query: '', text: '@',
+    range: { from: 1, to: 2 }, decorationNode: document.createElement('span'),
+    editor: { view: { composing: false } } as unknown as Editor,
+    clientRect: () => new DOMRect(30, 30, 10, 16),
+  } as SuggestionProps<ReferableEntity>
+  render.onStart(props)
+  try {
+    expect(document.querySelector('[data-oc-popup="mention"]')?.textContent)
+      .toContain('暂无匹配的角色、事件或国家')
+  } finally {
+    render.onExit()
+  }
+})

@@ -41,7 +41,7 @@ function createWikiLinkRender() {
 
   return () => ({
     onStart: (props: SuggestionProps<ReferableEntity>) => {
-      if (!props.clientRect || props.items.length === 0) return
+      if (!props.clientRect) return
       if (isComposing(props.editor)) return
       const rect = props.clientRect()
       if (!rect || isDegenerateRect(rect)) return
@@ -56,6 +56,7 @@ function createWikiLinkRender() {
       popup.style.left = `${rect.left}px`
       popup.style.top = `${rect.bottom + 4}px`
       renderWikiItems(popup, props.items, props.command)
+      if (props.items.length === 0) renderEmptyWiki(popup)
       paintSelection(popup, selectedIndex)
       mountRoot().appendChild(popup)
       document.addEventListener('pointerdown', (e) => {
@@ -70,14 +71,15 @@ function createWikiLinkRender() {
     },
     onUpdate: (props: SuggestionProps<ReferableEntity>) => {
       if (isComposing(props.editor)) return
-      if (!popup || props.items.length === 0) { closePopup(); return }
+      if (!popup) return
       const rect = props.clientRect?.()
       if (!rect || isDegenerateRect(rect)) { closePopup(); return }
       currentItems = props.items
       currentCommand = props.command
-      selectedIndex = Math.min(selectedIndex, props.items.length - 1)
+      selectedIndex = Math.min(selectedIndex, Math.max(0, props.items.length - 1))
       popup.innerHTML = ''
       renderWikiItems(popup, props.items, props.command)
+      if (props.items.length === 0) renderEmptyWiki(popup)
       paintSelection(popup, selectedIndex)
       if (rect) {
         const adjusted = adjustSuggestionPosition(rect, popup.offsetWidth, popup.offsetHeight)
@@ -91,7 +93,7 @@ function createWikiLinkRender() {
     onKeyDown: (props: SuggestionKeyDownProps) => {
       if (props.event.key === 'Escape') { closePopup(); return true }
       if (props.event.key === 'ArrowDown') {
-        selectedIndex = Math.min(selectedIndex + 1, currentItems.length - 1)
+        selectedIndex = Math.min(selectedIndex + 1, Math.max(0, currentItems.length - 1))
         if (popup) paintSelection(popup, selectedIndex)
         return true
       }
@@ -231,4 +233,12 @@ export function createWikiLinkExtension(
       },
     },
   })
+}
+
+/** A missing match should provide feedback instead of silently closing the menu. */
+function renderEmptyWiki(container: HTMLElement) {
+  const empty = document.createElement('p')
+  empty.className = 'px-3 py-2 text-caption text-ink-muted'
+  empty.textContent = '暂无匹配的世界观词条'
+  container.appendChild(empty)
 }
