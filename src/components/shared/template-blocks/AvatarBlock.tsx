@@ -16,15 +16,25 @@ interface AvatarBlockProps {
   /** 国家用旗帜，其余用头像 */
   avatarType?: 'avatar' | 'flag'
   avatarActionMenu?: boolean
+  /** 可由角色模板将独立封面槽位的操作并入头像菜单。 */
+  headerUrl?: string
+  onHeaderChange?: (path: string) => void
+  onHeaderRemove?: () => void
 }
 
-export function AvatarBlock({ value, onChange, onRemove, avatarType = 'avatar', avatarActionMenu = false }: AvatarBlockProps) {
+export function AvatarBlock({
+  value, onChange, onRemove, avatarType = 'avatar', avatarActionMenu = false,
+  headerUrl, onHeaderChange, onHeaderRemove,
+}: AvatarBlockProps) {
   return (
     <div className="relative w-fit">
       <ProfileBannerEditor
         showHeader={false}
         avatarActionMenu={avatarActionMenu}
         avatarType={avatarType}
+        headerUrl={headerUrl}
+        onHeaderChange={onHeaderChange}
+        onHeaderRemove={onHeaderRemove}
         avatarUrl={value}
         onAvatarChange={onChange}
         onAvatarRemove={onRemove}

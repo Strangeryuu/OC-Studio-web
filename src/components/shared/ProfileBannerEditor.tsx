@@ -26,6 +26,8 @@ interface ProfileBannerEditorProps {
   showHeader?: boolean
   /** 角色头像操作收纳在头像旁的菜单按钮内；其他编辑器继续沿用原有布局。 */
   avatarActionMenu?: boolean
+  /** 头像使用单独模板槽位时，将封面按钮收进那个头像菜单。 */
+  hideHeaderActions?: boolean
   saveImage?: (blob: Blob, type: 'header' | 'avatar') => Promise<string | null>
 }
 
@@ -45,6 +47,7 @@ export function ProfileBannerEditor({
   avatarType = 'avatar',
   showHeader = true,
   avatarActionMenu = false,
+  hideHeaderActions = false,
   saveImage,
 }: ProfileBannerEditorProps) {
   const headerInputRef = useRef<HTMLInputElement>(null)
@@ -206,6 +209,10 @@ export function ProfileBannerEditor({
 
   const headerSrc = headerUrl ? resolveImageUrl(headerUrl, 'header') : undefined
   const avatarLabel = avatarType === 'flag' ? '旗帜' : '头像'
+  const headerHasActions = Boolean(onHeaderChange || (headerUrl && onHeaderRemove))
+  // 角色带头像时只有一个“···”入口；独立的封面/旗帜编辑器沿用原有操作。
+  const headerActionsInAvatarMenu = avatarActionMenu && Boolean(onAvatarChange || avatarUrl)
+  const showHeaderButtons = showHeader && !hideHeaderActions && !headerActionsInAvatarMenu
 
   function removeHeader() {
     if (headerUrl && onHeaderRemove && window.confirm('确认从当前词条删除封面？其他词条中的同一图片仍保留。整库删除可在全局相册操作。')) onHeaderRemove()
@@ -216,7 +223,7 @@ export function ProfileBannerEditor({
 
   const headerItems: MediaMenuItem[] = [
     ...(headerUrl ? [{ label: '查看大图', onSelect: viewHeader }] : []),
-    ...(onHeaderChange ? [{ label: '更换封面', onSelect: pickHeader }] : []),
+    ...(onHeaderChange ? [{ label: headerUrl ? '更换封面' : '上传封面', onSelect: pickHeader }] : []),
     ...(headerUrl && onHeaderChange ? [{ label: '编辑', onSelect: () => void editHeader() }] : []),
     ...(headerUrl ? [{ label: '保存到…', onSelect: () => void save(headerUrl, '封面.png') }] : []),
     ...(onHeaderRemove && headerUrl
@@ -233,6 +240,13 @@ export function ProfileBannerEditor({
       ? [{ label: `删除${avatarLabel}`, danger: true, onSelect: removeAvatar }]
       : []),
   ]
+
+  const combinedAvatarItems: MediaMenuItem[] = avatarActionMenu
+    ? [
+        { label: avatarLabel, submenu: avatarItems },
+        ...(headerHasActions || headerUrl ? [{ label: '封面', submenu: headerItems }] : []),
+      ]
+    : avatarItems
 
   return (
     <div className="relative w-full">
@@ -305,12 +319,12 @@ export function ProfileBannerEditor({
         </div>
       ) : null}
 
-      {((showHeader && (onHeaderChange || (headerUrl && onHeaderRemove))) ||
+      {((showHeaderButtons && headerHasActions) ||
         (!avatarActionMenu && (onAvatarChange || (avatarUrl && onAvatarRemove)))) &&
         <div className="mt-8 flex flex-wrap items-center gap-2">
-        {showHeader && onHeaderChange && <button type="button" className={BTN_QUIET}
+        {showHeaderButtons && onHeaderChange && <button type="button" className={BTN_QUIET}
           onClick={pickHeader}>{headerUrl ? '替换封面' : '上传封面'}</button>}
-        {showHeader && headerUrl && onHeaderRemove && <button type="button" className={BTN_QUIET}
+        {showHeaderButtons && headerUrl && onHeaderRemove && <button type="button" className={BTN_QUIET}
           onClick={removeHeader}>删除封面</button>}
         {!avatarActionMenu && onAvatarChange && <button type="button" className={BTN_QUIET}
           onClick={pickAvatar}>{avatarUrl ? '替换' : '上传'}{avatarLabel}</button>}
@@ -346,7 +360,7 @@ export function ProfileBannerEditor({
         <MediaContextMenu
           at={{ x: menu.x, y: menu.y }}
           onClose={() => setMenu(null)}
-          items={menu.target === 'header' ? headerItems : avatarItems}
+          items={menu.target === 'header' ? headerItems : combinedAvatarItems}
         />
       ) : null}
 

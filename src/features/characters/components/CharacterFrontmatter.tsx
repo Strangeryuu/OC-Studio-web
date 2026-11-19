@@ -73,6 +73,9 @@ export function CharacterFrontmatter({
   const avatarEnabled = template?.components.some(
     (component) => component.id === 'avatar' && component.enabled,
   ) ?? false
+  const coverEnabled = template?.components.some(
+    (component) => component.id === 'cover' && component.enabled,
+  ) ?? false
 
   const portraitSection = (
     <GalleryBlock
@@ -194,6 +197,7 @@ export function CharacterFrontmatter({
             return (
               <ProfileBannerEditor
                 avatarActionMenu
+                hideHeaderActions={avatarEnabled}
                 headerUrl={form.headerUrl}
                 avatarUrl={avatarEnabled ? undefined : form.avatarUrl}
                 onHeaderChange={form.setHeaderUrl}
@@ -209,6 +213,9 @@ export function CharacterFrontmatter({
                 value={form.avatarUrl}
                 onChange={form.setAvatarUrl}
                 onRemove={() => form.setAvatarUrl('')}
+                headerUrl={coverEnabled ? form.headerUrl : undefined}
+                onHeaderChange={coverEnabled ? form.setHeaderUrl : undefined}
+                onHeaderRemove={coverEnabled ? () => form.setHeaderUrl('') : undefined}
               />
             )
           case 'info':
