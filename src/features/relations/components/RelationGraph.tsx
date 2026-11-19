@@ -91,6 +91,7 @@ interface WorkspaceGraphSource {
   savePosition?: (type: RelationNodeType, id: number, x: number, y: number) => Promise<void>
   createNode?: (type: RelationEdgeType, name: string, position: { x: number; y: number }) => Promise<void>
   deleteNode?: (type: RelationNodeType, id: number) => Promise<void>
+  changeNodeImage?: (type: RelationNodeType, id: number, file: File) => Promise<void>
   createRelation?: (source: { entityType: RelationNodeType; entityId: number }, target: { entityType: RelationNodeType; entityId: number }, label: string) => Promise<CreateRelationResult>
   deleteRelation?: (selection: EdgeStyleSelection) => Promise<boolean>
   patchRelation?: (selection: EdgeStyleSelection, patch: EdgeStylePatchInput) => Promise<boolean>
@@ -142,6 +143,7 @@ export function RelationGraph({
   const canMutateGraph = workspace === undefined
   const canCreateNodes = canMutateGraph || Boolean(workspace?.createNode)
   const canDeleteNodes = canMutateGraph || Boolean(workspace?.deleteNode)
+  const canChangeImages = canMutateGraph || Boolean(workspace?.changeNodeImage)
   const canConnectRelations = canMutateGraph || Boolean(workspace?.createRelation)
   const canDeleteRelations = canMutateGraph || Boolean(workspace?.deleteRelation)
   const canPatchRelations = canMutateGraph || Boolean(workspace?.patchRelation)
@@ -859,14 +861,19 @@ export function RelationGraph({
       try {
         const slot =
           node.data.entityType === 'country' ? 'flag' : node.data.entityType === 'event' ? 'header' : 'avatar'
-        const path = await saveBlobToDisk(file, slot)
-        await setGraphNodeImage(node.data.entityType, node.data.entityId, path)
-        await refresh({ silent: true })
+        if (workspace) {
+          if (!workspace.changeNodeImage) throw new Error('当前关系图无法更换图片')
+          await workspace.changeNodeImage(node.data.entityType, node.data.entityId, file)
+        } else {
+          const path = await saveBlobToDisk(file, slot)
+          await setGraphNodeImage(node.data.entityType, node.data.entityId, path)
+          await refresh({ silent: true })
+        }
       } catch (err) {
         toast.error('更换图片失败', { description: err instanceof Error ? err.message : String(err) })
       }
     },
-    [imageTarget, rawNodes, refresh],
+    [imageTarget, rawNodes, refresh, workspace],
   )
 
   /* ── 定位 / 聚焦 ───────────────────────────────────────── */
@@ -964,7 +971,7 @@ export function RelationGraph({
           icon: <Focus size={13} strokeWidth={2} />,
           onSelect: () => setFocusNodeId(menuNode.id === focusNodeId ? null : menuNode.id),
         },
-        ...(canMutateGraph ? [{
+        ...(canChangeImages ? [{
           label: '更换图片',
           icon: <ImageIcon size={13} strokeWidth={2} />,
           onSelect: () => {
