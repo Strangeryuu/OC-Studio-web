@@ -1,5 +1,15 @@
 # Web 版移植进度
 
+## 2026-11-19：事务式关系图布局与时间线高级导出
+
+- 新增 `/api/workspaces/[workspaceId]/graph-layout`：对最多 1000 个坐标校验 UUID、数值 ID、类型、资料库归属与完整 `expectedVersion`，按统一锁序在 PostgreSQL 单事务中写入所有实体版本与修订。冲突 409 整批回滚；撤销同样通过事务 API。
+- 客户端收到网络中断或不完整响应时重新读取数据库权威状态，避免在提交结果不明时重复操作。实体数据保留原版 `graphPosition` 字段；本轮无需新增迁移。
+- 时间线的高级导出直接复用原版 `TimelinePanel`、`renderTimelineCanvas` 与预览、标题、密度预设，替换为当前登录世界观的事件/时期数据；桌面版的 Dexie 读取方式仍保留。
+- `tests/cloud-graph-layout.integration.test.ts` 包含第二节点 SQL 失败触发全批回滚、版本冲突与权限隔离；`scripts/cloud-browser-acceptance.cjs` 在 GitHub Actions 的真实 PostgreSQL + Next.js 环境中运行 Chromium 桌面与手机触摸模拟、两会话冲突、时间线导出预览。
+- **验收进度以本次提交对应 GitHub Actions 最终结果为准。** Chromium 触摸模拟与 Android Chrome / iOS Safari 真机实测分开记录，详见 `docs/web-browser-acceptance-2026-11-19.md`。
+
+---
+
 ## 2026-11-19：恢复云端时间线时期管理
 
 - 新增 `/api/workspaces/[workspaceId]/periods` 的 GET / POST 操作，使用现有 `workspace_settings` 内的 `desktop-extras.periods` 数据保存时期；无需额外数据库迁移，原版桌面 `.ocbak` 导入的时期数据继续沿用同一位置。
