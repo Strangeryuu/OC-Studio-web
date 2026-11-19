@@ -253,7 +253,7 @@ export function planWorkspaceRelationDelete(
   const target: RelationEndpoint = { entityType: selection.targetType, entityId: selection.targetId }
   if (selection.kind === 'member') return removeMembership(entities, source, target)
   const primary = planNamedChange(entities, source, target, selection.relation, 'remove')
-  if (primary.ok || source.entityType !== target.entityType) return primary
+  if (primary.ok || primary.reason !== 'missing' || source.entityType !== target.entityType) return primary
   return planNamedChange(entities, target, source, selection.relation, 'remove')
 }
 
@@ -264,6 +264,6 @@ export function planWorkspaceRelationPatch(
   const source: RelationEndpoint = { entityType: selection.sourceType, entityId: selection.sourceId }
   const target: RelationEndpoint = { entityType: selection.targetType, entityId: selection.targetId }
   const primary = planNamedChange(entities, source, target, selection.relation, 'patch', patch)
-  if (primary.ok || source.entityType !== target.entityType) return primary
+  if (primary.ok || primary.reason !== 'missing' || source.entityType !== target.entityType) return primary
   return planNamedChange(entities, target, source, selection.relation, 'patch', patch)
 }
