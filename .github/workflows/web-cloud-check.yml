@@ -102,6 +102,11 @@ jobs:
       - name: 使用真实 PostgreSQL 完成登录、HTTP 和浏览器联调
         run: |
           mkdir -p /tmp/ocstudio-ci-media
+          # Next.js standalone omits static/public by design. Copy these assets
+          # before testing a real hydrated browser, matching the Dockerfile.
+          mkdir -p .next/standalone/.next
+          cp -a .next/static .next/standalone/.next/static
+          cp -a public .next/standalone/public
           # CI-only sendmail captures the reset email for a real one-time token test.
           # No message leaves this GitHub runner.
           cat > /tmp/ocstudio-ci-sendmail <<'SH'
