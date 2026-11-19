@@ -56,7 +56,7 @@ function CharacterRadar({ attributes }: { attributes: CharacterAttributes }) {
         if (!grade) return null
         const position = point(index, SVG_RADIUS * GRADE_LEVEL[grade] / 7)
         return <circle key={definition.key} cx={position.x} cy={position.y} r="4"
-          stroke="var(--color-paper, #fff)" strokeWidth="1.5" fill={attributes.color} />
+          stroke="var(--oc-paper)" strokeWidth="1.5" fill={attributes.color} />
       })}
     </>}
     {GRADES.map(grade =>
@@ -117,11 +117,11 @@ export function CharacterAttributesSection({ form }: { form: CharacterForm }) {
             aria-label={'使用' + color.name + '填充能力图'} aria-pressed={attributes.color === color.hex}
             onClick={() => save({ ...attributes, color: color.hex })}
             title={color.name}
-            className={'flex h-8 w-8 items-center justify-center rounded-full border-2 transition-transform hover:scale-110 ' +
-              (attributes.color === color.hex ? 'border-ink ring-2 ring-line' : 'border-paper')}
+            className={'flex h-8 w-8 items-center justify-center rounded-full border transition-transform hover:scale-110 ' +
+              (attributes.color === color.hex ? 'border-ink outline outline-1 outline-ink' : 'border-paper')}
             style={{ backgroundColor: color.hex }}>
             {attributes.color === color.hex && <span aria-hidden="true" className="text-sm font-bold text-white"
-              style={{ textShadow: '0 1px 3px #222' }}>✓</span>}
+              style={{ textShadow: '0 1px 3px black' }}>✓</span>}
           </button>)}
         </div>
       </div>
@@ -136,7 +136,11 @@ export function CharacterAttributesSection({ form }: { form: CharacterForm }) {
           const value = attributes.affinities[affinity.key]
           return <div key={affinity.key}
             className="flex min-w-0 items-center gap-1.5 rounded-item border border-line/60 bg-paper px-2 py-2">
-            <span className="w-8 shrink-0 text-ui font-semibold text-ink">{affinity.label}</span>
+            <span className="w-8 shrink-0 text-ui font-semibold" style={{
+              color: affinity.hex,
+              textShadow: affinity.key === 'light' ? '0 0 2px gray'
+                : affinity.key === 'dark' ? '0 0 2px white' : undefined,
+            }}>{affinity.label}</span>
             <div className="flex min-w-0 flex-1 items-center justify-between gap-0.5" role="group"
               aria-label={affinity.label + '亲和度，当前' + value + '星'}>
               {Array.from({ length: 7 }, (_, index) => {
@@ -145,8 +149,8 @@ export function CharacterAttributesSection({ form }: { form: CharacterForm }) {
                 const light = affinity.key === 'light'
                 const dark = affinity.key === 'dark'
                 const outline = active
-                  ? light ? '#747474' : dark ? '#555555' : affinity.hex
-                  : '#A6A29B'
+                  ? light ? 'gray' : dark ? 'dimgray' : affinity.hex
+                  : 'var(--oc-ink-faint)'
                 return <button key={count} type="button"
                   aria-label={affinity.label + '亲和度' + count + '星'}
                   aria-pressed={active}
@@ -155,7 +159,7 @@ export function CharacterAttributesSection({ form }: { form: CharacterForm }) {
                   onClick={() => updateAffinity(affinity.key, value === count ? 0 : count)}>
                   <Star size={20} strokeWidth={active ? 2 : 1.6}
                     stroke={outline} fill={active ? affinity.hex : 'transparent'}
-                    style={{ filter: active ? 'drop-shadow(0 0 1px #777)' : undefined }} />
+                    style={{ filter: active ? 'drop-shadow(0 0 1px gray)' : undefined }} />
                 </button>
               })}
             </div>

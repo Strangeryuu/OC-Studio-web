@@ -24,6 +24,8 @@ const SRC = join(ROOT, 'src')
 /** 允许出现字面量的文件（内容是数据，不是界面） */
 const LITERAL_ALLOWLIST = [
   'src/lib/tag-colors.ts',
+  // 角色能力色板与十种元素的精确色值是由创作者设定的数据，不随站点主题变化。
+  'src/lib/character-attributes.ts',
   'src/lib/export/site/styles.ts',
   'src/types/index.ts',
   // 标签色是用户数据：必须有完整字面量类名，Tailwind JIT 不能拼接（见 TagBadge 顶部注释）
