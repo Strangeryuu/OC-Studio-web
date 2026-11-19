@@ -2,13 +2,13 @@ import { NextResponse } from 'next/server'
 import { pool } from '@/lib/cloud/server/db'
 import { siteAdminUser } from '@/lib/cloud/server/site-admin'
 import { mutationOriginAllowed } from '@/lib/cloud/server/origin'
-import { encryptMailPassword,readMailSettings,validMailSettings } from '@/lib/cloud/server/mailer'
+import { encryptMailPassword,readMailSettings,validMailSettings,localMailStatus } from '@/lib/cloud/server/mailer'
 export const runtime='nodejs'
 export const dynamic='force-dynamic'
 export async function GET(){
   if(!await siteAdminUser())return NextResponse.json({error:'FORBIDDEN'},{status:403})
-  const config=await readMailSettings()
-  return NextResponse.json({settings:config?{mode:config.mode,from:config.from,host:config.host,
+  const [config,localStatus]=await Promise.all([readMailSettings(),localMailStatus()])
+  return NextResponse.json({localStatus,settings:config?{mode:config.mode,from:config.from,host:config.host,
     port:config.port,secure:config.secure,username:config.username,
     passwordSet:!!config.encryptedPassword}:null},{headers:{'Cache-Control':'no-store'}})
 }
@@ -26,12 +26,15 @@ export async function PUT(request:Request){
   if(input.password!==undefined&&(typeof input.password!=='string'||input.password.length>500))
     return NextResponse.json({error:'INVALID_MAIL_PASSWORD'},{status:400})
   const old=await readMailSettings()
+  // Never silently reuse the credential from a different SMTP account/server.
+  const sameAccount=old?.mode==='smtp'&&input.mode==='smtp'&&
+    old.host.toLowerCase()===input.host.trim().toLowerCase()&&old.username===input.username.trim()
   const encrypted=input.password?encryptMailPassword(input.password as string):
-    old?.encryptedPassword
+    sameAccount?old?.encryptedPassword:undefined
   if(input.mode==='smtp'&&input.username&&!encrypted)
     return NextResponse.json({error:'SMTP_PASSWORD_REQUIRED'},{status:400})
   const next={mode:input.mode,from:input.from.trim().toLowerCase(),host:input.host.trim(),
-    port:input.port,secure:input.secure,username:input.username,
+    port:input.port,secure:input.secure,username:input.username.trim(),
     ...(encrypted?{encryptedPassword:encrypted}:{})}
   await pool.query(`INSERT INTO site_settings(key,value) VALUES('mail',$1::jsonb)
     ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,version=site_settings.version+1,updated_at=now()`,
