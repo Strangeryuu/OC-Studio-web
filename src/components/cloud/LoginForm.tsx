@@ -46,6 +46,9 @@ export function LoginForm() {
         {busy ? '正在登录' : '登录工作台'}
       </button>
     </form>
-    <p className="mt-6 text-center text-xs opacity-60">账号由管理员创建 · 公开注册已关闭</p>
+    <div className="mt-6 flex justify-center gap-4 text-sm">
+      <a className="underline" href="/forgot-password">忘记密码？</a>
+      <a className="underline" href="/register">邀请码注册</a>
+    </div>
   </section>
 }

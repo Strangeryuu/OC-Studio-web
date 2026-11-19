@@ -17,6 +17,7 @@ export function AdminUsers({ initialUsers, selfId }: { initialUsers: AdminUserRo
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
+  const [role,setRole]=useState<'user'|'admin'>('user')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -28,7 +29,7 @@ export function AdminUsers({ initialUsers, selfId }: { initialUsers: AdminUserRo
     try {
       const response = await authClient.admin.createUser({
         email: email.trim().toLowerCase(), name: name.trim(),
-        password, role: 'user',
+        password, role,
       })
       if (response.error) throw new Error(response.error.message || '创建用户失败')
       setEmail('')
@@ -40,6 +41,17 @@ export function AdminUsers({ initialUsers, selfId }: { initialUsers: AdminUserRo
     } finally { setBusy(false) }
   }
 
+  async function changeRole(user:AdminUserRow,role:'admin'|'user'){
+    if(user.id===selfId||busy)return
+    if(!window.confirm('确认修改此账号的平台权限？'))return
+    setBusy(true);setError(null)
+    try{
+      const result=await authClient.admin.setRole({userId:user.id,role})
+      if(result.error)throw Error(result.error.message??'调整角色失败')
+      setUsers(current=>current.map(row=>row.id===user.id?{...row,role}:row))
+    }catch(e){setError(e instanceof Error?e.message:'调整角色失败')}
+    finally{setBusy(false)}
+  }
   async function toggleBan(user: AdminUserRow) {
     if (busy || user.id === selfId || user.role?.split(',').includes('admin')) return
     if (!window.confirm(user.banned ? '确认恢复这个用户的登录权限？' : '确认禁用这个用户，并撤销其现有会话？')) return
@@ -59,7 +71,8 @@ export function AdminUsers({ initialUsers, selfId }: { initialUsers: AdminUserRo
   return <div className="flex flex-col gap-7">
     <div>
       <h1 className="flex items-center gap-2 text-2xl font-semibold"><Shield size={22}/>平台用户管理</h1>
-      <p className="mt-2 text-sm opacity-70">仅站点管理员可访问。用户资料库的权限仍由每个世界观独立控制。</p>
+      <p className="mt-2 text-sm opacity-70">管理员可访问与编辑全站资料库；普通用户仅访问自己创建或获邀加入的资料库。</p>
+      <a href="/admin" className="mt-2 inline-block text-sm underline">返回管理员菜单</a>
     </div>
     {error && <p role="alert" className="rounded-control border border-[var(--oc-line)] p-3 text-sm">{error}</p>}
     <section className="rounded-panel border border-[var(--oc-line)] p-5">
@@ -78,6 +91,12 @@ export function AdminUsers({ initialUsers, selfId }: { initialUsers: AdminUserRo
             value={password} onChange={e => setPassword(e.target.value)}
             className="rounded-control border border-[var(--oc-line)] bg-transparent p-2" />
         </label>
+        <label className="flex flex-col gap-1 text-sm">平台权限
+          <select className="rounded-control border border-[var(--oc-line)] bg-transparent p-2"
+            value={role} onChange={e=>setRole(e.target.value as typeof role)}>
+            <option value="user">普通用户</option><option value="admin">管理员</option>
+          </select>
+        </label>
         <button type="submit" disabled={busy}
           className="self-end rounded-control border border-[var(--oc-line)] p-2 text-sm disabled:opacity-50">
           {busy ? '操作中…' : '创建普通用户'}
@@ -95,6 +114,12 @@ export function AdminUsers({ initialUsers, selfId }: { initialUsers: AdminUserRo
             <p className="break-all text-xs opacity-60">{user.email} · {user.role ?? 'user'}</p>
             <p className="mt-1 text-xs opacity-70">{user.banned ? '已禁用' : '正常'}</p>
           </div>
+          {user.id!==selfId&&<select aria-label={'修改'+user.name+'的平台权限'}
+            value={user.role?.split(',').includes('admin')?'admin':'user'} disabled={busy}
+            onChange={e=>void changeRole(user,e.target.value as 'admin'|'user')}
+            className="rounded-control border border-[var(--oc-line)] bg-transparent p-2">
+            <option value="user">普通用户</option><option value="admin">管理员</option>
+          </select>}
           {user.id !== selfId && !user.role?.split(',').includes('admin') && <button
             type="button" onClick={() => void toggleBan(user)} disabled={busy}
             className="inline-flex items-center gap-1 rounded-control border border-[var(--oc-line)] px-3 py-2 text-xs disabled:opacity-50">
