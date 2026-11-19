@@ -50,7 +50,12 @@ import type { CloudSearchHit } from '@/lib/cloud/workspace-search'
 import type { ReferableEntity } from '@/lib/reference-registry'
 
 import { projectGraphData } from '@/features/relations/services'
-import type { RelationNodeType } from '@/features/relations/types'
+import type { RelationEndpoint, RelationNodeType } from '@/features/relations/types'
+import type { EdgeStyleSelection, EdgeStylePatchInput } from '@/features/relations/components/EdgeStylePanel'
+import {
+  planWorkspaceRelationCreate, planWorkspaceRelationDelete, planWorkspaceRelationPatch,
+  type WorkspaceGraphChange, type WorkspaceGraphPlan,
+} from '@/features/relations/cloud/workspace-graph-mutations'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
 const WorkspaceHome = dynamic(
@@ -409,6 +414,60 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
     throw new Error('条目未找到，请刷新关系图')
   }
 
+  // Every relationship change updates a single authoritative original entity
+  // via its versioned adapter. The server enforces role access and stores history.
+  async function applyGraphRelationChange(change: WorkspaceGraphChange) {
+    if (change.type === 'character') {
+      const row = characterList.rows.find(item => item.character.id === change.id)
+      if (!row) throw new Error('角色已变更，请刷新关系图')
+      characterList.replace(await characterAdapter.save(row, change.patch))
+    } else if (change.type === 'event') {
+      const row = eventList.rows.find(item => item.entity.id === change.id)
+      if (!row) throw new Error('事件已变更，请刷新关系图')
+      eventList.replace(await eventAdapter.save(row, change.patch))
+    } else {
+      const row = noteList.rows.find(item => item.entity.id === change.id && isCodexEntry(item.entity))
+      if (!row) throw new Error('笔记已变更，请刷新关系图')
+      noteList.replace(await noteAdapter.save(row, change.patch))
+    }
+  }
+
+  async function mutateGraphRelation(plan: () => WorkspaceGraphPlan): Promise<WorkspaceGraphPlan> {
+    if (!canEdit || busy || transition.current || pendingGraphWrite.current)
+      throw new Error('当前无法编辑关系，请完成正在进行的保存操作')
+    const outcome = plan()
+    if (!outcome.ok || !outcome.change) return outcome
+    setBusy(true)
+    const write = applyGraphRelationChange(outcome.change)
+    pendingGraphWrite.current = write
+    try {
+      await write
+      return outcome
+    } finally {
+      pendingGraphWrite.current = null
+      setBusy(false)
+    }
+  }
+
+  async function createGraphRelation(source: RelationEndpoint, target: RelationEndpoint, label: string) {
+    const result = await mutateGraphRelation(() =>
+      planWorkspaceRelationCreate({ characters, countries, events, notes }, source, target, label))
+    return result.ok ? { ok: true as const } : { ok: false as const, reason: result.reason }
+  }
+
+  async function deleteGraphRelation(selection: EdgeStyleSelection): Promise<boolean> {
+    const result = await mutateGraphRelation(() =>
+      planWorkspaceRelationDelete({ characters, countries, events, notes }, selection))
+    return result.ok
+  }
+
+  async function patchGraphRelation(selection: EdgeStyleSelection, patch: EdgeStylePatchInput): Promise<boolean> {
+    const result = await mutateGraphRelation(() =>
+      planWorkspaceRelationPatch({ characters, countries, events, notes }, selection, patch))
+    if (!result.ok && result.reason === 'duplicate') throw new Error('已存在同名关系')
+    return result.ok
+  }
+
   async function saveGraphPosition(type: RelationNodeType, id: number, x: number, y: number) {
     if (busy || !canEdit || pendingGraphWrite.current) throw new Error('当前无法保存节点位置')
     setBusy(true)
@@ -546,6 +605,9 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
           error: graphError || characterList.error || countryList.error || eventList.error || noteList.error,
           refresh: refreshGraph,
           savePosition: canEdit && !busy ? saveGraphPosition : undefined,
+          createRelation: canEdit && !busy ? createGraphRelation : undefined,
+          deleteRelation: canEdit && !busy ? deleteGraphRelation : undefined,
+          patchRelation: canEdit && !busy ? patchGraphRelation : undefined,
         }}
           onNavigateToCharacter={id => navigate('character', id)}
           onNavigateToCountry={id => navigate('country', id)}
