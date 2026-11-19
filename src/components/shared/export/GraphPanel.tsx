@@ -72,12 +72,23 @@ function nodeTypeOf(node: GraphNode): RelationNodeType {
   return value === 'event' || value === 'country' || value === 'world' ? value : 'character'
 }
 
-export function GraphPanel() {
+export interface WorkspaceGraphExportSource {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+  worldName: string
+  edgeStyle: EdgeStyle
+  onEdgeStyleChange: (next: EdgeStyle) => void
+}
+
+export function GraphPanel({ workspace }: { workspace?: WorkspaceGraphExportSource } = {}) {
   const { settings, updateSetting } = useSettings()
   // 标题默认跟着世界名走；用户改过就一直在用他改的那个（`null` = 还没改过）
   const [titleOverride, setTitleOverride] = useState<string | null>(null)
   const [worldName, setWorldName] = useState('')
-  const [data, setData] = useState<{ nodes: GraphNode[]; edges: GraphEdge[] } | null>(null)
+  const [desktopData, setData] = useState<{ nodes: GraphNode[]; edges: GraphEdge[] } | null>(null)
+  const data = useMemo(() => workspace
+    ? { nodes: workspace.nodes, edges: workspace.edges } : desktopData,
+  [workspace?.nodes, workspace?.edges, desktopData])
   const [style, setStyle] = useState<GraphExportStyle>(DEFAULT_GRAPH_STYLE)
   const [selected, setSelected] = useState<string[]>([])
   const [expand, setExpand] = useState(true)
@@ -89,18 +100,21 @@ export function GraphPanel() {
   const [busy, setBusy] = useState(false)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
-  const edgeStyle = normalizeEdgeStyle(settings.edgeStyle)
-  const defaultTitle = worldName === '' ? '关系图' : `${worldName} · 关系图`
+  const edgeStyle = workspace?.edgeStyle ?? normalizeEdgeStyle(settings.edgeStyle)
+  const sourceName = workspace?.worldName ?? worldName
+  const defaultTitle = sourceName === '' ? '关系图' : `${sourceName} · 关系图`
   const title = titleOverride ?? defaultTitle
 
   useEffect(() => {
+    if (workspace) return
     void db.meta
       .get(1)
       .then((meta) => setWorldName((meta?.worldName ?? '').trim()))
       .catch(() => setWorldName(''))
-  }, [])
+  }, [workspace])
 
   useEffect(() => {
+    if (workspace) return
     let alive = true
     void (async () => {
       try {
@@ -116,7 +130,7 @@ export function GraphPanel() {
     return () => {
       alive = false
     }
-  }, [])
+  }, [workspace])
 
   /**
    * 选中的节点可能因为刷新 / 删条目而不在图里了 —— **不在 effect 里改 state**，
@@ -358,7 +372,8 @@ export function GraphPanel() {
                 value={edgeStyle}
                 ariaLabel="线型"
                 options={EDGE_STYLE_OPTIONS}
-                onChange={(value: EdgeStyle) => updateSetting('edgeStyle', value)}
+                onChange={(value: EdgeStyle) => workspace
+                  ? workspace.onEdgeStyleChange(value) : updateSetting('edgeStyle', value)}
               />
             </ExportRow>
             <ExportRow label="粗细">
