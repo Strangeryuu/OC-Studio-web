@@ -205,6 +205,7 @@ npm run build:web  # Next.js 生产构建
 - [与上游逐模块功能差距及后续验收](docs/web-parity-audit-2026-11-19.md)
 - [高级功能验收清单](docs/web-advanced-acceptance.md)
 - [Docker / GHCR / VPS 部署](docs/web-docker-deployment.md)
+- [Web Docker Sendmail 邮件中继配置](docs/web-local-sendmail-relay.md)
 - [非 Docker 的 VPS 部署](docs/web-vps-deployment.md)
 - [GitHub Actions 构建记录](https://github.com/Strangeryuu/OC-Studio-web/actions/workflows/web-cloud-check.yml)
 
