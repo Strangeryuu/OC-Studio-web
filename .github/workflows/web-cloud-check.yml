@@ -17,7 +17,8 @@ jobs:
           cache: npm
       - name: Check container syntax and Compose values
         run: |
-          bash -n deploy/update.sh
+          bash -n deploy/update.sh deploy/backup.sh scripts/cloud-deploy-backup-check.sh
+          bash scripts/cloud-deploy-backup-check.sh
           docker compose --env-file deploy/.env.example -f deploy/compose.yaml config --quiet
       - run: npm ci
       - run: npm run typecheck
