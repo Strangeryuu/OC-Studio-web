@@ -55,14 +55,14 @@ async function main(){
     token,newPassword:'CI_unexpected_Password_54321',
   })
   assert(replay.status!==200,'An already used password-reset token was accepted')
-  const old = await jsonPost('/api/auth/sign-in/email',{
-    email:'ci-created@example.test',password:'CI_newUser_Password_456789',
-  })
-  assert(old.status!==200,'Old password can still sign in after recovery')
   const signed = await jsonPost('/api/auth/sign-in/email',{
     email:'ci-created@example.test',password:next,
   })
   assert(signed.status===200,'New password cannot sign in after recovery')
+  const old = await jsonPost('/api/auth/sign-in/email',{
+    email:'ci-created@example.test',password:'CI_newUser_Password_456789',
+  })
+  assert(old.status!==200,'Old password can still sign in after recovery')
   process.stdout.write('Password reset delivered, consumed once, and new login verified.\n')
 }
 main().catch(error=>{console.error(error);process.exitCode=1})
