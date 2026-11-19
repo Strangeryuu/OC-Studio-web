@@ -578,6 +578,62 @@ async function run() {
   })
   assert(selfRelation.status === 400, 'Self-referencing relationship should be rejected')
 
+  // Cloud React Flow writes original numeric graph fields using the same
+  // versioned entity PATCH endpoint as every editor. Verify create/delete,
+  // persistence, concurrent-write rejection, and revision history in PostgreSQL.
+  const graphPayload = name => ({
+    kind:'character',title:name,data:{
+      name,aliases:[],race:'',element:'',occupation:'',faction:'',
+      nationalityLegacy:'',height:'',birthday:'',avatarUrl:'',
+      bio:'',lifeStory:'',relatedCharacters:[],relatedNotes:[],
+      gallery:[],avatars:[],tags:[],deleted:false,
+      createdAt:Date.now(),updatedAt:Date.now(),_syncStatus:'synced',_lastModified:Date.now(),
+    },
+  })
+  const graphCreate = async name => {
+    const response=await fetch(BASE+'/api/workspaces/'+workspaceId+'/entities',{
+      method:'POST',headers:{Cookie:cookie,Origin:PUBLIC_ORIGIN,'Content-Type':'application/json'},
+      body:JSON.stringify(graphPayload(name)),
+    })
+    assert(response.status===201,'Cloud graph node could not be created: '+response.status)
+    return (await response.json()).entity
+  }
+  const graphLeft=await graphCreate('CI 图谱来源')
+  const graphRight=await graphCreate('CI 图谱目标')
+  const graphTarget=await fetch(BASE+'/api/entities/'+graphRight.id,{headers:{Cookie:cookie}})
+  const graphTargetLocalId=(await graphTarget.json()).entity.local_id
+  assert(Number.isSafeInteger(graphTargetLocalId),'Cloud graph target has no numeric local id')
+  const graphLink={...graphPayload('CI 图谱来源').data,relatedCharacters:[
+    {characterId:graphTargetLocalId,name:'CI 图谱目标',relation:'盟友',arrow:'both'},
+  ]}
+  const saveGraphLink=await fetch(BASE+'/api/entities/'+graphLeft.id,{
+    method:'PATCH',headers:{Cookie:cookie,Origin:PUBLIC_ORIGIN,
+      'Content-Type':'application/json','X-OC-Workspace-Id':workspaceId},
+    body:JSON.stringify({title:'CI 图谱来源',expectedVersion:1,data:graphLink}),
+  })
+  assert(saveGraphLink.status===200&&(await saveGraphLink.json()).version===2,
+    'Cloud graph relationship creation did not persist as version 2')
+  const graphSaved=await fetch(BASE+'/api/entities/'+graphLeft.id,{headers:{Cookie:cookie}})
+  assert((await graphSaved.json()).entity.content.relatedCharacters[0].relation==='盟友',
+    'Cloud graph relationship was not readable through original entity projection')
+  const graphStale=await fetch(BASE+'/api/entities/'+graphLeft.id,{
+    method:'PATCH',headers:{Cookie:cookie,Origin:PUBLIC_ORIGIN,'Content-Type':'application/json'},
+    body:JSON.stringify({title:'CI 图谱来源',expectedVersion:1,data:graphLink}),
+  })
+  assert(graphStale.status===409,'Concurrent cloud graph relation overwrite was accepted')
+  const removeGraphLink=await fetch(BASE+'/api/entities/'+graphLeft.id,{
+    method:'PATCH',headers:{Cookie:cookie,Origin:PUBLIC_ORIGIN,'Content-Type':'application/json'},
+    body:JSON.stringify({title:'CI 图谱来源',expectedVersion:2,
+      data:{...graphLink,relatedCharacters:[]}}),
+  })
+  assert(removeGraphLink.status===200&&(await removeGraphLink.json()).version===3,
+    'Cloud graph relationship removal did not persist')
+  const graphHistory=await fetch(BASE+'/api/entities/'+graphLeft.id+'/revisions',{
+    headers:{Cookie:cookie},
+  })
+  assert(graphHistory.status===200&&(await graphHistory.json()).revisions.length===3,
+    'Cloud graph relationship revisions were not recorded')
+
 
   // Acceptance: real PostgreSQL + logged-in HTTP lifecycle for all four advanced modules.
   // Independent workspaces ensure backup restore cannot overwrite an existing library.
