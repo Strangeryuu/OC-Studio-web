@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react'
 import { Pencil, Trash2 } from 'lucide-react'
 import type { ActionItem } from '@/components/shared/MobileActionSheet'
 import type { Period } from '@/types'
+import { toast } from 'sonner'
 import { usePeriods } from '@/features/periods'
 
 /**
@@ -11,8 +12,14 @@ import { usePeriods } from '@/features/periods'
  * 弹窗（`PeriodDialog`）与删除确认（`AlertDialog`）的开关状态也在这里，
  * 调用方只负责渲染。
  */
-export function usePeriodEditor(enabled = true) {
-  const { periods, addPeriod, updatePeriod, removePeriod } = usePeriods(enabled)
+export function usePeriodEditor(enabled = true, cloud?: {
+  periods: Period[]
+  addPeriod: (data: { name: string; startTime: string; endTime: string; color: string }) => Promise<void>
+  updatePeriod: (id: number, data: Partial<{ name: string; startTime: string; endTime: string; color: string }>) => Promise<void>
+  removePeriod: (id: number) => Promise<void>
+}) {
+  const local = usePeriods(enabled)
+  const { periods, addPeriod, updatePeriod, removePeriod } = cloud ?? local
   const [periodDialogOpen, setPeriodDialogOpen] = useState(false)
   const [editingPeriod, setEditingPeriod] = useState<Period | undefined>(undefined)
   const [deleteTarget, setDeleteTarget] = useState<Period | null>(null)
@@ -44,10 +51,13 @@ export function usePeriodEditor(enabled = true) {
   }, [editingPeriod, addPeriod, updatePeriod])
 
   const handlePeriodDelete = useCallback(async () => {
-    if (deleteTarget?.id) {
+    if (!deleteTarget?.id) return
+    try {
       await removePeriod(deleteTarget.id)
+      setDeleteTarget(null)
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : '删除时期失败')
     }
-    setDeleteTarget(null)
   }, [deleteTarget, removePeriod])
 
   const openPeriodActionSheet = useCallback((period: Period) => {
