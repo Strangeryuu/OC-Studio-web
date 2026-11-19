@@ -54,8 +54,8 @@ export function PeriodDialog({ open, period, onSave, onClose }: PeriodDialogProp
     try {
       await onSave({ name: name.trim(), startTime, endTime, color })
       onClose()
-    } catch {
-      setError('保存失败')
+    } catch (cause) {
+      setError(cause instanceof Error && cause.message ? cause.message : '保存失败')
     } finally {
       setSaving(false)
     }
