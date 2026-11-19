@@ -50,7 +50,7 @@ import type { CloudSearchHit } from '@/lib/cloud/workspace-search'
 import type { ReferableEntity } from '@/lib/reference-registry'
 
 import { projectGraphData } from '@/features/relations/services'
-import type { RelationEndpoint, RelationNodeType } from '@/features/relations/types'
+import type { RelationEdgeType, RelationEndpoint, RelationNodeType } from '@/features/relations/types'
 import type { EdgeStyleSelection, EdgeStylePatchInput } from '@/features/relations/components/EdgeStylePanel'
 import {
   planWorkspaceRelationCreate, planWorkspaceRelationDelete, planWorkspaceRelationPatch,
@@ -194,7 +194,10 @@ function useWorkspaceRows<T extends { entityId: string }>(adapter: { list: () =>
     setError(null)
     setLoading(false)
   }, [])
-  return { rows, loading, error, append, replace, reset }
+  const drop = useCallback((entityId: string) => {
+    setRows(current => current.filter(row => row.entityId !== entityId))
+  }, [])
+  return { rows, loading, error, append, replace, reset, drop }
 }
 
 function WorkspaceEntryList<T extends { entityId: string }>({ label, rows, getLabel, selectedId, loading,
@@ -468,6 +471,69 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
     return result.ok
   }
 
+  async function createGraphNode(type: RelationEdgeType, name: string,
+    position: { x: number; y: number }): Promise<void> {
+    if (!canEdit || busy || transition.current || pendingGraphWrite.current)
+      throw new Error('当前无法新建图谱节点')
+    const label = name.trim()
+    if (!label) throw new Error('请输入节点名称')
+    setBusy(true)
+    const write = (async () => {
+      if (type === 'character') {
+        const row = await characterAdapter.create(
+          buildDefaultCharacter({ ...newCharacterData(), name: label }, { graphPosition: position }))
+        characterList.append(row)
+      } else if (type === 'country') {
+        const row = await countryAdapter.create(
+          buildDefaultCountry({ ...newCountryData(), name: label }, { graphPosition: position }))
+        countryList.append(row)
+      } else {
+        const row = await eventAdapter.create(
+          buildDefaultEvent({ ...newEventData(), title: label }, { graphPosition: position }))
+        eventList.append(row)
+      }
+    })()
+    pendingGraphWrite.current = write
+    try { await write }
+    finally { pendingGraphWrite.current = null; setBusy(false) }
+  }
+
+  async function deleteGraphNodeFromCloud(type: RelationNodeType, id: number): Promise<void> {
+    if ((role !== 'owner' && role !== 'admin') || busy || transition.current || pendingGraphWrite.current)
+      throw new Error('当前没有删除节点的权限，或仍在保存其他修改')
+    setBusy(true)
+    const write = (async () => {
+      if (type === 'character') {
+        const row = characterList.rows.find(item => item.character.id === id)
+        if (!row) throw new Error('角色已变更，请刷新关系图')
+        await characterAdapter.remove(row)
+        characterList.drop(row.entityId)
+        if (selectedId === row.entityId) setSelectedId(null)
+      } else if (type === 'country') {
+        const row = countryList.rows.find(item => item.entity.id === id)
+        if (!row) throw new Error('国家已变更，请刷新关系图')
+        await countryAdapter.remove(row)
+        countryList.drop(row.entityId)
+        if (selectedId === row.entityId) setSelectedId(null)
+      } else if (type === 'event') {
+        const row = eventList.rows.find(item => item.entity.id === id)
+        if (!row) throw new Error('事件已变更，请刷新关系图')
+        await eventAdapter.remove(row)
+        eventList.drop(row.entityId)
+        if (selectedId === row.entityId) setSelectedId(null)
+      } else {
+        const row = noteList.rows.find(item => item.entity.id === id && isCodexEntry(item.entity))
+        if (!row) throw new Error('笔记已变更，请刷新关系图')
+        await noteAdapter.remove(row)
+        noteList.drop(row.entityId)
+        if (selectedId === row.entityId) setSelectedId(null)
+      }
+    })()
+    pendingGraphWrite.current = write
+    try { await write }
+    finally { pendingGraphWrite.current = null; setBusy(false) }
+  }
+
   async function saveGraphPosition(type: RelationNodeType, id: number, x: number, y: number) {
     if (busy || !canEdit || pendingGraphWrite.current) throw new Error('当前无法保存节点位置')
     setBusy(true)
@@ -608,6 +674,8 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
           createRelation: canEdit && !busy ? createGraphRelation : undefined,
           deleteRelation: canEdit && !busy ? deleteGraphRelation : undefined,
           patchRelation: canEdit && !busy ? patchGraphRelation : undefined,
+          createNode: canEdit && !busy ? createGraphNode : undefined,
+          deleteNode: (role === 'owner' || role === 'admin') && !busy ? deleteGraphNodeFromCloud : undefined,
         }}
           onNavigateToCharacter={id => navigate('character', id)}
           onNavigateToCountry={id => navigate('country', id)}
