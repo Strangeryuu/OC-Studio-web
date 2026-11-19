@@ -12,7 +12,7 @@ import { ImageCropper } from './ImageCropper'
 import { StretchyHeader } from './StretchyHeader'
 import { FullscreenViewer } from './FullscreenViewer'
 import { MediaContextMenu, type MediaMenuItem } from './MediaContextMenu'
-import { MEDIA_IMG } from '@/lib/ui-tokens'
+import { MEDIA_IMG, BTN_QUIET } from '@/lib/ui-tokens'
 
 interface ProfileBannerEditorProps {
   headerUrl?: string
@@ -204,13 +204,20 @@ export function ProfileBannerEditor({
   const headerSrc = headerUrl ? resolveImageUrl(headerUrl, 'header') : undefined
   const avatarLabel = avatarType === 'flag' ? '旗帜' : '头像'
 
+  function removeHeader() {
+    if (headerUrl && onHeaderRemove && window.confirm('确认从当前词条删除封面？其他词条中的同一图片仍保留。整库删除可在全局相册操作。')) onHeaderRemove()
+  }
+  function removeAvatar() {
+    if (avatarUrl && onAvatarRemove && window.confirm('确认从当前词条删除' + avatarLabel + '？其他词条图片仍保留。')) onAvatarRemove()
+  }
+
   const headerItems: MediaMenuItem[] = [
     ...(headerUrl ? [{ label: '查看大图', onSelect: viewHeader }] : []),
     ...(onHeaderChange ? [{ label: '更换封面', onSelect: pickHeader }] : []),
     ...(headerUrl && onHeaderChange ? [{ label: '编辑', onSelect: () => void editHeader() }] : []),
     ...(headerUrl ? [{ label: '保存到…', onSelect: () => void save(headerUrl, '封面.png') }] : []),
     ...(onHeaderRemove && headerUrl
-      ? [{ label: '删除封面', danger: true, onSelect: onHeaderRemove }]
+      ? [{ label: '删除封面', danger: true, onSelect: removeHeader }]
       : []),
   ]
 
@@ -220,7 +227,7 @@ export function ProfileBannerEditor({
     ...(avatarUrl && onAvatarChange ? [{ label: '编辑', onSelect: () => void editAvatar() }] : []),
     ...(avatarUrl ? [{ label: '保存到…', onSelect: () => void save(avatarUrl, `${avatarLabel}.png`) }] : []),
     ...(onAvatarRemove && avatarUrl
-      ? [{ label: `删除${avatarLabel}`, danger: true, onSelect: onAvatarRemove }]
+      ? [{ label: `删除${avatarLabel}`, danger: true, onSelect: removeAvatar }]
       : []),
   ]
 
@@ -278,6 +285,16 @@ export function ProfileBannerEditor({
         </div>
       ) : null}
 
+      {(onHeaderChange || onAvatarChange) && <div className="mt-8 flex flex-wrap items-center gap-2">
+        {showHeader && onHeaderChange && <button type="button" className={BTN_QUIET}
+          onClick={pickHeader}>{headerUrl ? '替换封面' : '上传封面'}</button>}
+        {showHeader && headerUrl && onHeaderRemove && <button type="button" className={BTN_QUIET}
+          onClick={removeHeader}>删除封面</button>}
+        {onAvatarChange && <button type="button" className={BTN_QUIET}
+          onClick={pickAvatar}>{avatarUrl ? '替换' : '上传'}{avatarLabel}</button>}
+        {avatarUrl && onAvatarRemove && <button type="button" className={BTN_QUIET}
+          onClick={removeAvatar}>删除{avatarLabel}</button>}
+      </div>}
       {/* Crop modals */}
       {headerRawFileUrl ? (
         <ImageCropper
