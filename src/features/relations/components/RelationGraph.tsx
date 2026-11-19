@@ -89,6 +89,7 @@ interface WorkspaceGraphSource {
   error: string | null
   refresh: (options?: RefreshOptions) => Promise<void>
   savePosition?: (type: RelationNodeType, id: number, x: number, y: number) => Promise<void>
+  savePositions?: (positions: Array<{ entityType: RelationNodeType; entityId: number; x: number; y: number }>) => Promise<void>
   createNode?: (type: RelationEdgeType, name: string, position: { x: number; y: number }) => Promise<void>
   deleteNode?: (type: RelationNodeType, id: number) => Promise<void>
   changeNodeImage?: (type: RelationNodeType, id: number, file: File) => Promise<void>
@@ -144,6 +145,7 @@ export function RelationGraph({
   const canCreateNodes = canMutateGraph || Boolean(workspace?.createNode)
   const canDeleteNodes = canMutateGraph || Boolean(workspace?.deleteNode)
   const canChangeImages = canMutateGraph || Boolean(workspace?.changeNodeImage)
+  const canRelayout = canMutateGraph || Boolean(workspace?.savePositions)
   const canConnectRelations = canMutateGraph || Boolean(workspace?.createRelation)
   const canDeleteRelations = canMutateGraph || Boolean(workspace?.deleteRelation)
   const canPatchRelations = canMutateGraph || Boolean(workspace?.patchRelation)
@@ -565,7 +567,7 @@ export function RelationGraph({
    * 只在 ⋯ 里（一级栏放它太容易手滑：一次就覆盖全部手摆位置）。
    */
   const handleRelayout = useCallback(() => {
-    if (filteredNodes.length === 0) return
+    if (filteredNodes.length === 0 || !canRelayout) return
 
     const snapshot = new Map<string, { x: number; y: number; entityType: RelationNodeType; entityId: number }>()
     for (const node of nodes) {
@@ -576,51 +578,60 @@ export function RelationGraph({
     }
 
     const layout = computeForceLayout(filteredNodes, rawEdges)
-    setNodes((current) =>
-      current.map((node) => ({ ...node, position: layout.get(node.id) ?? node.position })),
-    )
-    const writes: Promise<void>[] = []
-    for (const node of filteredNodes) {
+    const updates = filteredNodes.flatMap(node => {
       const position = layout.get(node.id)
-      const entityType = node.data?.entityType as RelationNodeType | undefined
-      const entityId = node.data?.entityId as number | undefined
-      if (!position || !entityType || entityId === undefined) continue
-      writes.push(saveNodePosition(entityType, entityId, position.x, position.y))
-    }
-    // 一批坐标一次报错（逐个 catch 会在整理 50 个节点时弹 50 条提示）
-    void Promise.all(writes).catch((error: unknown) => {
-      toast.error('保存节点位置失败', {
-        description: error instanceof Error ? error.message : String(error),
-      })
+      const type = node.data?.entityType as RelationNodeType | undefined
+      const id = node.data?.entityId as number | undefined
+      return position && type && id !== undefined
+        ? [{ entityType: type, entityId: id, x: position.x, y: position.y }] : []
     })
+    if (updates.length === 0) return
+
+    const persist = (positions: typeof updates): Promise<void> => {
+      if (workspace) {
+        if (!workspace.savePositions) return Promise.reject(new Error('当前关系图已暂停编辑'))
+        return workspace.savePositions(positions)
+      }
+      return Promise.all(positions.map(item =>
+        saveNodePosition(item.entityType, item.entityId, item.x, item.y))).then(() => undefined)
+    }
+
+    setNodes(current => current.map(node => ({
+      ...node, position: layout.get(node.id) ?? node.position,
+    })))
     rfRef.current?.fitView({ padding: 0.2, duration: 200, minZoom: MIN_ZOOM })
 
-    toast('已整理布局', {
-      duration: 8000,
-      action: {
-        label: '撤销',
-        onClick: () => {
-          setNodes((current) =>
-            current.map((node) => {
-              const previous = snapshot.get(node.id)
-              return previous ? { ...node, position: { x: previous.x, y: previous.y } } : node
-            }),
-          )
-          // 快照也要写回实体：否则只是画布回原位，下次打开还是整理后的位置
-          const restores: Promise<void>[] = []
-          for (const previous of snapshot.values()) {
-            restores.push(saveNodePosition(previous.entityType, previous.entityId, previous.x, previous.y))
-          }
-          void Promise.all(restores).catch((error: unknown) => {
-            toast.error('撤销布局失败', {
-              description: error instanceof Error ? error.message : String(error),
+    void persist(updates).then(() => {
+      toast('已整理布局', {
+        duration: 8000,
+        action: {
+          label: '撤销',
+          onClick: () => {
+            const restored = [...snapshot.values()].map(item => ({
+              entityType: item.entityType, entityId: item.entityId, x: item.x, y: item.y,
+            }))
+            setNodes(current => current.map(node => {
+              const before = snapshot.get(node.id)
+              return before ? { ...node, position: { x: before.x, y: before.y } } : node
+            }))
+            void persist(restored).catch((error: unknown) => {
+              toast.error('撤销布局失败', {
+                description: error instanceof Error ? error.message : String(error),
+              })
+              if (workspace) void refresh({ silent: true })
             })
-          })
+          },
         },
-      },
+      })
+    }).catch((error: unknown) => {
+      toast.error('保存整理布局失败', {
+        description: error instanceof Error ? error.message : String(error),
+      })
+      // A cloud batch may have saved some nodes before a version conflict.
+      // Refresh the authoritative positions rather than leaving optimistic UI.
+      if (workspace) void refresh({ silent: true })
     })
-  }, [filteredNodes, rawEdges, nodes, setNodes])
-
+  }, [filteredNodes, rawEdges, nodes, setNodes, canRelayout, workspace, refresh])
 
   const handleEdgeStyleChange = useCallback(
     (value: EdgeStyle) => {
@@ -932,7 +943,7 @@ export function RelationGraph({
   }
 
   const moreItems: MediaMenuItem[] = [
-    ...(canMutateGraph ? [{
+    ...(canRelayout ? [{
       label: '重排全部',
       icon: <LayoutGrid size={13} strokeWidth={2} />,
       onSelect: handleRelayout,
