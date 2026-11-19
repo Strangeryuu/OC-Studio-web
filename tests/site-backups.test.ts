@@ -69,3 +69,23 @@ describe('administrator scheduled workspace backups',()=>{
     expect(fake.export).not.toHaveBeenCalledWith(two,expect.anything())
   })
 })
+
+describe('batch publication safety',()=>{
+  it('removes staged archives when a later world fails to export',async()=>{
+    await rm(join(root,one),{recursive:true,force:true})
+    await rm(join(root,two),{recursive:true,force:true})
+    const queryBefore=fake.query.getMockImplementation()
+    fake.query.mockImplementation((sql:string,args?:unknown[])=>{
+      if(sql.includes('SELECT value,version FROM site_settings'))
+        return {rows:[{value:{...policy,scope:'all',workspaceIds:[]},version}]}
+      return queryBefore?.(sql,args)
+    })
+    fake.export.mockImplementation(async(id:string)=>{
+      if(id===two)throw new Error('SECOND_WORKSPACE_EXPORT_FAILED')
+      return JSON.stringify({source:id})
+    })
+    await expect(backup.runSiteBackups()).rejects.toThrow('SECOND_WORKSPACE_EXPORT_FAILED')
+    expect(await backup.listSiteBackupFiles()).toEqual([])
+    expect(await readdir(join(root,one))).toEqual([])
+  })
+})

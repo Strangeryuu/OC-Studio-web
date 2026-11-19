@@ -106,22 +106,37 @@ export async function runSiteBackups(force=false){
       found.rows.filter(x=>policy.workspaceIds.includes(x.id))
     if(policy.scope==='selected'&&selected.length!==policy.workspaceIds.length)
       throw new Error('BACKUP_SELECTED_WORKSPACE_NOT_FOUND')
-    let created=0
+    // Prepare the complete selected-world batch before publishing any files.
+    // Failed exports or renames must leave the previous backup set intact.
+    const staged:{staging:string;published:string}[]=[]
     const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,'')
-    for(const workspace of selected){
-      const payload=await exportWorkspaceBackup(workspace.id,workspace.name)
-      const folder=join(ROOT,workspace.id)
-      await mkdir(folder,{recursive:true,mode:0o700})
-      const filename=stamp+'-'+randomUUID().slice(0,8)+'.ocbak'
-      const staging=join(folder,'.'+filename+'.tmp')
-      try{
+    try{
+      for(const workspace of selected){
+        const payload=await exportWorkspaceBackup(workspace.id,workspace.name)
+        const folder=join(ROOT,workspace.id)
+        await mkdir(folder,{recursive:true,mode:0o700})
+        const filename=stamp+'-'+randomUUID().slice(0,8)+'.ocbak'
+        const staging=join(folder,'.'+filename+'.tmp')
+        staged.push({staging,published:join(folder,filename)})
         await writeFile(staging,payload,{flag:'wx',mode:0o600})
-        await rename(staging,join(folder,filename))
-      }catch(error){await unlink(staging).catch(()=>undefined);throw error}
-      created++
-      const names=(await readdir(folder)).filter(x=>FILENAME.test(x)).sort().reverse()
-      for(const old of names.slice(policy.keepPerWorkspace))await unlink(join(folder,old))
+      }
+      for(const file of staged)await rename(file.staging,file.published)
+    }catch(error){
+      await Promise.all(staged.flatMap(file=>[
+        unlink(file.staging).catch(()=>undefined),
+        unlink(file.published).catch(()=>undefined),
+      ]))
+      throw error
     }
+    // Retention runs only after all archives are published; an old-file cleanup
+    // error does not invalidate successfully written new archives.
+    for(const workspace of selected){
+      const folder=join(ROOT,workspace.id)
+      const names=(await readdir(folder)).filter(x=>FILENAME.test(x)).sort().reverse()
+      for(const old of names.slice(policy.keepPerWorkspace))
+        await unlink(join(folder,old)).catch(()=>undefined)
+    }
+    const created=staged.length
     await client.query(
       'UPDATE site_settings SET value=jsonb_set(value,\'{lastRunAt}\',$1::jsonb),'+
       'version=version+1,updated_at=now() WHERE key=$2 AND version=$3',
