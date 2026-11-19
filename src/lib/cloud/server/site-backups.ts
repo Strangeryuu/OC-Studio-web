@@ -1,4 +1,3 @@
-import 'server-only'
 import {mkdir,readdir,readFile,rename,stat,unlink,writeFile} from 'node:fs/promises'
 import {basename,join} from 'node:path'
 import {randomUUID} from 'node:crypto'
