@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { Check, ChevronDown, Settings2, Shield, SunMoon } from 'lucide-react'
 import { useSettings } from '@/lib/settings'
-import { THEME_PRESETS } from '@/lib/theme/presets'
+import { THEME_PRESETS, normalizeThemePreset } from '@/lib/theme/presets'
 
 /** Persistent click-open menu: choosing a theme does not dismiss the menu. */
 export function CloudSettingsMenu({ isAdmin }: { isAdmin: boolean }) {
@@ -58,7 +58,7 @@ export function CloudSettingsMenu({ isAdmin }: { isAdmin: boolean }) {
         <div className="grid grid-cols-2 gap-2">
           {THEME_PRESETS.map(preset => <button type="button" key={preset.id}
             aria-pressed={settings.themePreset === preset.id}
-            onClick={() => updateSetting('themePreset', preset.id)}
+            onClick={() => updateSetting('themePreset', normalizeThemePreset(preset.id))}
             className={`flex min-h-11 items-center gap-2 rounded-item border p-2 text-left text-caption transition-colors hover:bg-[var(--oc-hover)]
               ${settings.themePreset === preset.id ? 'border-line-hover bg-paper-card text-ink' : 'border-line text-ink-muted'}`}>
             <span className="h-5 w-5 shrink-0 rounded-full border border-line"
