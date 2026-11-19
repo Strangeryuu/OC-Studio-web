@@ -30,7 +30,7 @@ if ! flock -n 9; then
 fi
 
 compose=(docker compose --env-file .env -f compose.yaml)
-"${compose[@]}" up -d db
+"${compose[@]}" up -d --wait db
 
 mkdir -p backups
 stamp="$(date -u +%Y%m%dT%H%M%SZ)-$$"
