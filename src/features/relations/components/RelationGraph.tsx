@@ -56,6 +56,7 @@ import {
 import { EdgeStylePanel, type EdgeStylePatchInput, type EdgeStyleSelection } from './EdgeStylePanel'
 import { useOptionalExportCenter } from '@/components/shared/export/ExportCenterHost'
 import { exportRelationGraphPng } from '../export-graph'
+import { graphConnectionBehavior } from '../mobile-connection'
 import { computeForceLayout, NODE_SIZE, resolveGraphPositions } from '../layout'
 import { nodeRect } from './floating-edge'
 import { FitViewOnLoad, ZoomReader } from './RelationGraphHelpers'
@@ -156,7 +157,8 @@ export function RelationGraph({
   const edgeStyle = workspace ? workspaceEdgeStyle : settings.edgeStyle
   const persistPosition = workspace ? workspace.savePosition : saveNodePosition
   const canDrag = Boolean(persistPosition) && !isMobile
-  const canTouchConnect = isMobile && canConnectRelations
+  const connection = graphConnectionBehavior(isMobile, canConnectRelations)
+  const canTouchConnect = connection.connectOnClick
   const prevVisible = useRef(false)
 
   /* ── 显示开关（不落盘：与地图的图层开关同一口径，重开回到默认） ── */
@@ -1119,7 +1121,7 @@ export function RelationGraph({
         // Mobile: keep node repositioning off, but let fingers drag between four
         // always-visible handles (and optionally tap two handles consecutively).
         nodesDraggable={canDrag}
-        nodesConnectable={canConnectRelations}
+        nodesConnectable={connection.nodesConnectable}
         // 双击是「打开条目」，不能再让画布顺手放大一次
         zoomOnDoubleClick={false}
         elementsSelectable={!isMobile}
@@ -1140,9 +1142,9 @@ export function RelationGraph({
         onEdgeClick={(event, edge) => openEdgePanel(edge, { x: event.clientX, y: event.clientY })}
         isValidConnection={isValidConnection}
         connectionMode={ConnectionMode.Loose}
-        connectOnClick={canTouchConnect}
+        connectOnClick={connection.connectOnClick}
         // 松手判定半径给到「整颗节点都算落在手柄上」——否则拖到头像/名字中间会没反应
-        connectionRadius={isMobile ? 64 : 48}
+        connectionRadius={connection.connectionRadius}
         connectionLineStyle={{ stroke: 'var(--color-ink-muted)', strokeWidth: 1.5 }}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
