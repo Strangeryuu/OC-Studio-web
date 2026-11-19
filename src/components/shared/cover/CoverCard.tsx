@@ -55,6 +55,8 @@ interface CoverCardProps {
   /** 压在右上角的动作（移到文件夹 / 删除） */
   actions?: ReactNode
   onSelect: () => void
+  /** Cloud editors block switching while saving or uploading media. */
+  disabled?: boolean
   onLongPress?: () => void
   isMobile: boolean
   /** 手动排序模式下才挂拖拽手柄 */
@@ -110,6 +112,7 @@ export function CoverCard({
   emblem,
   actions,
   onSelect,
+  disabled = false,
   onLongPress,
   isMobile,
   sortable = false,
@@ -204,7 +207,7 @@ export function CoverCard({
         </div>
       ) : null}
 
-      <button type="button" tabIndex={-1} onClick={navClick ?? onSelect} className="block w-full text-left">
+      <button type="button" tabIndex={-1} disabled={disabled} onClick={navClick ?? onSelect} className="block w-full text-left disabled:cursor-wait">
         <div
           ref={frameRef}
           className={COVER_FRAME}
