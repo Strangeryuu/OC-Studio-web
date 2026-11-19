@@ -682,8 +682,9 @@ export function RelationGraph({
       if (!draft || savingRelation) return
       setSavingRelation(true)
       try {
-        const result = workspace?.createRelation
-          ? await workspace.createRelation(draft.source, draft.target, relation)
+        if (workspace && !workspace.createRelation) throw new Error('当前关系图已暂停编辑，请稍后重试')
+        const result = workspace
+          ? await workspace.createRelation!(draft.source, draft.target, relation)
           : await createRelationBetween(draft.source, draft.target, relation)
         if (!result.ok) {
           if (result.reason === 'duplicate') toast('这两个条目已经有关联')
@@ -764,8 +765,9 @@ export function RelationGraph({
         toast.success('已移到回收站')
       } else {
         const { selection } = deleteTarget
-        const ok = workspace?.deleteRelation
-          ? await workspace.deleteRelation(selection)
+        if (workspace && !workspace.deleteRelation) throw new Error('当前关系图已暂停编辑，请稍后重试')
+        const ok = workspace
+          ? await workspace.deleteRelation!(selection)
           : await deleteRelationBetween(
               { entityType: selection.sourceType, entityId: selection.sourceId },
               { entityType: selection.targetType, entityId: selection.targetId },
@@ -801,8 +803,10 @@ export function RelationGraph({
           },
         }
       })
-      const mutation = workspace?.patchRelation
-        ? workspace.patchRelation(selection, patch)
+      const mutation = workspace
+        ? workspace.patchRelation
+          ? workspace.patchRelation(selection, patch)
+          : Promise.reject(new Error('当前关系图已暂停编辑，请稍后重试'))
         : updateEdgeStyle(
             { entityType: selection.sourceType, entityId: selection.sourceId },
             { entityType: selection.targetType, entityId: selection.targetId },
