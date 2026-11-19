@@ -243,11 +243,13 @@ function CloudChapterEditor({ snapshot, adapter, onSaved, canEdit, disabled }: M
     if (file && ready) void upload(file, file.name, url => insertWorkspaceBodyImage(ready, url))
   }
 
+  const timedSaveRef = useRef(save)
+  timedSaveRef.current = save
   useEffect(() => {
     if (!dirty || !writable || saving) return
-    const timeout=window.setTimeout(() => {void save().catch(() => undefined)}, 1800)
+    const timeout=window.setTimeout(() => {void timedSaveRef.current().catch(() => undefined)}, 5 * 60 * 1000)
     return()=>window.clearTimeout(timeout)
-  },[title,outline,bodyTick,dirty,writable,saving,save,revision])
+  },[dirty,writable,saving,revision])
 
   return <article className="min-w-0 flex-1">
     <header className="mb-3 flex flex-wrap items-center justify-between gap-2">

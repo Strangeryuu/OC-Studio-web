@@ -182,11 +182,12 @@ export function useWorldEntryDraft({
     const entryId = selectedIdRef.current
     if (entryId == null) return
     pendingSaveRef.current = { entryId, title: newTitle, doc: json }
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-    saveTimerRef.current = setTimeout(() => {
+    // 从首次出现待保存改动开始计时；持续输入不重置五分钟周期。
+    if (!saveTimerRef.current) saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null
       // 失败回执在 runFlush 里统一给（也覆盖「切换词条前 flush」这条路径）
       void flushSave().catch(() => undefined)
-    }, 1000)
+    }, 5 * 60 * 1000)
   }, [flushSave])
 
   // 关窗 / 换库流程会 await 这里：防抖窗口里的内容不会被计时器带走
