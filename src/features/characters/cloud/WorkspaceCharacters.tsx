@@ -719,6 +719,8 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
         error={noteList.error || countryList.error || eventList.error} />}
       {section === 'timeline' && <div className="h-[65vh] min-h-96 rounded-panel border border-line">
         <TimelineView workspace={{
+          workspaceId,
+          canEditPeriods: canEdit && !busy,
           characters, countries, events,
           loading: eventList.loading || countryList.loading || characterList.loading,
           error: eventList.error || countryList.error || characterList.error,
