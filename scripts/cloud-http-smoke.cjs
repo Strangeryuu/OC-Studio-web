@@ -40,6 +40,74 @@ async function run() {
   assert(cookies.length > 0, 'Login response must set a session cookie')
   const cookie = cookies.join('; ')
 
+
+  // Site role and invite-code registration: the Better Auth admin.createUser
+  // endpoint may specify a role and therefore needs the user:set-role grant.
+  const signIn = async(email,password) => {
+    const response=await fetch(BASE+'/api/auth/sign-in/email',{
+      method:'POST',headers:{'Content-Type':'application/json',Origin:PUBLIC_ORIGIN},
+      body:JSON.stringify({email,password}),
+    })
+    assert(response.status===200,'New account could not sign in: '+response.status)
+    return response.headers.getSetCookie().map(item=>item.split(';')[0]).join('; ')
+  }
+  const adminCreated=await fetch(BASE+'/api/auth/admin/create-user',{
+    method:'POST',headers:{Cookie:cookie,Origin:PUBLIC_ORIGIN,'Content-Type':'application/json'},
+    body:JSON.stringify({
+      name:'CI Admin Created',email:'ci-created@example.test',
+      password:'CI_newUser_Password_456789',role:'user',
+    }),
+  })
+  const adminCreatedResult=await adminCreated.json()
+  assert(adminCreated.status===200 && adminCreatedResult.user?.email==='ci-created@example.test',
+    'Admin createUser with explicit role failed: '+JSON.stringify(adminCreatedResult))
+  const createdCookie=await signIn('ci-created@example.test','CI_newUser_Password_456789')
+  const siteMail=await fetch(BASE+'/api/admin/mail',{headers:{Cookie:cookie}})
+  assert(siteMail.status===200,'Admin cannot access mail settings')
+  const mailSaved=await fetch(BASE+'/api/admin/mail',{method:'PUT',headers:{
+    Cookie:cookie,Origin:PUBLIC_ORIGIN,'Content-Type':'application/json',
+  },body:JSON.stringify({
+    mode:'local',from:'noreply@ci.example.test',host:'',port:587,secure:false,username:'',
+  })})
+  assert(mailSaved.status===200,'Site admin cannot select local mail mode')
+  const mailPrivate=await fetch(BASE+'/api/admin/mail',{headers:{Cookie:createdCookie}})
+  assert(mailPrivate.status===403,'Ordinary user accessed admin mail settings')
+
+  const newInvite=await fetch(BASE+'/api/admin/registration-codes',{
+    method:'POST',headers:{Cookie:cookie,Origin:PUBLIC_ORIGIN,'Content-Type':'application/json'},
+    body:JSON.stringify({label:'ci-invite',maxUses:1,expiresDays:7}),
+  })
+  assert(newInvite.status===201,'Site admin could not generate registration invite')
+  const invite=(await newInvite.json()).code
+  assert(/^[a-f0-9]{48}$/.test(invite),'Registration code format mismatch')
+  const useInvite=()=>fetch(BASE+'/api/register',{
+    method:'POST',headers:{Origin:PUBLIC_ORIGIN,'Content-Type':'application/json'},
+    body:JSON.stringify({
+      name:'CI Invited User',email:'ci-invited@example.test',
+      password:'CI_InvitationPass_789456',inviteCode:invite,
+    }),
+  })
+  assert((await useInvite()).status===201,'Invited registration failed')
+  assert((await useInvite()).status===400,'Consumed one-use invitation was accepted again')
+  const invitedCookie=await signIn('ci-invited@example.test','CI_InvitationPass_789456')
+  const unauthorizedCodes=await fetch(BASE+'/api/admin/registration-codes',{headers:{Cookie:invitedCookie}})
+  assert(unauthorizedCodes.status===403,'Ordinary user accessed invitation management')
+  const registeredWorld=await fetch(BASE+'/api/workspaces',{method:'POST',
+    headers:{Cookie:invitedCookie,Origin:PUBLIC_ORIGIN,'Content-Type':'application/json'},
+    body:JSON.stringify({name:'CI Registered Private World'}),
+  })
+  assert(registeredWorld.status===201,'Invited user could not create a private world')
+  const registeredWorldId=(await registeredWorld.json()).workspace.id
+  const adminAcross=await fetch(BASE+'/api/workspaces/'+registeredWorldId,{headers:{Cookie:cookie}})
+  assert(adminAcross.status===200,'Site administrator cannot inspect private user world')
+  const privateMenu=await fetch(BASE+'/admin',{headers:{Cookie:invitedCookie},redirect:'manual'})
+  assert(privateMenu.status===404,'Ordinary account accessed admin menu')
+  const blockedAdmin=await fetch(BASE+'/api/admin/registration-codes',{
+    method:'POST',headers:{Cookie:invitedCookie,Origin:PUBLIC_ORIGIN,'Content-Type':'application/json'},
+    body:JSON.stringify({maxUses:3}),
+  })
+  assert(blockedAdmin.status===403,'Ordinary user created invitation codes')
+
   const myWorkspaces = await fetch(BASE + '/api/workspaces', {
     headers: { Cookie: cookie },
   })
@@ -57,6 +125,13 @@ async function run() {
   assert(json.workspace?.id && json.workspace?.role === 'owner',
     'Workspace owner membership was not created')
   const workspaceId = json.workspace.id
+  const privateToInvited=await fetch(BASE+'/api/workspaces/'+workspaceId,{headers:{Cookie:invitedCookie}})
+  assert(privateToInvited.status===404,'Private workspace leaked to non-invited ordinary user')
+  const adminSeesAll=await fetch(BASE+'/api/workspaces',{headers:{Cookie:cookie}})
+  const adminWorkspaces=(await adminSeesAll.json()).workspaces
+  assert(adminWorkspaces.some(item=>item.id===registeredWorldId),
+    'Site admin global workspace listing failed')
+
 
   const privateApi = await fetch(BASE + '/api/workspaces/' + workspaceId)
   assert(privateApi.status === 401, 'Guest gained access to private workspace')
