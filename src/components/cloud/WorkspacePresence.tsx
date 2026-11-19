@@ -17,6 +17,9 @@ export function WorkspacePresence({ workspaceId, scope, editing }: {
   const [error, setError] = useState(false)
 
   useEffect(() => {
+    // Presence is meaningful only in the mounted workbench. This also keeps
+    // isolated editor previews and unit tests from dispatching live requests.
+    if (!window.location.pathname.startsWith('/studio/')) return
     let stopped = false
     if (!tabId.current) tabId.current = crypto.randomUUID()
     const id = tabId.current
