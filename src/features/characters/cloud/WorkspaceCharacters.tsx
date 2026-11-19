@@ -22,7 +22,7 @@ import type { Editor } from '@tiptap/core'
 import { EditorCore } from '@/components/editor/EditorCore'
 import { ActiveEditorProvider } from '@/lib/editor-context'
 import { legacyBodySections } from '@/lib/body-content'
-import { hasNewBodyImages } from '@/lib/cloud/character-media'
+import { cloudMediaUrlId, hasNewBodyImages } from '@/lib/cloud/character-media'
 import { ProfileBannerEditor } from '@/components/shared/ProfileBannerEditor'
 import type { RelationTargetKind } from '@/components/shared/relations/types'
 import { RelationsSection } from '@/components/shared/relations/RelationsSection'
@@ -534,6 +534,45 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
     finally { pendingGraphWrite.current = null; setBusy(false) }
   }
 
+  async function changeGraphNodeImage(type: RelationNodeType, id: number, file: File): Promise<void> {
+    if (!canEdit || busy || transition.current || pendingGraphWrite.current)
+      throw new Error('当前无法更换图谱节点图片')
+    setBusy(true)
+    const write = (async () => {
+      const form = new FormData()
+      form.append('file', file, file.name)
+      const response = await fetch('/api/workspaces/' + workspaceId + '/media', {
+        method: 'POST', body: form,
+      })
+      if (!response.ok) throw new Error('上传图片失败，请检查文件格式、大小及访问权限')
+      const body: { asset?: { url?: unknown } } = await response.json()
+      const url = body.asset?.url
+      if (typeof url !== 'string' || cloudMediaUrlId(url) === null)
+        throw new Error('上传图片返回了无效的云端文件地址')
+
+      if (type === 'character') {
+        const row = characterList.rows.find(item => item.character.id === id)
+        if (!row) throw new Error('角色已变更，请刷新关系图')
+        characterList.replace(await characterAdapter.save(row, { avatarUrl: url }))
+      } else if (type === 'event') {
+        const row = eventList.rows.find(item => item.entity.id === id)
+        if (!row) throw new Error('事件已变更，请刷新关系图')
+        eventList.replace(await eventAdapter.save(row, { headerUrl: url }))
+      } else if (type === 'country') {
+        const row = countryList.rows.find(item => item.entity.id === id)
+        if (!row) throw new Error('国家已变更，请刷新关系图')
+        countryList.replace(await countryAdapter.save(row, { flagUrl: url }))
+      } else {
+        const row = noteList.rows.find(item => item.entity.id === id && isCodexEntry(item.entity))
+        if (!row) throw new Error('笔记已变更，请刷新关系图')
+        noteList.replace(await noteAdapter.save(row, { cover: url }))
+      }
+    })()
+    pendingGraphWrite.current = write
+    try { await write }
+    finally { pendingGraphWrite.current = null; setBusy(false) }
+  }
+
   async function saveGraphPosition(type: RelationNodeType, id: number, x: number, y: number) {
     if (busy || !canEdit || pendingGraphWrite.current) throw new Error('当前无法保存节点位置')
     setBusy(true)
@@ -676,6 +715,7 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
           deleteRelation: canEdit && !busy ? deleteGraphRelation : undefined,
           patchRelation: canEdit && !busy ? patchGraphRelation : undefined,
           createNode: canEdit && !busy ? createGraphNode : undefined,
+          changeNodeImage: canEdit && !busy ? changeGraphNodeImage : undefined,
           deleteNode: (role === 'owner' || role === 'admin') && !busy ? deleteGraphNodeFromCloud : undefined,
         }}
           onNavigateToCharacter={id => navigate('character', id)}
