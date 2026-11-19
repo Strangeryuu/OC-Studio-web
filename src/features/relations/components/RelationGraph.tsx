@@ -145,6 +145,7 @@ export function RelationGraph({
   const edgeStyle = workspace ? workspaceEdgeStyle : settings.edgeStyle
   const persistPosition = workspace ? workspace.savePosition : saveNodePosition
   const canDrag = Boolean(persistPosition) && !isMobile
+  const canTouchConnect = isMobile && canConnectRelations
   const prevVisible = useRef(false)
 
   /* ── 显示开关（不落盘：与地图的图层开关同一口径，重开回到默认） ── */
@@ -435,12 +436,13 @@ export function RelationGraph({
         data: {
           ...edge.data,
           showLabel,
+          edgeStyle,
           onLabelClick: (point: { x: number; y: number }) => openEdgePanel(edge, point),
         },
         ...(dim ? { style: { ...(edge.style as Record<string, unknown> | undefined), opacity: 0.08 } } : {}),
       }
     })
-  }, [routedEdges, hoveredEdgeId, active, edgePanel, openEdgePanel, showEdgeLabels])
+  }, [routedEdges, hoveredEdgeId, active, edgePanel, openEdgePanel, showEdgeLabels, edgeStyle])
 
   /**
    * 单击 = **选中**（高亮它和它的邻居，不跳走）；双击 = 打开。
@@ -1016,7 +1018,32 @@ export function RelationGraph({
       ref={wrapperRef}
       className="relative h-full w-full"
       data-graph-labels={zoom < LABEL_ZOOM ? 'off' : 'on'}
+      data-touch-connect={canTouchConnect ? 'on' : 'off'}
     >
+      {canTouchConnect && (
+        <p data-testid="mobile-connect-help"
+          className="pointer-events-none absolute inset-x-2 top-12 z-20 text-center text-micro text-ink-muted">
+          按住节点边缘圆点，拖向另一节点圆点建立关系；也可依次轻点两个圆点
+        </p>
+      )}
+      <style>{`
+        [data-touch-connect='on'] .react-flow__handle {
+          width: 28px !important;
+          height: 28px !important;
+          opacity: 1 !important;
+          z-index: 20 !important;
+          border: 2px solid var(--oc-line-hover) !important;
+          background: var(--oc-paper) !important;
+          touch-action: none !important;
+          user-select: none;
+          -webkit-user-select: none;
+        }
+        [data-touch-connect='on'] .react-flow__handle.connecting,
+        [data-touch-connect='on'] .react-flow__handle.valid {
+          border-color: var(--oc-ink) !important;
+          background: var(--oc-hover) !important;
+        }
+      `}</style>
       <input
         ref={imageInputRef}
         type="file"
@@ -1047,9 +1074,10 @@ export function RelationGraph({
         onEdgeMouseLeave={() => setHoveredEdgeId(null)}
         onMove={handleMove}
         onConnect={canConnectRelations ? handleConnect : undefined}
-        // 移动端只读（docs/关系图.md）：禁拖、禁连、禁框选；点节点就是打开
+        // Mobile: keep node repositioning off, but let fingers drag between four
+        // always-visible handles (and optionally tap two handles consecutively).
         nodesDraggable={canDrag}
-        nodesConnectable={canConnectRelations && !isMobile}
+        nodesConnectable={canConnectRelations}
         // 双击是「打开条目」，不能再让画布顺手放大一次
         zoomOnDoubleClick={false}
         elementsSelectable={!isMobile}
@@ -1070,9 +1098,9 @@ export function RelationGraph({
         onEdgeClick={(event, edge) => openEdgePanel(edge, { x: event.clientX, y: event.clientY })}
         isValidConnection={isValidConnection}
         connectionMode={ConnectionMode.Loose}
-        connectOnClick={false}
+        connectOnClick={canTouchConnect}
         // 松手判定半径给到「整颗节点都算落在手柄上」——否则拖到头像/名字中间会没反应
-        connectionRadius={48}
+        connectionRadius={isMobile ? 64 : 48}
         connectionLineStyle={{ stroke: 'var(--color-ink-muted)', strokeWidth: 1.5 }}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
