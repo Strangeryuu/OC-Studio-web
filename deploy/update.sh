@@ -21,7 +21,12 @@ if [[ "$(stat -c '%u' data/scheduled-backups)" != '10001' ]]; then
     exit 1
   }
 fi
-chmod 700 data/scheduled-backups
+if [[ "$(stat -c '%a' data/scheduled-backups)" != '700' ]]; then
+  chmod 700 data/scheduled-backups || {
+    echo "Run: sudo chmod 700 $(pwd)/data/scheduled-backups" >&2
+    exit 1
+  }
+fi
 
 # Serializes systemd timer executions and manual invocations.
 exec 9>.update.lock
