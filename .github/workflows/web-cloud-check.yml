@@ -25,7 +25,7 @@ jobs:
         run: |
           cp deploy/.env.example deploy/.env
           mkdir -p deploy/data/media
-          printf 'backup-acceptance-image\\n' > deploy/data/media/ci-media.txt
+          printf 'backup-acceptance-image\n' > deploy/data/media/ci-media.txt
           cleanup() {
             docker compose --env-file deploy/.env -f deploy/compose.yaml down -v || true
             rm -rf deploy/backups deploy/data deploy/.env deploy/.update.lock deploy/.backup.lock
