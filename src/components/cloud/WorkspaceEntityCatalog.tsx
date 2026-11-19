@@ -239,7 +239,7 @@ export function WorkspaceEntityCatalog({
     (folderFilter === 'all' && countryFilter === 'all')) && !blocked && !loading && rows.length > 1
 
   const updateFolders = async (nextFolders: string[], updates: { id: string; expectedVersion: number; folder: string | null }[]) => {
-    if (blocked || !folderLoaded) return
+    if (blocked || !folderLoaded) return false
     setOperationBusy(true)
     setOperationError(null)
     try {
@@ -251,9 +251,11 @@ export function WorkspaceEntityCatalog({
       setRegisteredFolders(result.folders ?? nextFolders)
       setFolderVersion(result.folderVersion ?? folderVersion + 1)
       await onUpdated()
+      return true
     } catch (cause) {
       setOperationError(cause instanceof Error ? cause.message : '角色分组保存失败')
       await Promise.allSettled([reloadFolders(), onUpdated()])
+      return false
     } finally {
       setOperationBusy(false)
     }
@@ -270,25 +272,27 @@ export function WorkspaceEntityCatalog({
     if (!next || from === next) return
     if (knownFolders.includes(next)) {
       setOperationError('已有同名文件夹，请换个名称')
-      return
+      return false
     }
-    await updateFolders(knownFolders.map(name => name === from ? next : name),
+    const saved = await updateFolders(knownFolders.map(name => name === from ? next : name),
       rows.filter(row => kind === 'character' && (row.data as Character).folder === from)
         .map(row => ({ id: row.entityId, expectedVersion: row.version, folder: next })))
-    if (folderFilter === from) setFolderFilter(next)
+    if (saved && folderFilter === from) setFolderFilter(next)
+    return saved
   }
 
   const deleteFolder = async (name: string) => {
-    await updateFolders(knownFolders.filter(folder => folder !== name),
+    const saved = await updateFolders(knownFolders.filter(folder => folder !== name),
       rows.filter(row => kind === 'character' && (row.data as Character).folder === name)
         .map(row => ({ id: row.entityId, expectedVersion: row.version, folder: null })))
-    if (folderFilter === name) setFolderFilter('all')
+    if (saved && folderFilter === name) setFolderFilter('all')
+    return saved
   }
 
   const createFolder = async (name: string) => {
     const next = name.trim()
     if (!next || knownFolders.includes(next)) return
-    await updateFolders([...knownFolders, next], [])
+    return updateFolders([...knownFolders, next], [])
   }
 
   const reorder = (active: number | string, over: number | string) => {
