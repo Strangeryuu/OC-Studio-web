@@ -110,7 +110,7 @@ describe('original entity adapters against PostgreSQL', () => {
     state.userId = 'owner'
   })
 
-  it('saves original character fields, rejects stale edits, and restores history', async () => {
+  it('saves original character fields, rejects stale edits, and disables history', async () => {
     const adapter = new OriginalCharactersCloudAdapter(workspaceA, apiFetch)
     const original = buildDefaultCharacter({ ...newCharacterData(), name: '角色 A' })
     const created = await adapter.create({ ...original, custom: { origin: '原版自定义字段' }, folder: '设定集' })
@@ -145,16 +145,15 @@ describe('original entity adapters against PostgreSQL', () => {
 
     state.userId = 'owner'
     const history = await revisionRoute.GET(new Request('http://localhost:3000'), ctxEntity(created.entityId))
-    expect((await history.json()).revisions.map((item: { version: number }) => item.version)).toEqual([2, 1])
+    expect(history.status).toBe(410)
     const request = new Request('http://localhost:3000', {
       method: 'POST', headers: { Origin: 'http://localhost:3000', 'Content-Type': 'application/json' },
       body: JSON.stringify({ expectedVersion: 2, restoreVersion: 1 }),
     })
     const restored = await restoreRoute.POST(request, ctxEntity(created.entityId))
-    expect(restored.status).toBe(200)
-    expect((await restored.json()).version).toBe(3)
+    expect(restored.status).toBe(410)
     const latest = (await adapter.list())[0]
-    expect(latest.character.name).toBe('角色 A')
+    expect(latest.character.name).toBe('角色 B')
     expect(latest.character.id).toBe(created.character.id)
     await adapter.remove(latest)
     expect(await adapter.list()).toEqual([])
@@ -194,7 +193,7 @@ describe('original entity adapters against PostgreSQL', () => {
     const edited = await adapter.save(linked, { bio: '保留已删除角色的关系' })
     expect(edited.character.relatedCharacters[0].name).toBe('关系乙')
     const revisions = await revisionRoute.GET(new Request('http://localhost:3000'), ctxEntity(first.entityId))
-    expect((await revisions.json()).revisions.map((item: { version: number }) => item.version)).toEqual([3, 2, 1])
+    expect(revisions.status).toBe(410)
   })
 
   it('saves original countries and validates nationality changes within the workspace', async () => {
@@ -205,7 +204,7 @@ describe('original entity adapters against PostgreSQL', () => {
     expect((await countries.list()).find(row => row.entityId === homeland.entityId)?.entity.custom).toEqual({ 首都: '都城' })
     await expect(countries.save(homeland, { name: '过期编辑' })).rejects.toMatchObject({ status: 409 })
     const history = await revisionRoute.GET(new Request('http://localhost:3000'), ctxEntity(updated.entityId))
-    expect((await history.json()).revisions.map((row: { version: number }) => row.version)).toEqual([2, 1])
+    expect(history.status).toBe(410)
 
     state.userId = 'outsider'
     const external = await new OriginalCountriesCloudAdapter(workspaceB, apiFetch)
@@ -268,7 +267,7 @@ describe('original entity adapters against PostgreSQL', () => {
     expect(reread.entity).toMatchObject(saved.entity)
     await expect(events.save(reread, { location: '访客编辑' })).rejects.toMatchObject({ status: 404 })
     const history = await revisionRoute.GET(new Request('http://localhost:3000'), ctxEntity(event.entityId))
-    expect((await history.json()).revisions.map((row: { version: number }) => row.version)).toEqual([2, 1])
+    expect(history.status).toBe(410)
   })
 
   it('versions notes and scopes their hierarchy, named links and inline references', async () => {
@@ -307,7 +306,7 @@ describe('original entity adapters against PostgreSQL', () => {
     expect(visible.some(item => item.entityId === external.entityId)).toBe(false)
     await expect(notes.save(saved, { title: '访客编辑' })).rejects.toMatchObject({ status: 404 })
     const history = await revisionRoute.GET(new Request('http://localhost:3000'), ctxEntity(child.entityId))
-    expect((await history.json()).revisions.map((row: { version: number }) => row.version)).toEqual([2, 1])
+    expect(history.status).toBe(410)
   })
 
   it('projects cloud notes and relations and saves graph positions with version checks', async () => {
@@ -398,9 +397,9 @@ describe('original entity adapters against PostgreSQL', () => {
       method: 'POST', headers: { Origin: 'http://localhost:3000', 'Content-Type': 'application/json' },
       body: JSON.stringify({ expectedVersion: removedAvatar.version, restoreVersion: 3 }),
     }), ctxEntity(initial.entityId))
-    expect(restore.status).toBe(200)
+    expect(restore.status).toBe(410)
     const restored = (await adapter.list()).find(row => row.entityId === initial.entityId)
-    expect(restored?.character.avatarUrl).toBe(`/api/media/${own}`)
+    expect(restored?.character.avatarUrl).toBe('')
     await expect(adapter.save(restored!, { gallery: [{ url: `/api/media/${other}`, caption: '' }] }))
       .rejects.toMatchObject({ status: 400, code: 'INVALID_CHARACTER_MEDIA' })
     await expect(adapter.save(restored!, { avatars: [{ url: `/api/media/${other}`, type: 'portrait' }] }))
@@ -456,7 +455,7 @@ describe('original entity adapters against PostgreSQL', () => {
     expect(marked.version).toBe(3)
     expect(marked.entity.mapAnnotations).toBe(annotations)
     const history = await revisionRoute.GET(new Request('http://localhost:3000'), ctxEntity(mapA.entityId))
-    expect((await history.json()).revisions.map((row: { version: number }) => row.version)).toEqual([3, 2, 1])
+    expect(history.status).toBe(410)
     await expect(mapsA.save(withImage, { mapAnnotations: '[]' }))
       .rejects.toMatchObject({ status: 409, code: 'VERSION_CONFLICT' })
 
@@ -523,7 +522,7 @@ describe('original entity adapters against PostgreSQL', () => {
     expect(clearedCountry.entity.mapPosition).toBeNull()
     expect(clearedEvent.entity.mapId).toBeNull()
     const revisions = await revisionRoute.GET(new Request('http://localhost:3000'), ctxEntity(country.entityId))
-    expect((await revisions.json()).revisions.map((row: { version: number }) => row.version)).toEqual([5, 4, 3, 2, 1])
+    expect(revisions.status).toBe(410)
     expect(otherMap.entityId).not.toBe(map.entityId)
   })
 
@@ -574,8 +573,8 @@ describe('original entity adapters against PostgreSQL', () => {
     for (const deletedId of [root.entityId, chapter.entityId, subchapter.entityId]) {
       expect(remaining.some(row => row.entityId === deletedId)).toBe(false)
       const revisions = await state.db!.query<{ action: string }>(
-        "SELECT action FROM entity_revisions WHERE entity_id=$1 ORDER BY version DESC LIMIT 1", [deletedId])
-      expect(revisions.rows[0]?.action).toBe('delete')
+        "SELECT action FROM entity_revisions WHERE entity_id=$1", [deletedId])
+      expect(revisions.rows).toHaveLength(0)
     }
     expect(remaining.some(row => row.entityId === separate.entityId)).toBe(true)
     expect(remaining.some(row => row.entityId === ordinary.entityId)).toBe(true)
@@ -621,7 +620,7 @@ describe('original entity adapters against PostgreSQL', () => {
       .sort((a,b)=>a.entity.order-b.entity.order)
     expect(final.map(row=>row.entity.title)).toEqual(['B 章','C 章','A 章'])
     const history=await revisionRoute.GET(new Request('http://localhost:3000'),ctxEntity(third.entityId))
-    expect((await history.json()).revisions.length).toBeGreaterThanOrEqual(3)
+    expect(history.status).toBe(410)
   })
 
   it('deletes original country rows transactionally, promoting children and cleaning memberships', async () => {
@@ -672,7 +671,7 @@ describe('original entity adapters against PostgreSQL', () => {
     expect(cleaned?.entity.countries).toEqual([])
     expect(cleaned?.version).toBe(2)
     const history=await revisionRoute.GET(new Request('http://localhost:3000'),ctxEntity(child.entityId))
-    expect((await history.json()).revisions.map((row:{version:number})=>row.version)).toEqual([2,1])
+    expect(history.status).toBe(410)
   })
 
   it('promotes original note children while keeping grandchild hierarchy and other books isolated', async () => {
@@ -784,7 +783,7 @@ describe('original entity adapters against PostgreSQL', () => {
     expect(childNow?.version).toBe(3)
     expect(childNow?.entity.parentId).toBe(book.entity.id)
     const history=await revisionRoute.GET(new Request('http://localhost:3000'),ctxEntity(book.entityId))
-    expect((await history.json()).revisions[0].action).toBe('restore')
+    expect(history.status).toBe(410)
     const deleted=await cloudNovels.DELETE(new Request('http://localhost:3000',{
       method:'DELETE',headers:{Origin:'http://localhost:3000','Content-Type':'application/json'},
       body:JSON.stringify({expectedVersion:3}),
