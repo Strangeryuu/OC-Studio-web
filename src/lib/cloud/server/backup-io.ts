@@ -14,8 +14,6 @@ const MAX_RECORDS=3000
 const ALLOWED_SETTINGS=['customization','world-cover','character-config','desktop-extras'] as const
 interface Row {id:string;local_id:string|number;kind:string;title:string;content:Record<string,unknown>;
   version:number;deleted_at:string|null}
-interface Rev {entity_id:string;version:number;action:'create'|'update'|'delete'|'restore';summary:string|null;
-  created_at:string;content_snapshot:Record<string,unknown>}
 interface Asset {id:string;mime_type:string;storage_key:string}
 interface Tag {id:string;name:string;color:string}
 type Setting={setting_key:string;setting_value:unknown}
@@ -38,16 +36,10 @@ export async function exportWorkspaceBackup(workspaceId:string,workspaceName:str
     pool.query<Setting>(`SELECT setting_key,setting_value FROM workspace_settings
       WHERE workspace_id=$1 AND setting_key=ANY($2::text[])`,[workspaceId,ALLOWED_SETTINGS]),
     pool.query<Asset>(`SELECT id,mime_type,storage_key FROM media_assets
-      WHERE workspace_id=$1 ORDER BY id LIMIT 501`,[workspaceId]),
+      WHERE workspace_id=$1 AND deleted_at IS NULL ORDER BY id LIMIT 501`,[workspaceId]),
   ])
   if(entities.rows.length>MAX_RECORDS||tags.rows.length>1000||media.rows.length>500)
     throw error('BACKUP_TOO_LARGE')
-  const ids=entities.rows.map(row=>row.id)
-  const revisions=ids.length?await pool.query<Rev>(`SELECT entity_id,version,action,summary,created_at,content_snapshot
-      FROM entity_revisions WHERE entity_id=ANY($1::uuid[]) ORDER BY entity_id,version LIMIT 30001`,[ids]):{rows:[] as Rev[]}
-  if(revisions.rows.length>30000)throw error('BACKUP_HISTORY_TOO_LARGE')
-  const history=new Map<string,Rev[]>()
-  for(const rev of revisions.rows)history.set(rev.entity_id,[...(history.get(rev.entity_id)??[]),rev])
   const mediaInline=new Map<string,string>()
   const assets=[]
   let bytesTotal=0
@@ -66,10 +58,7 @@ export async function exportWorkspaceBackup(workspaceId:string,workspaceName:str
   const records=entities.rows.map(row=>({
     id:row.id,localId:Number(row.local_id),kind:row.kind,title:row.title,
     content:row.content,version:row.version,deletedAt:row.deleted_at,
-    history:(history.get(row.id)??[]).map(rev=>({
-      version:rev.version,action:rev.action,summary:rev.summary,
-      createdAt:rev.created_at,content:rev.content_snapshot,
-    })),
+    history:[],
   }))
   const active=(kind:string)=>entities.rows.filter(row=>row.kind===kind&&row.deleted_at===null).map(asLegacy)
   const config=settings.rows.find(item=>item.setting_key==='customization')
@@ -91,12 +80,11 @@ export async function exportWorkspaceBackup(workspaceId:string,workspaceName:str
     ...(Object.keys(originalConfig).length>0?
       {config:walkReplace(originalConfig,mediaInline)}:{}),
     ...(inlineDesktop?.manifest?{manifest:inlineDesktop.manifest}:{}),
-    ...(inlineDesktop?.journal?{journal:inlineDesktop.journal}:{}),
     cloud:{format:'oc-studio-web-v1',sourceWorkspaceId:workspaceId,sourceName:workspaceName,
       records,assets,tags:tags.rows,settings:settings.rows.map(item=>({
         key:item.setting_key,value:item.setting_value,
       })),
-      note:'Cloud import remaps identities and reassigns historical actors to the importing admin.'},
+      note:'Cloud import remaps identities. Entity change history is disabled.'},
   }
   const json=JSON.stringify(content)
   if(Buffer.byteLength(json)>MAX_EXPORT_BYTES*2)throw error('BACKUP_TOO_LARGE')
@@ -152,7 +140,6 @@ export async function importWorkspaceBackup(workspaceId:string,actorId:string,ra
     const embedded=new Set<string>()
     for(const row of backup.records){
       collect(row.content,embedded)
-      for(const history of row.history)collect(history.content,embedded)
     }
     for(const setting of backup.settings)collect(setting.value,embedded)
     if(embedded.size>500)throw error('BACKUP_TOO_LARGE')
@@ -193,29 +180,11 @@ export async function importWorkspaceBackup(workspaceId:string,actorId:string,ra
       const data=transformed(row.kind,row.content)
       const doc=readEntityDocument({title:row.title,data})
       if(!doc)throw error('INVALID_IMPORTED_ENTITY')
-      const version=row.history.length?row.version:1
+      const version=row.version
       await client.query(`UPDATE entities SET title=$1,content=$2::jsonb,version=$3,
         deleted_at=$4,updated_at=now() WHERE id=$5 AND workspace_id=$6`,[
         doc.title,JSON.stringify(doc.data),version,row.deletedAt,id,workspaceId])
-      const revisions=row.history.length?row.history:[{
-        version:1,action:'create' as const,summary:'从 .ocbak 导入',
-        content:{title:row.title,data:row.content},
-      }]
-      for(const revision of revisions){
-        const sourceDoc=revision.content
-        const migrated=readEntityDocument({
-          title:sourceDoc.title,data:transformed(row.kind,sourceDoc.data as Record<string,unknown>),
-        })
-        if(!migrated)throw error('INVALID_IMPORTED_HISTORY')
-        await client.query(`INSERT INTO entity_revisions(entity_id,version,actor_id,action,summary,content_snapshot,created_at)
-          VALUES($1,$2,$3,$4,$5,$6::jsonb,$7::timestamptz)`,[id,revision.version,actorId,revision.action,
-          revision.summary??'从 .ocbak 导入',JSON.stringify(migrated),
-          revision.createdAt??new Date().toISOString()])
-        await client.query(`INSERT INTO change_events(entity_id,version,actor_id,action,changes,created_at)
-          VALUES($1,$2,$3,$4,'[]'::jsonb,$5::timestamptz)`,[
-          id,revision.version,actorId,revision.action,
-          revision.createdAt??new Date().toISOString()])
-      }
+      // Historical revisions from older backups are intentionally not imported.
     }
     for(const setting of backup.settings){
       let value=walkReplace(setting.value,inline)
@@ -232,7 +201,7 @@ export async function importWorkspaceBackup(workspaceId:string,actorId:string,ra
     await client.query('COMMIT')
     return {restored:backup.records.length,media:backup.assets.length+embedded.size,
       tags:backup.tags.length,source:backup.source,
-      warning:'历史操作者统一记录为当前导入管理员；原始 UUID 与数字 ID 已重新映射。'}
+      warning:'实体版本号保留供冲突检测；历史记录未导入，原始 UUID 与数字 ID 已重新映射。'}
   }catch(cause){
     await client.query('ROLLBACK')
     await Promise.all(written.map(key=>removePrivateImage(key).catch(()=>undefined)))

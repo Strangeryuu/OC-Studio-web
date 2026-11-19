@@ -79,7 +79,7 @@ export function parsePortableBackup(raw:unknown):PortableBackup|null{
           createdAt:typeof item.createdAt==='string'?item.createdAt:undefined,
           content:item.content})
       }
-      if(history.length!==value.version||history.some((h,i)=>h.version!==i+1))return null
+      if(history.length>0&&(history.length!==value.version||history.some((h,i)=>h.version!==i+1)))return null
       records.push({kind:value.kind,sourceId:value.id,localId:value.localId,title:document.title,
         content:document.data as Record<string,unknown>,version:value.version,
         deletedAt:value.deletedAt,history})
