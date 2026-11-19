@@ -11,6 +11,7 @@ import { FullscreenViewer } from './FullscreenViewer'
 import { MediaContextMenu, type MediaMenuItem } from './MediaContextMenu'
 import { OverlayIconButton } from './OverlayIconButton'
 import { toast } from 'sonner'
+import { BTN_QUIET } from '@/lib/ui-tokens'
 
 export interface ImageUploaderProps {
   value?: string
@@ -165,7 +166,9 @@ export function ImageUploader({
         if (value) void save(value, '图片.png')
       },
     },
-    ...(onRemove ? [{ label: '移除', danger: true, onSelect: onRemove }] : []),
+    ...(onRemove ? [{ label: '移除', danger: true, onSelect: () => {
+      if (window.confirm('确认移除此图片？其他词条的引用仍保留。')) onRemove()
+    } }] : []),
   ]
 
   return (
@@ -222,6 +225,12 @@ export function ImageUploader({
         )}
       </div>
 
+      {currentSrc && <div className="flex flex-wrap items-center gap-2">
+        <button type="button" className={BTN_QUIET} onClick={() => void handleClick()}>替换图片</button>
+        {onRemove && <button type="button" className={BTN_QUIET} onClick={() => {
+          if (window.confirm('确认移除此图片？如需全局删除，请在全局相册操作。')) onRemove()
+        }}>删除图片</button>}
+      </div>}
       {menuAt ? (
         <MediaContextMenu at={menuAt} onClose={() => setMenuAt(null)} items={menuItems} />
       ) : null}

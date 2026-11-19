@@ -88,7 +88,9 @@ export function WorkspaceHome({ workspaceId, canUpdate, ...dashboard }: Workspac
           }} />
       </label>
       {(coverUrl || draft) && <button type="button" className={BTN_QUIET}
-        disabled={saving || uploading} onClick={() => void save('')}>
+        disabled={saving || uploading} onClick={() => {
+          if (window.confirm('确认移除世界观封面？其他词条的同一图片仍保留。')) void save('')
+        }}>
         <Trash2 size={14}/>移除封面
       </button>}
       {draft !== null && <button type="button" className={BTN_QUIET}
