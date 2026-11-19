@@ -19,7 +19,7 @@ export function WorkspaceBodyImageControls({ editor, document, editable, upload 
   const [working, setWorking] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const picker = useRef<HTMLInputElement>(null)
-  const [replaceTarget, setReplaceTarget] = useState<string | null>(null)
+  const replaceTarget = useRef<string | null>(null)
   const pictures = collectBodyImageRefs(document)
 
   function change(oldUrl: string, newUrl: string | null) {
@@ -53,7 +53,7 @@ export function WorkspaceBodyImageControls({ editor, document, editable, upload 
         {editable && <MediaActionButton disabled={working !== null}
           label={'正文图片' + (index + 1) + '操作'}
           items={[
-            { label:'替换图片', onSelect:() => { setReplaceTarget(url);picker.current?.click() } },
+            { label:'替换图片', onSelect:() => { replaceTarget.current=url;picker.current?.click() } },
             { label:'删除图片', danger:true, onSelect:() => {
               if (window.confirm('确认从本词条正文移除图片？同一图片在其他词条的引用将保留。')) change(url,null)
             }},
@@ -63,7 +63,7 @@ export function WorkspaceBodyImageControls({ editor, document, editable, upload 
     <input ref={picker} type="file" className="sr-only"
       aria-label="选择替换的正文图片" accept="image/png,image/jpeg,image/webp,image/gif"
       disabled={!editable || working !== null}
-      onChange={event => { const file=event.target.files?.[0];event.target.value='';if(replaceTarget)void replace(replaceTarget,file) }} />
+      onChange={event => { const file=event.target.files?.[0];event.target.value='';if(replaceTarget.current)void replace(replaceTarget.current,file) }} />
     {working && <p className="text-caption text-ink-muted">正在替换图片…</p>}
     {error && <p role="alert" className="text-caption text-error">{error}</p>}
   </div>
