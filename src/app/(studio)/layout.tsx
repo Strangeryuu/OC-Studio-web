@@ -10,6 +10,8 @@ import { setupNeeded } from '@/lib/cloud/server/site-admin'
 import { isSiteAdmin } from '@/lib/cloud/site-policy'
 import '../globals.css'
 
+export const dynamic = 'force-dynamic'
+
 export const metadata: Metadata = {
   title: 'OC Studio Cloud',
   description: '私人世界观与邀请协作',
