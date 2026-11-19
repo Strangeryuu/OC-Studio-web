@@ -13,7 +13,7 @@ printf 'private test image\n' > "$test_root/deploy/data/media/image.txt"
 cat > "$test_root/bin/docker" <<'MOCK'
 #!/usr/bin/env bash
 set -Eeuo pipefail
-if [[ " $* " == *" up -d db"* ]]; then
+if [[ " $* " == *" up -d --wait db"* ]]; then
   exit 0
 fi
 if [[ " $* " == *" pg_dump "* ]]; then
