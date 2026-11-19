@@ -51,6 +51,11 @@ const workspaceId = '11111111-1111-4111-8111-111111111111'
 /** Keep the workbench's customization request separate from media/history fixtures. */
 function stubCloudFetch(handler: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>) {
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes('/api/workspaces/') && String(input).includes('/catalog')) {
+      return Promise.resolve(new Response(JSON.stringify({ folders: [], version: 0 }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      }))
+    }
     if (String(input).includes('/api/workspaces/') && String(input).includes('/customization')) {
       return Promise.resolve(new Response(JSON.stringify({ customization: null }), {
         status: 200, headers: { 'Content-Type': 'application/json' },
@@ -101,6 +106,7 @@ beforeEach(() => {
   fake.countries.mockResolvedValue([])
   fake.events.mockResolvedValue([])
   fake.notes.mockResolvedValue([])
+  stubCloudFetch(async input => { throw new Error('Unexpected request: ' + String(input)) })
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
@@ -145,7 +151,7 @@ describe('original character information in cloud workspace', () => {
       }))
     })
     await click(button('初始角色'))
-    const name = container.querySelector<HTMLInputElement>('input:not([type="file"])')!
+    const name = container.querySelector<HTMLInputElement>('input[aria-label="角色名称"]')!
     await inputText(name, '未保存草稿')
     const members = sectionButton('成员与邀请')
     await click(members)
@@ -158,7 +164,7 @@ describe('original character information in cloud workspace', () => {
     }))
     await click(members)
     expect(members.getAttribute('aria-current')).toBe('page')
-    expect(container.querySelector('input:not([type="file"])')).toBeNull()
+    expect(container.querySelector('input[aria-label="角色名称"]')).toBeNull()
     expect(fake.save).toHaveBeenLastCalledWith(expect.objectContaining({ version: 1 }), { name: '未保存草稿' })
   })
 
@@ -534,11 +540,11 @@ describe('original character information in cloud workspace', () => {
     }))
     await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' })); await Promise.resolve() })
     await click(button('初始角色'))
-    const name = container.querySelector('input:not([type="file"])') as HTMLInputElement
+    const name = container.querySelector('input[aria-label="角色名称"]') as HTMLInputElement
     expect(name.value).toBe('初始角色')
     await inputText(name, '修改角色')
     await click(button('初始角色'))
-    expect((container.querySelector('input:not([type="file"])') as HTMLInputElement).value).toBe('修改角色')
+    expect((container.querySelector('input[aria-label="角色名称"]') as HTMLInputElement).value).toBe('修改角色')
     expect(fake.save).not.toHaveBeenCalled()
     await click(button('保存'))
     expect(fake.save).toHaveBeenCalledOnce()
@@ -554,13 +560,13 @@ describe('original character information in cloud workspace', () => {
     fake.save.mockRejectedValue(new Error('版本冲突'))
     await act(async () => { root.render(React.createElement(WorkspaceCharacters, { workspaceId, role: 'editor' })); await Promise.resolve() })
     await click(button('甲'))
-    const name = container.querySelector('input:not([type="file"])') as HTMLInputElement
+    const name = container.querySelector('input[aria-label="角色名称"]') as HTMLInputElement
     await inputText(name, '未保存草稿')
     await click(button('保存'))
     expect(container.textContent).toContain('版本冲突')
     expect((container.querySelector('textarea[aria-label="当前草稿"]') as HTMLTextAreaElement).value).toContain('未保存草稿')
     await click(button('乙'))
-    expect((container.querySelector('input:not([type="file"])') as HTMLInputElement).value).toBe('未保存草稿')
+    expect((container.querySelector('input[aria-label="角色名称"]') as HTMLInputElement).value).toBe('未保存草稿')
   })
 
   it('renders viewer fields disabled and omits create and save', async () => {
