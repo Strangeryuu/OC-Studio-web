@@ -3,6 +3,7 @@
 import { useLongPress } from '@/lib/useLongPress'
 import type { AlbumEntry } from './useAlbumData'
 import { useState } from 'react'
+import { Replace, Trash2 } from 'lucide-react'
 import { getDefaultImage } from '@/lib/image-service'
 import { getEntryImageUrl } from './album-utils'
 import { MediaContextMenu, type MediaMenuItem } from './MediaContextMenu'
@@ -14,6 +15,8 @@ interface AlbumCardProps {
   onNavigate?: (id: number, type: string) => void
   onLongPress?: () => void
   onViewImage: () => void
+  onReplace?: () => void
+  onDelete?: () => void
 }
 
 /**
@@ -28,6 +31,8 @@ export function AlbumCard({
   onNavigate,
   onLongPress,
   onViewImage,
+  onReplace,
+  onDelete,
 }: AlbumCardProps) {
   const longPress = useLongPress({
     onLongPress: onLongPress ?? (() => {}),
@@ -51,6 +56,8 @@ export function AlbumCard({
         ...(onNavigate
           ? [{ label: '跳转', onSelect: () => onNavigate(entry.sourceId, entry.sourceType) }]
           : []),
+        ...(onReplace ? [{ label: '替换整库图片', onSelect: onReplace }] : []),
+        ...(onDelete ? [{ label: '删除整库图片', danger: true, onSelect: onDelete }] : []),
       ]
 
   return (
@@ -83,6 +90,16 @@ export function AlbumCard({
         />
       </div>
       <div className="mt-1 truncate text-caption leading-4 text-ink-faint">{entry.sourceName}</div>
+      {(onReplace || onDelete) && <div className="mt-1 flex flex-wrap items-center gap-1">
+        {onReplace && <button type="button" onClick={onReplace}
+          aria-label={'替换图片 ' + entry.sourceName}
+          className="flex items-center gap-1 rounded px-1.5 py-1 text-caption text-ink-muted hover:bg-paper-alt">
+          <Replace size={13}/>替换</button>}
+        {onDelete && <button type="button" onClick={onDelete}
+          aria-label={'删除图片 ' + entry.sourceName}
+          className="flex items-center gap-1 rounded px-1.5 py-1 text-caption text-error hover:bg-paper-alt">
+          <Trash2 size={13}/>删除</button>}
+      </div>
 
       {menuAt ? (
         <MediaContextMenu at={menuAt} items={menuItems} onClose={() => setMenuAt(null)} />
