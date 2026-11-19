@@ -1,4 +1,3 @@
-import 'server-only'
 import { createCipheriv,createDecipheriv,randomBytes,scryptSync } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { connect as tcpConnect, type Socket } from 'node:net'
