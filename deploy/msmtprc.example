@@ -1,0 +1,20 @@
+# msmtp configuration for OC Studio's "本机 Sendmail" mode.
+# Copy to /opt/ocstudio/mail/msmtprc; adjust host, port, user, and from.
+# Credentials are stored separately in /opt/ocstudio/mail/smtp-password.
+# Both files must be owned by UID 10001 and chmod 600.
+#
+# Use 465 + tls_starttls off, OR 587 + tls_starttls on.
+defaults
+auth on
+tls on
+tls_starttls off
+tls_trust_file /etc/ssl/certs/ca-certificates.crt
+
+account relay
+host smtp.example.com
+port 465
+from sender@example.com
+user sender@example.com
+passwordeval "cat /home/ocstudio/.msmtp-password"
+
+account default : relay
