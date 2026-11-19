@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { readStoredBody } from '@/lib/body-content'
 import { shareImageUrl, shareMediaUrl, type SharedWorkspace } from '@/lib/cloud/server/public-share'
 
 export interface SharedEntry {
@@ -160,6 +161,8 @@ function AnyValue({ value, token, depth = 0 }: { value: unknown; token: string; 
   if (typeof value === 'boolean') return <span>{value ? '是' : '否'}</span>
   if (typeof value === 'number') return <span>{value}</span>
   if (typeof value === 'string') {
+    const decoded = readStoredBody(value)
+    if (obj(decoded) && decoded.type === 'doc') return <TipTapText node={decoded} token={token} />
     if (!value.trim()) return <span className="opacity-60">暂无</span>
     const src = shareImageUrl(token, value)
     if (src) return <a href={src} target="_blank" rel="noreferrer">
@@ -190,7 +193,8 @@ function AnyValue({ value, token, depth = 0 }: { value: unknown; token: string; 
 }
 function EntryDetail({ token, entry, all }: { token: string; entry: SharedEntry; all: SharedEntry[] }) {
   const content = entry.content
-  const hasDoc = obj(content.document) && content.document.type === 'doc'
+  const decodedDocument = readStoredBody(content.document)
+  const hasDoc = obj(decodedDocument) && decodedDocument.type === 'doc'
   const imageKeys = ['avatarUrl','flagUrl','headerUrl','cover','novelCover','mapImage']
   const cover = imageKeys.map(key => shareImageUrl(token, content[key])).find(Boolean)
   const pairs = Object.entries(content).filter(([key, val]) =>

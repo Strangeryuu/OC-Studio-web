@@ -117,6 +117,10 @@ export async function DELETE(request: Request, context: RouteContext) {
     const owned = await client.query<{ id: string }>(
       'SELECT id FROM workspaces WHERE owner_id=$1 FOR UPDATE', [userId])
     for (const workspace of owned.rows) {
+      // Ownership transfer invalidates any links issued for the former owner.
+      await client.query(
+        'UPDATE workspace_public_shares SET revoked_at=now(),token_ciphertext=NULL,updated_at=now() ' +
+        'WHERE workspace_id=$1 AND revoked_at IS NULL', [workspace.id])
       // Keep the creative work, its memberships, and its revision history.
       // An existing admin membership is replaced by the owner's slot.
       await client.query('DELETE FROM workspace_members WHERE workspace_id=$1 AND user_id=$2',
