@@ -6,6 +6,7 @@ import { Pilcrow, ChevronDown, Bold, Italic, Underline as UnderlineIcon, AtSign,
 import type { Editor } from '@tiptap/core'
 import { isBelowTargetVersion } from '@/lib/browser-compat'
 import { ROUND_ITEM } from '@/lib/ui-tokens'
+import { insertReferenceTrigger } from './insert-reference-trigger'
 
 export interface MobileEditorToolbarProps {
   editor: Editor
@@ -84,14 +85,14 @@ export function MobileEditorToolbar({
           </button>
           <button
             type="button"
-            onPointerDown={(e) => handleToolbarPointerDown(e, () => editor?.chain().focus().insertContent(' @').run())}
+            onPointerDown={(e) => handleToolbarPointerDown(e, () => insertReferenceTrigger(editor, '@'))}
             className={`touch-feedback flex h-8 w-8 shrink-0 items-center justify-center transition-colors ${editor?.isActive('mention') ? 'bg-[var(--oc-hover)] text-ink' : 'text-ink-muted'}`}
           >
             <AtSign size={16} strokeWidth={2} />
           </button>
           <button
             type="button"
-            onPointerDown={(e) => handleToolbarPointerDown(e, () => editor?.chain().focus().insertContent(' [[').run())}
+            onPointerDown={(e) => handleToolbarPointerDown(e, () => insertReferenceTrigger(editor, '[['))}
             className="touch-feedback flex h-8 w-8 shrink-0 items-center justify-center text-ink-muted transition-colors"
           >
             <Link2 size={16} strokeWidth={2} />

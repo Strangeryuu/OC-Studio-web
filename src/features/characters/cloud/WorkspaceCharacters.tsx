@@ -760,7 +760,7 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
         onNavigate={(kind,id) => navigate(kind,id)} onRefresh={refreshGraph}
         canManageMedia={canDelete} />}
       {section === 'novel' && <WorkspaceNovel workspaceId={workspaceId} focusEntryId={novelFocusId}
-        notes={noteList.rows} loading={noteList.loading} error={noteList.error}
+        notes={noteList.rows} referenceItems={references} loading={noteList.loading} error={noteList.error}
         adapter={noteAdapter} canEdit={canEdit} canDelete={role === 'owner' || role === 'admin'} disabled={busy}
         onCreated={noteList.append} onSaved={noteList.replace} onRefresh={refreshGraph} />}
       {section === 'character' && <WorkspaceEntryList label="角色" rows={characterList.rows} loading={characterList.loading} error={characterList.error}
@@ -879,14 +879,14 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
           onCreateChild={()=>createNote(categoryNote.entity.id,activeCategory)}/>}
       {section === 'character' && character && <OriginalCharacterEditor key={character.entityId} snapshot={character} adapter={characterAdapter}
         characters={characters} countries={countries} countriesReady={!countryList.loading && !countryList.error}
-        notes={notes} onNavigateRelation={navigate}
+        notes={notes} referenceItems={references} onNavigateRelation={navigate}
         onNavigateCountry={id => navigate('country', id)}
         canEdit={canEdit} disabled={busy} onUploadBusy={setBusy} onSaved={characterList.replace} />}
       {section === 'country' && country && <OriginalCountryEditor key={country.entityId} snapshot={country} adapter={countryAdapter}
-        characters={characters} events={events} canEdit={canEdit} disabled={busy}
+        characters={characters} events={events} referenceItems={references} canEdit={canEdit} disabled={busy}
         onSaved={countryList.replace} onUploadBusy={setBusy} onNavigate={navigate} />}
       {section === 'event' && event && <OriginalEventEditor key={event.entityId} snapshot={event} adapter={eventAdapter}
-        lookups={{ characters, countries, events }} canEdit={canEdit} disabled={busy}
+        lookups={{ characters, countries, events }} referenceItems={references} canEdit={canEdit} disabled={busy}
         onSaved={eventList.replace} onUploadBusy={setBusy} onNavigate={navigate} />}
       {section === 'world' && note && <OriginalNoteEditor key={note.entityId} snapshot={note} adapter={noteAdapter}
         notes={notes} characters={characters} references={references} canEdit={canEdit} disabled={busy}
@@ -899,7 +899,7 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
   </div>
 }
 
-function OriginalCharacterEditor({ snapshot, adapter, characters, countries, countriesReady, notes, onNavigateRelation, onNavigateCountry, canEdit, disabled, onUploadBusy, onSaved }: {
+function OriginalCharacterEditor({ snapshot, adapter, characters, countries, countriesReady, notes, referenceItems, onNavigateRelation, onNavigateCountry, canEdit, disabled, onUploadBusy, onSaved }: {
   snapshot: OriginalCharacterSnapshot
   adapter: OriginalCharactersCloudAdapter
   characters: Character[]
@@ -907,6 +907,7 @@ function OriginalCharacterEditor({ snapshot, adapter, characters, countries, cou
   countriesReady: boolean
   onNavigateCountry: (id: number) => void
   notes: WorldEntry[]
+  referenceItems: ReferableEntity[]
   onNavigateRelation: (kind: RelationTargetKind, id: number) => void
   canEdit: boolean
   disabled: boolean
@@ -1035,7 +1036,7 @@ function OriginalCharacterEditor({ snapshot, adapter, characters, countries, cou
       <WorkspaceBodyImageControls editor={bodyEditor.current} document={bodyDraft}
         editable={canEdit && !disabled}
         upload={file => upload(file, file.name)} />
-      <EditorCore plain imageUploads={false} localReferences={false} content={snapshot.character.document ?? legacyBodySections([
+      <EditorCore plain imageUploads={false} localReferences={false} referenceItems={referenceItems} content={snapshot.character.document ?? legacyBodySections([
         { content: snapshot.character.bio },
         { heading: '人物生平', content: snapshot.character.lifeStory },
       ]) ?? ''} onReady={onEditorReady} onContentChange={onBodyChange} />

@@ -35,6 +35,7 @@ import { flushPendingSaves, registerPendingSave } from '@/lib/pending-saves'
 import { docRevisionChanged } from '@/lib/save-revision'
 import { hasNewBodyImages } from '@/lib/cloud/character-media'
 import { worldBodyOf, worldBodyPatch } from '@/lib/world-body'
+import type { ReferableEntity } from '@/lib/reference-registry'
 import { flattenNovel, toMarkdown, toTxt, countNovelWords } from '@/features/novel/export'
 import { downloadNovelDocx } from '@/features/novel/docx'
 import { paginateNovel } from '@/features/novel/pagination'
@@ -59,6 +60,7 @@ export interface WorkspaceNovelProps extends MutableNovelProps {
   workspaceId: string
   focusEntryId?: number | null
   notes: OriginalNoteSnapshot[]
+  referenceItems: ReferableEntity[]
   loading: boolean
   error?: string | null
   onCreated: (snapshot: OriginalNoteSnapshot) => void
@@ -151,18 +153,18 @@ function CloudBookInfo({ snapshot, adapter, canEdit, disabled, onSaved }: Mutabl
     {error && <p role="alert" className="text-ui text-error">{error}
       <textarea readOnly aria-label="未保存的作品信息" className="mt-1 w-full" value={JSON.stringify(draft)} />
     </p>}
-    <fieldset disabled={!canEdit || disabled || busy} className="grid gap-3 sm:grid-cols-2">
+    <fieldset disabled={!canEdit || disabled || busy} className="grid min-w-0 grid-cols-1 gap-3">
       <label className={FIELD_ROW}><span className={FIELD_LABEL}>书名</span>
         <input aria-label="小说书名" value={draft.title}
-          onChange={event => setDraft(row => ({ ...row, title: event.target.value }))} className={FIELD_INPUT} />
+          onChange={event => setDraft(row => ({ ...row, title: event.target.value }))} className={FIELD_INPUT+' min-w-0 flex-1'} />
       </label>
       <label className={FIELD_ROW}><span className={FIELD_LABEL}>作者</span>
         <input aria-label="小说作者" value={draft.novelAuthor}
-          onChange={event => setDraft(row => ({ ...row, novelAuthor: event.target.value }))} className={FIELD_INPUT} />
+          onChange={event => setDraft(row => ({ ...row, novelAuthor: event.target.value }))} className={FIELD_INPUT+' min-w-0 flex-1'} />
       </label>
       <label className={FIELD_ROW}><span className={FIELD_LABEL}>目标字数</span>
         <input aria-label="目标字数" type="number" min="0" value={draft.novelTargetWords}
-          onChange={event => setDraft(row => ({ ...row, novelTargetWords: Math.max(0, Number(event.target.value) || 0) }))} className={FIELD_INPUT} />
+          onChange={event => setDraft(row => ({ ...row, novelTargetWords: Math.max(0, Number(event.target.value) || 0) }))} className={FIELD_INPUT+' min-w-0 flex-1'} />
       </label>
       <div className={FIELD_ROW}><span className={FIELD_LABEL}>小说封面</span>
         {draft.novelCover && <img src={draft.novelCover} alt="当前小说封面"
@@ -190,9 +192,10 @@ function CloudBookInfo({ snapshot, adapter, canEdit, disabled, onSaved }: Mutabl
 }
 
 /** Original Tiptap editor and chapter outline with the same cloud save pipeline as notes. */
-function CloudChapterEditor({ snapshot, adapter, onSaved, canEdit, disabled, onEditorReady }: MutableNovelProps & {
+function CloudChapterEditor({ snapshot, adapter, onSaved, canEdit, disabled, onEditorReady, referenceItems }: MutableNovelProps & {
   snapshot: OriginalNoteSnapshot
   onEditorReady?: (editor: Editor | null) => void
+  referenceItems: ReferableEntity[]
 }) {
   const baseline = useRef(snapshot)
   const [title, setTitle] = useState(snapshot.entity.title)
@@ -293,7 +296,7 @@ function CloudChapterEditor({ snapshot, adapter, onSaved, canEdit, disabled, onE
     </label>}
     <WorkspaceBodyImageControls editor={editor.current} document={editor.current?.getJSON()}
       editable={canWrite} upload={file => upload(file, file.name)} />
-    <EditorCore plain imageUploads={false} localReferences={false}
+    <EditorCore plain imageUploads={false} localReferences={false} referenceItems={referenceItems}
       content={worldBodyOf(snapshot.entity)} onReady={value=>{
         onEditorReady?.(value)
         editor.current=value
@@ -573,7 +576,7 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
     finally{setBusy(false)}
   }
 
-  const chapterPanel=root?<div className="flex h-full min-h-0 flex-col bg-paper-alt">
+  const chapterPanel=root?<div className="flex h-full min-h-0 flex-col overflow-hidden bg-paper-alt">
     <div className="flex h-12 shrink-0 items-center justify-between border-b border-line px-3">
       <strong className="truncate text-ui">{root.entity.title}</strong>
       {isMobile?<button type="button" aria-label="收起目录" onClick={()=>setMobileListOpen(false)}><ChevronLeft size={16}/></button>
@@ -599,9 +602,9 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
         {chapterTree.length===0&&<p className="text-caption text-ink-faint">暂无章节</p>}
         <p className="mt-3 text-caption text-ink-faint">{chapters.length} 章 · {countNovelWords(exported)} 字</p>
       </aside>
-    <details className="max-h-[42%] shrink-0 overflow-y-auto border-t border-line" open>
+    <details className="max-h-[70%] min-h-0 shrink-0 overflow-y-auto border-t border-line" open>
       <summary className="cursor-pointer px-3 py-2 text-caption text-ink-muted">作品信息</summary>
-      <div className="px-3 pb-3">
+      <div className="min-w-0 px-3 pb-3">
         <CloudBookInfo key={root.entityId} snapshot={root} adapter={props.adapter}
           onSaved={props.onSaved} canEdit={props.canEdit} disabled={props.disabled} />
       </div>
@@ -751,7 +754,8 @@ export function WorkspaceNovel(props: WorkspaceNovelProps) {
       <div className="mx-auto w-full max-w-3xl px-4 py-4 md:px-8">
 
         {selected?<CloudChapterEditor key={selected.entityId} snapshot={selected} adapter={props.adapter}
-          onSaved={props.onSaved} canEdit={props.canEdit} disabled={props.disabled} onEditorReady={setBodyEditor} />:
+          onSaved={props.onSaved} canEdit={props.canEdit} disabled={props.disabled}
+          onEditorReady={setBodyEditor} referenceItems={props.referenceItems} />:
           <div className="p-8 text-center text-ui text-ink-faint">
             选择章节开始写作
             {props.canEdit&&<button type="button" className={BTN_PRIMARY} disabled={!writable}

@@ -19,6 +19,7 @@ import { hasNewBodyImages } from '@/lib/cloud/character-media'
 import { snapshotKey } from '@/lib/dirty'
 import { BUILTIN_FIELDS } from '@/lib/fields'
 import { docRevisionChanged } from '@/lib/save-revision'
+import type { ReferableEntity } from '@/lib/reference-registry'
 import { BTN_PRIMARY, BTN_QUIET, TITLE_INPUT } from '@/lib/ui-tokens'
 import type { Character, Country, Event } from '@/types'
 
@@ -27,10 +28,11 @@ const EDITABLE_KEYS = [
   'images', 'characters', 'countries', 'relations',
 ] as const satisfies readonly (keyof OriginalEventPatch)[]
 
-export function OriginalEventEditor({ snapshot, adapter, lookups, canEdit, disabled, onSaved, onNavigate, onUploadBusy }: {
+export function OriginalEventEditor({ snapshot, adapter, lookups, referenceItems, canEdit, disabled, onSaved, onNavigate, onUploadBusy }: {
   snapshot: OriginalEventSnapshot
   adapter: OriginalEventsCloudAdapter
   lookups: { characters: Character[]; countries: Country[]; events: Event[] }
+  referenceItems: ReferableEntity[]
   canEdit: boolean
   disabled: boolean
   onSaved: (next: OriginalEventSnapshot) => void
@@ -152,7 +154,7 @@ export function OriginalEventEditor({ snapshot, adapter, lookups, canEdit, disab
       </label>}
       <WorkspaceBodyImageControls editor={bodyEditor.current} document={bodyDraft}
         editable={canModify} upload={file => upload(file, file.name)} />
-      <EditorCore plain imageUploads={false} localReferences={false}
+      <EditorCore plain imageUploads={false} localReferences={false} referenceItems={referenceItems}
         content={event.document ?? event.content}
         onReady={onEditorReady} onContentChange={onBodyChange} />
     </section>

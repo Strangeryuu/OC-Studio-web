@@ -17,6 +17,7 @@ import type { OriginalCountriesCloudAdapter, OriginalCountryPatch, OriginalCount
 import { hasNewBodyImages } from '@/lib/cloud/character-media'
 import { snapshotKey } from '@/lib/dirty'
 import { docRevisionChanged } from '@/lib/save-revision'
+import type { ReferableEntity } from '@/lib/reference-registry'
 import { DEFAULT_CUSTOM_FIELDS } from '@/lib/fields'
 import { BTN_PRIMARY, BTN_QUIET, TITLE_INPUT } from '@/lib/ui-tokens'
 import type { RelationTargetKind } from '@/components/shared/relations/types'
@@ -24,11 +25,12 @@ import type { Character, Event } from '@/types'
 
 const COUNTRY_FIELDS = DEFAULT_CUSTOM_FIELDS.country ?? []
 
-export function OriginalCountryEditor({ snapshot, adapter, characters, events, canEdit, disabled, onSaved, onNavigate, onUploadBusy }: {
+export function OriginalCountryEditor({ snapshot, adapter, characters, events, referenceItems, canEdit, disabled, onSaved, onNavigate, onUploadBusy }: {
   snapshot: OriginalCountrySnapshot
   adapter: OriginalCountriesCloudAdapter
   characters: Character[]
   events: Event[]
+  referenceItems: ReferableEntity[]
   canEdit: boolean
   disabled: boolean
   onUploadBusy: (busy: boolean) => void
@@ -149,7 +151,7 @@ export function OriginalCountryEditor({ snapshot, adapter, characters, events, c
       </label>}
       <WorkspaceBodyImageControls editor={bodyEditor.current} document={bodyDraft}
         editable={canModify} upload={file => upload(file, file.name)} />
-      <EditorCore plain imageUploads={false} localReferences={false}
+      <EditorCore plain imageUploads={false} localReferences={false} referenceItems={referenceItems}
         content={country.document ?? mergeCountrySections(country.system, country.geography, country.culture) ?? ''}
         onReady={onEditorReady} onContentChange={onBodyChange} />
     </section>

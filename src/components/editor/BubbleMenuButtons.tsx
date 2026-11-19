@@ -6,6 +6,7 @@ import { Bold, Italic, Underline as UnderlineIcon, Strikethrough, AtSign, Link2 
 import { useEditorState } from '@tiptap/react'
 import type { Editor } from '@tiptap/core'
 import { Tip } from '@/components/ui/tooltip'
+import { insertReferenceTrigger } from './insert-reference-trigger'
 
 interface BubbleMenuButtonsProps {
   editor: Editor
@@ -72,7 +73,7 @@ export function BubbleMenuButtons({ editor }: BubbleMenuButtonsProps) {
       <Tip label="@ 引用">
         <button
           type="button"
-          onPointerDown={(e) => { e.preventDefault(); editor.chain().focus().insertContent(' @').run() }}
+          onPointerDown={(e) => { e.preventDefault(); insertReferenceTrigger(editor, '@') }}
           className={`${base} ${state.mention ? active : inactive}`}
           aria-label="@ 引用"
         >
@@ -82,7 +83,7 @@ export function BubbleMenuButtons({ editor }: BubbleMenuButtonsProps) {
       <Tip label="[[ 内链">
         <button
           type="button"
-          onPointerDown={(e) => { e.preventDefault(); editor.chain().focus().insertContent(' [[').run() }}
+          onPointerDown={(e) => { e.preventDefault(); insertReferenceTrigger(editor, '[[') }}
           className={`${base} ${inactive}`}
           aria-label="[[ 内链"
         >
