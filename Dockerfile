@@ -28,6 +28,7 @@ RUN apt-get update && \
     test -x /usr/sbin/sendmail && \
     groupadd --system --gid 10001 ocstudio && \
     useradd --system --uid 10001 --gid 10001 --home-dir /home/ocstudio --create-home ocstudio && \
+    chmod 700 /home/ocstudio && \
     mkdir -p /data/media && chown -R 10001:10001 /data
 COPY --from=builder --chown=10001:10001 /app/.next/standalone ./
 COPY --from=builder --chown=10001:10001 /app/.next/static ./.next/static
