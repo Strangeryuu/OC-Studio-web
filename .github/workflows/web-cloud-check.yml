@@ -31,12 +31,19 @@ jobs:
             rm -rf deploy/backups deploy/data deploy/.env deploy/.update.lock deploy/.backup.lock
           }
           trap cleanup EXIT
+          compose=(docker compose --env-file deploy/.env -f deploy/compose.yaml)
+          "${compose[@]}" up -d --wait db
+          "${compose[@]}" exec -T db sh -ec 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "CREATE TABLE backup_restore_acceptance (id INTEGER PRIMARY KEY, marker TEXT NOT NULL); INSERT INTO backup_restore_acceptance VALUES (1, '\''persisted after restore'\'');"'
           bash deploy/backup.sh
           backup_dir="$(find deploy/backups -mindepth 1 -maxdepth 1 -type d ! -name '.staging.*' | head -n 1)"
           test -n "$backup_dir"
           test -s "$backup_dir/postgres.dump"
           ( cd "$backup_dir" && sha256sum -c SHA256SUMS )
           test "$(tar -xOzf "$backup_dir/media.tgz" media/ci-media.txt)" = 'backup-acceptance-image'
+          "${compose[@]}" exec -T db sh -ec 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "DROP TABLE backup_restore_acceptance"'
+          "${compose[@]}" exec -T db sh -ec 'pg_restore --clean --if-exists -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < "$backup_dir/postgres.dump"
+          restored="$("${compose[@]}" exec -T db sh -ec 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT marker FROM backup_restore_acceptance WHERE id=1"')"
+          test "$restored" = 'persisted after restore'
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
