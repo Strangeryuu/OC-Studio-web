@@ -34,6 +34,14 @@ describe('global cloud image cleanup', () => {
     expect(JSON.parse(converted.value.content).content[0].attrs.src).toBe(next)
     expect(converted.value.headerUrl).toBe(original.headerUrl)
   })
+  it('removes deleted map-view media without leaving invalid empty layer URLs', () => {
+    const data = { mapViews: { terrain: old, contour: next }, mapImage: old }
+    const removed = rewriteMediaReferences(data, old, null)
+    expect(removed.references).toBe(2)
+    expect(removed.value.mapViews).toEqual({ contour: next })
+    const onlyLayer = rewriteMediaReferences({ mapViews: { terrain: old } }, old, null)
+    expect(onlyLayer.value.mapViews).toBeNull()
+  })
   it('keeps an unrelated asset untouched', () => {
     expect(rewriteMediaReferences(original,next,null)).toEqual({value:original,references:0})
   })
