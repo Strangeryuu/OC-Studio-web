@@ -59,6 +59,7 @@ import {
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { WorkspaceDeleteAction } from '@/components/cloud/WorkspaceDeleteAction'
 import { WorkspacePresence } from '@/components/cloud/WorkspacePresence'
+import { WorkspaceBodyImageControls } from '@/components/cloud/WorkspaceBodyImageControls'
 
 const WorkspaceHome = dynamic(
   () => import('@/features/dashboard/cloud/WorkspaceHome').then(mod => mod.WorkspaceHome),
@@ -930,6 +931,7 @@ function OriginalCharacterEditor({ snapshot, adapter, characters, countries, cou
     bodyEditor.current = editor
     editor.setEditable(canEdit && !disabled)
     handleDocReady(editor)
+    setBodyDraft(editor.getJSON())
   }, [canEdit, disabled, handleDocReady])
   const onBodyChange = useCallback(() => {
     handleDocChange()
@@ -1015,6 +1017,9 @@ function OriginalCharacterEditor({ snapshot, adapter, characters, countries, cou
         <input type="file" aria-label="上传正文图片" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" disabled={disabled}
           onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void uploadBodyImage(file) }} />
       </label>}
+      <WorkspaceBodyImageControls editor={bodyEditor.current} document={bodyDraft}
+        editable={canEdit && !disabled}
+        upload={file => upload(file, file.name)} />
       <EditorCore plain imageUploads={false} localReferences={false} content={snapshot.character.document ?? legacyBodySections([
         { content: snapshot.character.bio },
         { heading: '人物生平', content: snapshot.character.lifeStory },

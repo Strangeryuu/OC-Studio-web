@@ -23,6 +23,7 @@ import { TreeRow } from '@/components/shared/TreeRow'
 import { EditorCore } from '@/components/editor/EditorCore'
 import { WorkspaceEntityHistory } from '@/components/cloud/WorkspaceEntityHistory'
 import { insertWorkspaceBodyImage, useWorkspaceDraftGuard, useWorkspaceImageUpload } from '@/components/cloud/workspace-editor-guards'
+import { WorkspaceBodyImageControls } from '@/components/cloud/WorkspaceBodyImageControls'
 import { flushPendingSaves, registerPendingSave } from '@/lib/pending-saves'
 import { docRevisionChanged } from '@/lib/save-revision'
 import { hasNewBodyImages } from '@/lib/cloud/character-media'
@@ -260,6 +261,8 @@ function CloudChapterEditor({ snapshot, adapter, onSaved, canEdit, disabled }: M
         accept="image/png,image/jpeg,image/webp,image/gif" disabled={!canWrite}
         onChange={event => {const file=event.target.files?.[0];event.target.value='';fileChange(file)}} />
     </label>}
+    <WorkspaceBodyImageControls editor={editor.current} document={editor.current?.getJSON()}
+      editable={canWrite} upload={file => upload(file, file.name)} />
     <EditorCore plain imageUploads={false} localReferences={false}
       content={worldBodyOf(snapshot.entity)} onReady={value=>{
         editor.current=value

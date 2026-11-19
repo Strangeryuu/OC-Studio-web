@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import { WorkspaceEntityHistory } from '@/components/cloud/WorkspaceEntityHistory'
 import { insertWorkspaceBodyImage, useWorkspaceDraftGuard, useWorkspaceImageUpload } from '@/components/cloud/workspace-editor-guards'
+import { WorkspaceBodyImageControls } from '@/components/cloud/WorkspaceBodyImageControls'
 import { EditorCore } from '@/components/editor/EditorCore'
 import { useSaveStatus } from '@/components/layout/SaveStatusContext'
 import { useEditorDirty } from '@/components/layout/useEditorDirty'
@@ -218,6 +219,8 @@ export function OriginalNoteEditor({ snapshot, adapter, notes, characters, refer
             if (file && editor) void upload(file, undefined, url => insertWorkspaceBodyImage(editor, url))
           }} />
       </label>}
+      <WorkspaceBodyImageControls editor={bodyEditor.current} document={bodyDraft}
+        editable={canModify} upload={file => upload(file, file.name)} />
       <EditorCore plain imageUploads={false} localReferences={false} referenceItems={references}
         content={worldBodyOf(snapshot.entity)} onReady={onEditorReady} onContentChange={onBodyChange}
         onMentionClick={openReference} onWikiLinkClick={raw => openReference(raw, 'world')} />

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import { WorkspaceEntityHistory } from '@/components/cloud/WorkspaceEntityHistory'
 import { insertWorkspaceBodyImage, useWorkspaceDraftGuard, useWorkspaceImageUpload } from '@/components/cloud/workspace-editor-guards'
+import { WorkspaceBodyImageControls } from '@/components/cloud/WorkspaceBodyImageControls'
 import { EditorCore } from '@/components/editor/EditorCore'
 import { useSaveStatus } from '@/components/layout/SaveStatusContext'
 import { ProfileBannerEditor } from '@/components/shared/ProfileBannerEditor'
@@ -146,6 +147,8 @@ export function OriginalCountryEditor({ snapshot, adapter, characters, events, c
             if (file && editor) void upload(file, undefined, url => insertWorkspaceBodyImage(editor, url))
           }} />
       </label>}
+      <WorkspaceBodyImageControls editor={bodyEditor.current} document={bodyDraft}
+        editable={canModify} upload={file => upload(file, file.name)} />
       <EditorCore plain imageUploads={false} localReferences={false}
         content={country.document ?? mergeCountrySections(country.system, country.geography, country.culture) ?? ''}
         onReady={onEditorReady} onContentChange={onBodyChange} />
