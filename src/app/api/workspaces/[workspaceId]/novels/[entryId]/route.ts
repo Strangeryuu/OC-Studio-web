@@ -69,17 +69,6 @@ export async function DELETE(request: Request, context: Context) {
          WHERE id=$3 AND workspace_id=$4`,
         [version, user.id, row.id, workspaceId],
       )
-      await client.query(
-        `INSERT INTO entity_revisions(entity_id,version,actor_id,action,summary,content_snapshot)
-         VALUES($1,$2,$3,'delete',$4,$5::jsonb)`,
-        [row.id, version, user.id, '小说章节树删除', JSON.stringify({ title: row.title, data: row.content })],
-      )
-      await client.query(
-        `INSERT INTO change_events(entity_id,version,actor_id,action,changes)
-         VALUES($1,$2,$3,'delete',$4::jsonb)`,
-        [row.id, version, user.id, JSON.stringify([{ field: 'document',
-          oldValue: { title: row.title, data: row.content }, newValue: null }])],
-      )
     }
     await client.query('COMMIT')
     return NextResponse.json({ deleted: true, removedEntries: rows.length })

@@ -119,16 +119,6 @@ async function mutate(request: Request, context: Context, replacement: boolean) 
         `UPDATE entities SET content=$1::jsonb,version=$2,updated_by=$3,updated_at=now()
          WHERE id=$4 AND workspace_id=$5`,
         [JSON.stringify(converted.value), version, access.user.id, row.id, workspaceId])
-      await client.query(
-        `INSERT INTO entity_revisions(entity_id,version,actor_id,action,summary,content_snapshot)
-         VALUES($1,$2,$3,'update',$4,$5::jsonb)`,
-        [row.id, version, access.user.id, replacement ? '全局替换图片' : '全局删除图片',
-          JSON.stringify({ title: row.title, data: converted.value })])
-      await client.query(
-        `INSERT INTO change_events(entity_id,version,actor_id,action,changes)
-         VALUES($1,$2,$3,'update',$4::jsonb)`,
-        [row.id, version, access.user.id,
-          JSON.stringify([{ field: 'media', oldValue: oldUrl, newValue: newUrl }])])
     }
     if (preview.coverVersion !== null) {
       await client.query(
@@ -136,7 +126,7 @@ async function mutate(request: Request, context: Context, replacement: boolean) 
          WHERE workspace_id=$2 AND setting_key='world-cover'`,
         [JSON.stringify(newUrl ?? ''), workspaceId])
     }
-    // Keep file bytes for historical revision/backup retention; authorization immediately
+    // Keep file bytes for disaster recovery/backup retention; authorization immediately
     // prevents further access through /api/media/<id>.
     await client.query('UPDATE media_assets SET deleted_at=now() WHERE id=$1 AND workspace_id=$2',
       [assetId, workspaceId])

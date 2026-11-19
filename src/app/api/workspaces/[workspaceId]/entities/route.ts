@@ -83,16 +83,6 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
     const entity = result.rows[0]
     const localId = parseOriginalId(String(entity.local_id))
     if (localId === null) throw new Error('Invalid local entity ID')
-    await client.query(
-      `INSERT INTO entity_revisions(entity_id,version,actor_id,action,content_snapshot)
-       VALUES($1,$2,$3,'create',$4::jsonb)`,
-      [entity.id, entity.version, user.id, JSON.stringify(doc)],
-    )
-    await client.query(
-      `INSERT INTO change_events(entity_id,version,actor_id,action)
-       VALUES($1,$2,$3,'create')`,
-      [entity.id, entity.version, user.id],
-    )
     await client.query('COMMIT')
     return NextResponse.json({ entity: { ...entity, local_id: localId, workspaceId, kind: body.kind, ...doc } }, { status: 201 })
   } catch (error) {

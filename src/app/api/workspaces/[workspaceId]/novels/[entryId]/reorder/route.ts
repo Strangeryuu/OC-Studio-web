@@ -13,7 +13,7 @@ type Context = { params: Promise<{ workspaceId: string; entryId: string }> }
 type Row = { id: string; local_id: string | number; title: string; content: Record<string, unknown>; version: number }
 const MAX_CHANGED = 400
 
-/** Atomic original chapter-tree drag: update both sibling lists and record every revision. */
+/** Atomic original chapter-tree drag: update both sibling lists in one transaction. */
 export async function PATCH(request: Request, context: Context) {
   if (!mutationOriginAllowed(request)) return NextResponse.json({ error: 'INVALID_ORIGIN' }, { status: 403 })
   const user = await currentCloudUser()
@@ -82,19 +82,6 @@ export async function PATCH(request: Request, context: Context) {
         `UPDATE entities SET content=$1::jsonb,version=$2,updated_by=$3,updated_at=now()
          WHERE id=$4 AND workspace_id=$5`,
         [JSON.stringify(nextContent), nextVersion, user.id, row.id, workspaceId],
-      )
-      await client.query(
-        `INSERT INTO entity_revisions(entity_id,version,actor_id,action,summary,content_snapshot)
-         VALUES($1,$2,$3,'update','小说章节排序',$4::jsonb)`,
-        [row.id, nextVersion, user.id, JSON.stringify(snapshot)],
-      )
-      await client.query(
-        `INSERT INTO change_events(entity_id,version,actor_id,action,changes)
-         VALUES($1,$2,$3,'update',$4::jsonb)`,
-        [row.id, nextVersion, user.id, JSON.stringify([
-          { field: 'parentId', oldValue: row.content.parentId, newValue: patch.parentId },
-          { field: 'order', oldValue: row.content.order, newValue: patch.order },
-        ])],
       )
     }
     await client.query('COMMIT')

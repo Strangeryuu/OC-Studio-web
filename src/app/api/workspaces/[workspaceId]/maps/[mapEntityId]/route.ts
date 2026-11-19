@@ -32,16 +32,6 @@ async function appendRevision(
       [nextTitle, JSON.stringify(nextContent), version, actorId, row.id],
     )
   }
-  await client.query(
-    `INSERT INTO entity_revisions(entity_id,version,actor_id,action,summary,content_snapshot)
-     VALUES($1,$2,$3,$4,$5,$6::jsonb)`,
-    [row.id, version, actorId, action, summary, JSON.stringify(action === 'delete' ? before : after)],
-  )
-  await client.query(
-    `INSERT INTO change_events(entity_id,version,actor_id,action,changes)
-     VALUES($1,$2,$3,$4,$5::jsonb)`,
-    [row.id, version, actorId, action, JSON.stringify([{ field: 'document', oldValue: before, newValue: action === 'delete' ? null : after }])],
-  )
   return version
 }
 

@@ -114,18 +114,6 @@ export async function PATCH(request: Request, context: Context) {
        WHERE id=$5 AND workspace_id=$6`,
       [document.title, JSON.stringify(document.data), plan.next.version, access.user.id, entityId, access.workspaceId],
     )
-    await client.query(
-      `INSERT INTO entity_revisions(entity_id,version,actor_id,action,content_snapshot)
-       VALUES($1,$2,$3,'update',$4::jsonb)`,
-      [entityId, plan.next.version, access.user.id, JSON.stringify(document)],
-    )
-    await client.query(
-      `INSERT INTO change_events(entity_id,version,actor_id,action,changes)
-       VALUES($1,$2,$3,'update',$4::jsonb)`,
-      [entityId, plan.next.version, access.user.id, JSON.stringify([
-        { field: 'document', oldValue: original, newValue: document },
-      ])],
-    )
     await client.query('COMMIT')
     return NextResponse.json({ entityId, version: plan.next.version })
   } catch (error) {
@@ -165,15 +153,6 @@ export async function DELETE(request: Request, context: Context) {
     await client.query(
       `UPDATE entities SET version=$1,updated_by=$2,updated_at=now(),deleted_at=now()
        WHERE id=$3 AND workspace_id=$4`, [nextVersion, access.user.id, entityId, access.workspaceId],
-    )
-    await client.query(
-      `INSERT INTO entity_revisions(entity_id,version,actor_id,action,content_snapshot)
-       VALUES($1,$2,$3,'delete',$4::jsonb)`,
-      [entityId, nextVersion, access.user.id, JSON.stringify({ title: row.title, data: row.content })],
-    )
-    await client.query(
-      "INSERT INTO change_events(entity_id,version,actor_id,action) VALUES($1,$2,$3,'delete')",
-      [entityId, nextVersion, access.user.id],
     )
     await client.query('COMMIT')
     return NextResponse.json({ entityId, version: nextVersion, deleted: true })
