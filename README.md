@@ -93,6 +93,7 @@ git clone --branch web-dev --single-branch \
 sudo mkdir -p /opt/ocstudio/data/media
 sudo install -m 0644 ocstudio-deploy-src/deploy/compose.yaml /opt/ocstudio/compose.yaml
 sudo install -m 0755 ocstudio-deploy-src/deploy/update.sh /opt/ocstudio/update.sh
+sudo install -m 0755 ocstudio-deploy-src/deploy/backup.sh /opt/ocstudio/backup.sh
 sudo cp ocstudio-deploy-src/deploy/.env.example /opt/ocstudio/.env
 sudo chown -R 10001:10001 /opt/ocstudio/data/media
 sudo chmod 700 /opt/ocstudio/data/media
@@ -155,7 +156,7 @@ VPS 可以手动执行 `sudo /opt/ocstudio/update.sh` 更新，或在**测试环
 | 头像、立绘、地图及其他私有图片 | VPS `/opt/ocstudio/data/media`（按部署示例） |
 | 代码及 Web 运行环境 | GHCR Docker 镜像 |
 
-**请同时备份数据库与媒体目录，并定期在独立环境验证恢复。** `.ocbak` 主要用于资料库便携迁移，无法替代完整 VPS 灾备。更新脚本会在替换已有服务前保存数据库和媒体备份，但仍需部署者安排加密异地备份。
+**请同时备份数据库与媒体目录，并定期在独立环境验证恢复。** `.ocbak` 主要用于资料库便携迁移，无法替代完整 VPS 灾备。更新脚本每次实际执行数据库迁移前，都会通过 `backup.sh` 创建一组经过 PostgreSQL 归档检查及 SHA-256 校验的数据库/媒体备份（即使原 Web 容器已停止）。也可手动运行 `sudo /opt/ocstudio/backup.sh`。仍需部署者安排加密异地备份和真实恢复演练。
 
 ## 本地开发
 
