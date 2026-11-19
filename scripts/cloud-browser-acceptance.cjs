@@ -43,9 +43,15 @@ function characterData(name, x) {
 }
 async function openSection(page, worldId, label) {
   await page.goto(BASE + '/studio/' + worldId, { waitUntil: 'domcontentloaded' })
+  // Entity list rows appear only after the client has hydrated and fetched
+  // cloud data. Clicking nav during the pre-hydration HTML phase is a no-op.
+  await page.getByRole('button', { name: 'CI Touch Alpha', exact: true })
+    .waitFor({ timeout: 20000 })
   const button = page.getByRole('navigation', { name: '工作台板块' })
     .getByRole('button', { name: label, exact: true })
   await button.click()
+  await page.locator('nav[aria-label="工作台板块"] button[aria-current="page"]')
+    .filter({ hasText: label }).waitFor({ timeout: 15000 })
 }
 
 async function run() {
