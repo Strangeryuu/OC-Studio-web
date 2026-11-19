@@ -16,6 +16,7 @@ import { componentLabel, componentParam } from '@/lib/templates/params'
 import { TITLE_INPUT } from '@/lib/ui-tokens'
 import type { CharacterForm } from '../hooks/useCharacterForm'
 import { CharacterInfoSection } from './CharacterInfoSection'
+import { CharacterAttributesSection } from './CharacterAttributesSection'
 
 interface CharacterFrontmatterProps {
   form: CharacterForm
@@ -167,6 +168,7 @@ export function CharacterFrontmatter({
           {form.summaryLine ? <p className="text-body leading-5 text-ink-muted">{form.summaryLine}</p> : null}
         </div>
         <CharacterInfoSection form={form} onNavigateToCountry={onNavigateToCountry} compact={compact} />
+        <CharacterAttributesSection form={form} />
         <div className="border-t border-line" />
         {portraitSection}
         <div className="border-t border-line" />
@@ -220,6 +222,7 @@ export function CharacterFrontmatter({
                   {form.summaryLine ? <p className="text-body leading-5 text-ink-muted">{form.summaryLine}</p> : null}
                 </div>
                 <CharacterInfoSection form={form} onNavigateToCountry={onNavigateToCountry} compact={compact} />
+                <CharacterAttributesSection form={form} />
               </div>
             )
           case 'portrait':

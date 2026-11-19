@@ -8,6 +8,7 @@ import { SaveStatusProvider, useSaveStatus } from '@/components/layout/SaveStatu
 import { Toaster } from '@/components/shared/toaster'
 import { GalleryBlock, SummaryBlock } from '@/components/shared/template-blocks'
 import { CharacterInfoSection } from '@/features/characters/components/CharacterInfoSection'
+import { CharacterAttributesSection } from '@/features/characters/components/CharacterAttributesSection'
 import { characterFormBaseline, useCharacterForm } from '@/features/characters/hooks/useCharacterForm'
 import { buildDefaultCharacter } from '@/features/characters/services'
 import type { CharacterFormData } from '@/features/characters/types'
@@ -114,6 +115,9 @@ export function editablePatch(character: Character, values: Partial<CharacterFor
     if (value !== undefined && JSON.stringify(value) !== JSON.stringify(baseline[key])) {
       Object.assign(result, { [key]: value })
     }
+  }
+  if (values.custom !== undefined && JSON.stringify(values.custom) !== JSON.stringify(baseline.custom)) {
+    result.custom = values.custom
   }
   if ('countryId' in values && (values.countryId ?? null) !== baseline.countryId) {
     result.countryId = values.countryId ?? null
@@ -740,7 +744,13 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
         }} />}
       {['home', 'character', 'country', 'event', 'world', 'category', 'novel', 'map', 'table', 'relations'].includes(section) &&
         <WorkspacePresence workspaceId={workspaceId}
-          scope={section === 'category' && activeCategory ? 'category:' + activeCategory.id : section === 'category' ? 'world' : section}
+          scope={section === 'category' && categoryNote ? 'category:' + categoryNote.entityId
+            : section === 'category' && activeCategory ? 'category:' + activeCategory.id
+            : section === 'character' && character ? 'character:' + character.entityId
+            : section === 'country' && country ? 'country:' + country.entityId
+            : section === 'event' && event ? 'event:' + event.entityId
+            : section === 'world' && note ? 'world:' + note.entityId
+            : section === 'category' ? 'world' : section}
           editing={canEdit} />}
       {section === 'album' && <WorkspaceAlbum workspaceId={workspaceId} worldName={workspaceName ?? '世界'}
         characters={characterList.rows} countries={countryList.rows}
@@ -993,6 +1003,7 @@ function OriginalCharacterEditor({ snapshot, adapter, characters, countries, cou
       <CharacterInfoSection form={form}
         fieldsOverride={countriesReady ? CLOUD_FIELDS : CLOUD_FIELDS.filter(field => field.type !== 'country')}
         onNavigateToCountry={onNavigateCountry} preserveLegacyNationality />
+      <CharacterAttributesSection form={form} />
       <SummaryBlock value={form.bio} onChange={form.setBio} />
       <RelationsSection title="角色关系" selfName={form.name}
         rows={form.relationRows}
