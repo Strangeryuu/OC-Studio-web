@@ -731,6 +731,7 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
       {graph && <div className="h-[70vh] min-h-96 rounded-panel border border-line">
         <RelationGraph workspace={{
           ...graph,
+          workspaceId,
           worldName: workspaceName,
           loading: characterList.loading || countryList.loading || eventList.loading || noteList.loading,
           error: graphError || characterList.error || countryList.error || eventList.error || noteList.error,
