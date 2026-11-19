@@ -57,9 +57,9 @@
 
 ## 邮件功能排障与测试（2026-11-19）
 
-从最新 \`web-dev\` Web 镜像开始，平台管理员可进入 \`/admin/mail\` 保存配置，并点击 **发送测试邮件**。测试只发送至**当前登录平台管理员账号的注册邮箱**，不触发密码重置，单账号测试请求至少间隔 15 秒。返回“发件服务已接受”表示 SMTP 服务器回复成功或本机 MTA 返回成功，最终到达收件箱仍取决于发件服务商的投递、收件方过滤与域名信誉。
+从最新 `web-dev` Web 镜像开始，平台管理员可进入 `/admin/mail` 保存配置，并点击 **发送测试邮件**。测试只发送至**当前登录平台管理员账号的注册邮箱**，不触发密码重置，单账号测试请求至少间隔 15 秒。返回“发件服务已接受”表示 SMTP 服务器回复成功或本机 MTA 返回成功，最终到达收件箱仍取决于发件服务商的投递、收件方过滤与域名信誉。
 
-**Docker 安装优先使用 SMTP 模式。** \`node:24-bookworm-slim\` Web 镜像默认没有 \`/usr/sbin/sendmail\`，即使 VPS 宿主机安装了 Postfix/Sendmail，容器内也不会自动出现该程序。现在后台会显示 Web **容器内**的可执行文件检测结果；如需真正使用本机方式，请在自己维护的 Web 镜像里安装并配置 MTA，保证可连接外部邮件服务、发件域名已正确配置。若目标是低运维成本，推荐使用服务商的 SMTP 提交服务。
+**Docker 安装优先使用 SMTP 模式。** `node:24-bookworm-slim` Web 镜像默认没有 `/usr/sbin/sendmail`，即使 VPS 宿主机安装了 Postfix/Sendmail，容器内也不会自动出现该程序。现在后台会显示 Web **容器内**的可执行文件检测结果；如需真正使用本机方式，请在自己维护的 Web 镜像里安装并配置 MTA，保证可连接外部邮件服务、发件域名已正确配置。若目标是低运维成本，推荐使用服务商的 SMTP 提交服务。
 
 ### SMTP 推荐配置
 
@@ -71,23 +71,23 @@
 
 排查 VPS 网络时，在**Web 容器内部**检查 DNS 与 TLS，可执行以下仅访问邮件服务商地址的命令（将 SMTP 主机换成真实地址）：
 
-\`\`\`bash
+```bash
 cd /opt/ocstudio
 sudo docker compose --env-file .env -f compose.yaml exec -T web \
   node -e 'require("node:dns").lookup(process.argv[1],(e,a)=>{console.log(e?.code||a);process.exit(e?1:0)})' smtp.example.com
 sudo docker compose --env-file .env -f compose.yaml logs --tail=100 web
-\`\`\`
+```
 
-日志中的 \`[ocstudio/mail-test]\` 包含阶段和分类错误码，不打印 SMTP 授权码、重置令牌或原始服务器响应。常见提示：
+日志中的 `[ocstudio/mail-test]` 包含阶段和分类错误码，不打印 SMTP 授权码、重置令牌或原始服务器响应。常见提示：
 
 | 错误码 | 含义 |
 | --- | --- |
-| \`MAIL_LOCAL_EXECUTABLE_MISSING\` | Web 容器没有 Sendmail |
-| \`SMTP_DNS_FAILED\` / \`SMTP_CONNECTION_TIMEOUT\` | 地址无法解析 / 出站连接超时 |
-| \`SMTP_TLS_CERTIFICATE_ERROR\` / \`SMTP_STARTTLS_UNAVAILABLE\` | 证书或 TLS 模式不匹配 |
-| \`SMTP_AUTH_FAILED\`（535）| 用户名或授权码被服务商拒绝 |
-| \`SMTP_SENDER_REJECTED\` / \`SMTP_RECIPIENT_REJECTED\` | 发件人 / 收件人被服务商拒绝 |
-| \`SMTP_MESSAGE_REJECTED\` | 邮件内容或发信策略遭拒 |
-| \`MAIL_PASSWORD_DECRYPT_FAILED\` | 加密密钥变更或旧 SMTP 授权码损坏，请重设 |
+| `MAIL_LOCAL_EXECUTABLE_MISSING` | Web 容器没有 Sendmail |
+| `SMTP_DNS_FAILED` / `SMTP_CONNECTION_TIMEOUT` | 地址无法解析 / 出站连接超时 |
+| `SMTP_TLS_CERTIFICATE_ERROR` / `SMTP_STARTTLS_UNAVAILABLE` | 证书或 TLS 模式不匹配 |
+| `SMTP_AUTH_FAILED`（535）| 用户名或授权码被服务商拒绝 |
+| `SMTP_SENDER_REJECTED` / `SMTP_RECIPIENT_REJECTED` | 发件人 / 收件人被服务商拒绝 |
+| `SMTP_MESSAGE_REJECTED` | 邮件内容或发信策略遭拒 |
+| `MAIL_PASSWORD_DECRYPT_FAILED` | 加密密钥变更或旧 SMTP 授权码损坏，请重设 |
 
-最后再从 \`/forgot-password\` 申请真实账号的重置邮件，确认邮件链接能够访问当前 HTTPS 域名。请勿公开 SMTP 密码、应用密码、数据库连接串或邮件中的重置令牌。
+最后再从 `/forgot-password` 申请真实账号的重置邮件，确认邮件链接能够访问当前 HTTPS 域名。请勿公开 SMTP 密码、应用密码、数据库连接串或邮件中的重置令牌。
