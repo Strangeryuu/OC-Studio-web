@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Check, ChevronDown, Settings, Shield, SunMoon } from 'lucide-react'
 import { useSettings } from '@/lib/settings'
 import { THEME_PRESETS, normalizeThemePreset } from '@/lib/theme/presets'
+import { FLOAT_SHADOW } from '@/lib/ui-tokens'
 
 /** Persistent click-open menu: choosing a theme does not dismiss the menu. */
 export function CloudSettingsMenu({ isAdmin }: { isAdmin: boolean }) {
@@ -36,7 +37,7 @@ export function CloudSettingsMenu({ isAdmin }: { isAdmin: boolean }) {
       <ChevronDown size={13} aria-hidden className={`transition-transform ${open ? 'rotate-180' : ''}`} />
     </button>
     {open && <div role="dialog" aria-label="设置菜单"
-      className="absolute right-0 top-[calc(100%+0.6rem)] z-50 w-[min(21rem,calc(100vw-2rem))] max-h-[min(75vh,36rem)] overflow-y-auto rounded-panel border border-line bg-paper p-4 text-ink shadow-xl">
+      className="absolute right-0 top-[calc(100%+0.6rem)] z-50 w-[min(21rem,calc(100vw-2rem))] max-h-[min(75vh,36rem)] overflow-y-auto rounded-panel border border-line bg-paper p-4 text-ink ${FLOAT_SHADOW}">
       <div className="flex items-center gap-2 border-b border-line pb-3">
         <SunMoon size={17} className="text-ink-muted" aria-hidden />
         <h2 className="text-ui font-semibold">外观与设置</h2>
@@ -48,7 +49,7 @@ export function CloudSettingsMenu({ isAdmin }: { isAdmin: boolean }) {
             <button type="button" key={mode} aria-pressed={settings.theme === mode}
               onClick={() => updateSetting('theme', mode)}
               className={`min-h-9 rounded-item px-1.5 text-caption transition-colors
-                ${settings.theme === mode ? 'border border-line bg-paper-card font-medium text-ink shadow-sm' : 'text-ink-muted hover:bg-[var(--oc-hover)] hover:text-ink'}`}>
+                ${settings.theme === mode ? 'border border-line bg-paper-card font-medium text-ink' : 'text-ink-muted hover:bg-[var(--oc-hover)] hover:text-ink'}`}>
               {name}
             </button>)}
         </div>
