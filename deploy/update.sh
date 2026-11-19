@@ -46,12 +46,11 @@ fi
 
 "${compose[@]}" up -d db
 
-if [[ -n "$running_id" ]]; then
-  # Publish one verified PostgreSQL + media backup pair before any migration.
-  # This child shares the caller's update lock while holding its own backup lock.
-  echo "Backing up PostgreSQL and private media before updating..."
-  OCSTUDIO_UPDATE_IN_PROGRESS=1 bash ./backup.sh
-fi
+# Back up even if the Web container is absent: the PostgreSQL volume may hold
+# valuable existing data after a stopped/failed deployment.
+# This child shares the caller's update lock while holding its backup lock.
+echo "Backing up PostgreSQL and private media before updating..."
+OCSTUDIO_UPDATE_IN_PROGRESS=1 bash ./backup.sh
 
 echo "Applying Better Auth and business database migrations..."
 "${compose[@]}" --profile maintenance run --rm migrate
