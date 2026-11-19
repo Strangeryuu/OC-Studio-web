@@ -88,7 +88,7 @@ export async function DELETE(request: Request, context: Context) {
     await client.query(`UPDATE workspace_public_shares SET revoked_at=now(),
       token_ciphertext=NULL,updated_at=now() WHERE workspace_id=$1 AND revoked_at IS NULL`, [workspaceId])
     await client.query(`INSERT INTO audit_logs(workspace_id,actor_id,action,target_id)
-      VALUES($1,$2,'workspace:public-share:revoke',$3)`, [workspaceId, actor.id])
+      VALUES($1,$2,'workspace:public-share:revoke',$3)`, [workspaceId, actor.id, workspaceId])
     await client.query('COMMIT')
     return NextResponse.json({ active: false }, { headers: noStore })
   } catch (error) {
