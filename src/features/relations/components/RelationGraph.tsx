@@ -199,6 +199,7 @@ export function RelationGraph({
 
   const rfRef = useRef<ReactFlowInstance | null>(null)
   const wrapperRef = useRef<HTMLDivElement | null>(null)
+  const suppressMobileClickUntil = useRef(0)
   const imageInputRef = useRef<HTMLInputElement | null>(null)
 
   // 面板已经自带外点/取消失败的收口；这里再兜一层 Esc，画布上按 Esc 等价于点空白
@@ -419,11 +420,16 @@ export function RelationGraph({
         ...node,
         zIndex: node.selected || node.id === hoveredNodeId ? 1000 : undefined,
         // 打开动作从节点冒出去（选中时右上角那枚圆钮，见 NodeOpenButton）
-        data: { ...(node.data as GraphNodeData), onOpen: () => openEntity(node) },
+        data: { ...(node.data as GraphNodeData), onOpen: () => openEntity(node),
+          ...(isMobile ? { onTouchMenu: (at: { x: number; y: number }) => {
+            suppressMobileClickUntil.current = Date.now() + 1000
+            setNodeMenu({ at, nodeId: node.id })
+          } } : {}),
+        },
         style: { ...(node.style as Record<string, unknown> | undefined), opacity: dim ? 0.25 : 1 },
       }
     })
-  }, [nodes, active, hoveredNodeId, openEntity])
+  }, [nodes, active, hoveredNodeId, openEntity, isMobile])
 
   const displayEdges = useMemo(() => {
     return routedEdges.map((edge) => {
@@ -463,7 +469,13 @@ export function RelationGraph({
   const handleNodeClick = useCallback(
     (_event: ReactMouseEvent, node: Node) => {
       setEdgePanel(null)
-      if (isMobile) openEntity(node)
+      if (isMobile) {
+        if (Date.now() < suppressMobileClickUntil.current) {
+          suppressMobileClickUntil.current = 0
+          return
+        }
+        openEntity(node)
+      }
     },
     [isMobile, openEntity],
   )
