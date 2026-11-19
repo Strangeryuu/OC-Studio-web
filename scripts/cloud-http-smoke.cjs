@@ -162,6 +162,34 @@ async function run() {
   assert(json.workspace?.id && json.workspace?.role === 'owner',
     'Workspace owner membership was not created')
   const workspaceId = json.workspace.id
+  // Owner-issued public sharing: anonymous read-only access and immediate revocation.
+  const shareEndpoint=BASE+'/api/workspaces/'+workspaceId+'/public-share'
+  const collaboratorShare=await fetch(shareEndpoint,{
+    method:'POST',headers:{Cookie:invitedCookie,Origin:PUBLIC_ORIGIN},
+  })
+  assert(collaboratorShare.status===404,'A collaborator shared another user\'s workspace')
+  const createdShare=await fetch(shareEndpoint,{
+    method:'POST',headers:{Cookie:cookie,Origin:PUBLIC_ORIGIN},
+  })
+  assert(createdShare.status===201,'Workspace owner could not create a public link')
+  const guestPath=(await createdShare.json()).path
+  assert(/^\/share\/[a-f0-9]{64}$/.test(guestPath),'Public link format is invalid')
+  const guestPage=await fetch(BASE+guestPath,{redirect:'manual'})
+  assert(guestPage.status===200,'Anonymous share page did not open')
+  const guestHtml=await guestPage.text()
+  assert(guestHtml.includes('CI Private World')&&guestHtml.includes('游客只读'),
+    'Anonymous share page did not display public workspace in read-only mode')
+  const anonymousWrite=await fetch(BASE+'/api/workspaces/'+workspaceId+'/entities',{
+    method:'POST',headers:{Origin:PUBLIC_ORIGIN,'Content-Type':'application/json'},
+    body:JSON.stringify({kind:'character',title:'Unapproved',data:{name:'Unapproved'}}),
+  })
+  assert(anonymousWrite.status===401,'Anonymous visitor gained workspace write permissions')
+  const revokedShare=await fetch(shareEndpoint,{
+    method:'DELETE',headers:{Cookie:cookie,Origin:PUBLIC_ORIGIN},
+  })
+  assert(revokedShare.status===200,'Owner could not revoke public link')
+  assert((await fetch(BASE+guestPath,{redirect:'manual'})).status===404,
+    'Revoked public share link remained available')
   const privateToInvited=await fetch(BASE+'/api/workspaces/'+workspaceId,{headers:{Cookie:invitedCookie}})
   assert(privateToInvited.status===404,'Private workspace leaked to non-invited ordinary user')
   const adminSeesAll=await fetch(BASE+'/api/workspaces',{headers:{Cookie:cookie}})
