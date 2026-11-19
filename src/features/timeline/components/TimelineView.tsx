@@ -28,7 +28,7 @@ import { useTimelineEvents } from '../hooks/useTimelineEvents'
 import { useCharacterList } from '@/features/characters/hooks/useCharacters'
 import { useCountryList } from '@/features/countries/hooks/useCountries'
 import { PeriodDialog } from '@/components/shared/PeriodDialog'
-import { PERIOD_COLORS, type Character, type Country, type Event, type Period } from '@/types'
+import { PERIOD_COLORS, type Character, type Country, type Event } from '@/types'
 import { buildTimelineEvents, type TimelineFilter } from '../services'
 import { DEFAULT_CUSTOM_FIELDS } from '@/lib/fields'
 import { parseYear } from '@/features/events/utils'
@@ -43,6 +43,7 @@ import { useTimelineViewport } from '../hooks/useTimelineViewport'
 import { useTimelineContainerWidth } from '../hooks/useTimelineContainerWidth'
 import { useTimelineDrag } from '../hooks/useTimelineDrag'
 import { usePeriodEditor } from '../hooks/usePeriodEditor'
+import { useCloudPeriods } from '../hooks/useCloudPeriods'
 import { DraggableNode, StaticNode } from './EventNode'
 import { ParticipantTracks, TRACK_ROW_HEIGHT, type ParticipantTrackRow } from './ParticipantTracks'
 import { PeriodBar } from './PeriodBar'
@@ -67,10 +68,11 @@ interface TimelineViewProps {
     loading: boolean
     error: string | null
     saveTime?: (id: number, time: string, endTime?: string) => Promise<void>
+    workspaceId?: string
+    canEditPeriods?: boolean
   }
 }
 
-const NO_PERIODS: Period[] = []
 const CLOUD_COUNTRY_FIELDS = DEFAULT_CUSTOM_FIELDS.country ?? []
 
 export function TimelineView({ onSelectEvent, onSelectCharacter, onSelectCountry, workspace }: TimelineViewProps) {
@@ -128,10 +130,12 @@ export function TimelineView({ onSelectEvent, onSelectCharacter, onSelectCountry
   const events = useMemo(() => workspaceEvents
     ? buildTimelineEvents(workspaceEvents, characters, countries, CLOUD_COUNTRY_FIELDS, timelineFilter)
     : localTimeline.events, [workspaceEvents, characters, countries, timelineFilter, localTimeline.events])
-  const loading = workspace ? workspace.loading : localTimeline.loading
-  const error = workspace ? workspace.error : localTimeline.error
-  const periodEditor = usePeriodEditor(!workspace)
-  const periods = workspace ? NO_PERIODS : periodEditor.periods
+  const cloudPeriods = useCloudPeriods(workspace?.workspaceId, workspace?.canEditPeriods ?? false)
+  const canEditPeriods = !workspace || workspace.canEditPeriods === true
+  const loading = workspace ? workspace.loading || cloudPeriods.loading : localTimeline.loading
+  const error = workspace ? workspace.error || cloudPeriods.error : localTimeline.error
+  const periodEditor = usePeriodEditor(!workspace, workspace ? cloudPeriods : undefined)
+  const periods = periodEditor.periods
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const containerWidth = useTimelineContainerWidth(scrollRef, events)
@@ -416,7 +420,7 @@ export function TimelineView({ onSelectEvent, onSelectCharacter, onSelectCountry
     countryFilter,
     onCountryFilterChange: setCountryFilter,
     countryOptions,
-    onAddPeriod: workspace ? undefined : periodEditor.openNewPeriodDialog,
+    onAddPeriod: canEditPeriods ? periodEditor.openNewPeriodDialog : undefined,
     onExport: workspace ? () => void exportWorkspaceTimeline() : openExportCenter ? () => openExportCenter({ tab: 'timeline' }) : undefined,
   }
 
@@ -546,6 +550,7 @@ export function TimelineView({ onSelectEvent, onSelectCharacter, onSelectCountry
                     hexDark={hexDark}
                     row={row}
                     isMobile={isMobile}
+                    readOnly={!canEditPeriods}
                     onEdit={() => periodEditor.openEditPeriodDialog(period)}
                     onDelete={() => periodEditor.setDeleteTarget(period)}
                     onLongPress={() => periodEditor.openPeriodActionSheet(period)}
