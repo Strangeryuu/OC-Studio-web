@@ -108,10 +108,23 @@ async function run() {
     method:'POST',headers:{Origin:PUBLIC_ORIGIN,'Content-Type':'application/json'},
     body:JSON.stringify({
       name:'CI Invited User',email:'ci-invited@example.test',
-      password:'CI_InvitationPass_789456',inviteCode:invite,
+      password:'CI_InvitationPass_789456',confirmPassword:'CI_InvitationPass_789456',inviteCode:invite,
     }),
   })
-  assert((await useInvite()).status===201,'Invited registration failed')
+  const wrongMatch=await fetch(BASE+'/api/register',{
+    method:'POST',headers:{Origin:PUBLIC_ORIGIN,'Content-Type':'application/json'},
+    body:JSON.stringify({name:'CI Invited User',email:'ci-invited@example.test',
+      password:'CI_InvitationPass_789456',confirmPassword:'another_Password_789456',inviteCode:invite}),
+  })
+  assert(wrongMatch.status===400,'Mismatched password confirmation was accepted')
+  const registration=await useInvite()
+  assert(registration.status===201,'Invited registration failed')
+  if(process.env.CI_MAIL_CAPTURE_PATH){
+    const {readFile}=require('node:fs/promises')
+    const welcome=await readFile(process.env.CI_MAIL_CAPTURE_PATH,'utf8')
+    assert(welcome.includes('To: ci-invited@example.test')&&welcome.includes('欢迎注册 OC Studio'),
+      'Welcome message was not delivered to the local mail capture')
+  }
   assert((await useInvite()).status===400,'Consumed one-use invitation was accepted again')
   const invitedCookie=await signIn('ci-invited@example.test','CI_InvitationPass_789456')
   const unauthorizedCodes=await fetch(BASE+'/api/admin/registration-codes',{headers:{Cookie:invitedCookie}})

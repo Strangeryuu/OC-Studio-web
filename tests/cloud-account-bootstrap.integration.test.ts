@@ -75,9 +75,15 @@ describe('first-run admin, invite registration and mail settings',()=>{
     expect(issued.code).toHaveLength(48)
     const registration=(email:string,inviteCode=issued.code)=>new Request('http://localhost:3000/api/register',{
       method:'POST',headers:{Origin:'http://localhost:3000','Content-Type':'application/json'},
-      body:JSON.stringify({name:'受邀成员',email,password:'ordinary_password_123456',inviteCode}),
+      body:JSON.stringify({name:'受邀成员',email,password:'ordinary_password_123456',confirmPassword:'ordinary_password_123456',inviteCode}),
     })
     expect((await register.POST(registration('new@example.test','wrong'))).status).toBe(400)
+    const wrongConfirmation=new Request('http://localhost:3000/api/register',{
+      method:'POST',headers:{Origin:'http://localhost:3000','Content-Type':'application/json'},
+      body:JSON.stringify({name:'受邀成员',email:'new@example.test',password:'ordinary_password_123456',
+        confirmPassword:'different_password_123456',inviteCode:issued.code}),
+    })
+    expect((await register.POST(wrongConfirmation)).status).toBe(400)
     expect((await register.POST(registration('new@example.test'))).status).toBe(201)
     expect((await register.POST(registration('second@example.test'))).status).toBe(400)
     const members=await state.db!.query<{role:string}>(

@@ -8,7 +8,7 @@ vi.mock('@/lib/cloud/server/db',()=>({
   pool:{query:async()=>({rows:[{value:{mode:db.mode,from:db.from,
     host:'',port:587,secure:false,username:''}}]})}
 }))
-import { encryptMailPassword,decryptMailPassword,sendPasswordResetMail,sendMailTest,localMailStatus } from '@/lib/cloud/server/mailer'
+import { encryptMailPassword,decryptMailPassword,sendPasswordResetMail,sendMailTest,sendWelcomeMail,localMailStatus } from '@/lib/cloud/server/mailer'
 describe('secure email reset delivery',()=>{
   let dir:string
   let previousPath:string|undefined
@@ -62,6 +62,14 @@ process.stdin.on('end',()=>fs.writeFileSync(${JSON.stringify(out)},raw))
     expect(raw).toContain('To: admin@example.test')
     expect(raw).toContain('MIME-Version: 1.0')
     expect(raw).not.toContain('reset-password?token=')
+  })
+  it('welcomes a newly registered user through the configured mail transport', async()=>{
+    await sendWelcomeMail('registered@example.test','新人用户')
+    const raw=readFileSync(join(dir,'email.txt'),'utf8')
+    expect(raw).toContain('To: registered@example.test')
+    expect(raw).toContain('Subject: =?UTF-8?B?')
+    expect(raw).toContain('欢迎注册 OC Studio')
+    expect(raw).toContain('新人用户')
   })
   it('detects a missing sendmail executable without pretending delivery',async()=>{
     const working=process.env.SENDMAIL_PATH
