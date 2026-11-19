@@ -373,7 +373,7 @@ export function WorkspaceEntityCatalog({
     </div>
     {kind === 'character' && <div className="border-b border-line/70 pt-3">
       <CharacterFolderBar folders={folders} total={characters.length} ungrouped={ungrouped}
-        value={folderFilter} onChange={setFolderFilter} onRename={renameFolder}
+        value={folderFilter} readOnly={!onCreate || blocked || !folderLoaded} onChange={setFolderFilter} onRename={renameFolder}
         onDelete={deleteFolder} onCreate={createFolder} />
       <div className="flex flex-wrap items-center gap-2 px-5 pb-3 text-caption text-ink-muted">
         <Users size={14} aria-hidden />
