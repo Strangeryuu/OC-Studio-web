@@ -48,10 +48,10 @@ export function CharacterFolderBar({
   value: FolderFilter
   /** 切换筛选：带上点击事件，列表拿它算「打开 / 返回文件夹」动画的原点 */
   onChange: (next: FolderFilter, event?: React.MouseEvent<HTMLElement>) => void
-  onRename: (from: string, to: string) => Promise<void>
-  onDelete: (name: string) => Promise<void>
+  onRename: (from: string, to: string) => Promise<void | boolean>
+  onDelete: (name: string) => Promise<void | boolean>
   /** 新建（可能是空的）文件夹；成功后清空输入 */
-  onCreate: (name: string) => Promise<void>
+  onCreate: (name: string) => Promise<void | boolean>
   /** 文案里的实体称呼（角色 / 条目），只影响提示语 */
   noun?: string
   /** Hide management actions for read-only cloud members. */
@@ -71,8 +71,8 @@ export function CharacterFolderBar({
     const name = renameDraft.trim()
     setRenaming(null)
     if (name.length === 0 || name === from) return
-    await onRename(from, name)
-    if (value === from) onChange(name)
+    const saved = await onRename(from, name)
+    if (saved !== false && value === from) onChange(name)
   }
 
   const commitCreate = () => {
@@ -86,7 +86,7 @@ export function CharacterFolderBar({
     }
     setCreating(true)
     void onCreate(name)
-      .then(() => setCreateDraft(''))
+      .then(saved => { if (saved !== false) setCreateDraft('') })
       .catch(() => {})
       .finally(() => setCreating(false))
   }
