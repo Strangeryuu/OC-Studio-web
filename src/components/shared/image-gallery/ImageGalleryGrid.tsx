@@ -70,11 +70,11 @@ export function ImageGalleryGrid({
                 {onReplaceAt && <button type="button" title="替换图片"
                   aria-label={'替换第'+(idx+1)+'张图片'}
                   onClick={event => { event.stopPropagation(); onReplaceAt(idx) }}
-                  className="rounded-full bg-paper/90 p-1 text-ink shadow-sm"><Replace size={13}/></button>}
+                  className="rounded-full bg-paper/90 p-1 text-ink"><Replace size={13}/></button>}
                 {onRemoveAt && <button type="button" title="删除图片"
                   aria-label={'删除第'+(idx+1)+'张图片'}
                   onClick={event => { event.stopPropagation(); onRemoveAt(idx) }}
-                  className="rounded-full bg-paper/90 p-1 text-error shadow-sm"><Trash2 size={13}/></button>}
+                  className="rounded-full bg-paper/90 p-1 text-error"><Trash2 size={13}/></button>}
               </div>}
             </div>
           ))}
