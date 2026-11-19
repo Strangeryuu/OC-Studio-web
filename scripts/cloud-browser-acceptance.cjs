@@ -44,7 +44,7 @@ async function openSection(page, worldId, label) {
 }
 
 async function run() {
-  browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] })
+  browser = await chromium.launch({ headless: true, channel: 'chrome', args: ['--no-sandbox'] })
   const desktop = await browser.newContext({ viewport: { width: 1366, height: 900 } })
   const mobile = await browser.newContext({
     viewport: { width: 390, height: 844 }, isMobile: true,
