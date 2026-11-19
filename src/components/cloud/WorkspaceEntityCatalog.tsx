@@ -376,7 +376,7 @@ export function WorkspaceEntityCatalog({
           viewMode={viewMode}
           onViewModeChange={mode => { setViewMode(mode); writePreference(storageKey + '-view', mode) }} />
         {onCreate && <button type="button" disabled={blocked || loading || Boolean(error)} onClick={onCreate}
-          className={`${BTN_PRIMARY} border border-line shadow-sm hover:border-line-hover`}>
+          className={`${BTN_PRIMARY} border border-line hover:border-line-hover`}>
           <Plus size={16} strokeWidth={2} aria-hidden />新建{label}
         </button>}
       </div>
