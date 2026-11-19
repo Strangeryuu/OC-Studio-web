@@ -202,6 +202,7 @@ npm run build:web  # Next.js 生产构建
 开发记录与验收依据：
 
 - [Web 移植开发进度](docs/web-dev-progress.md)
+- [与上游逐模块功能差距及后续验收](docs/web-parity-audit-2026-11-19.md)
 - [高级功能验收清单](docs/web-advanced-acceptance.md)
 - [Docker / GHCR / VPS 部署](docs/web-docker-deployment.md)
 - [非 Docker 的 VPS 部署](docs/web-vps-deployment.md)
