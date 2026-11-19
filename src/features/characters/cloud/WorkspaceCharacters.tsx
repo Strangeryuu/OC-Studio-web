@@ -573,6 +573,31 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
     finally { pendingGraphWrite.current = null; setBusy(false) }
   }
 
+  async function saveGraphPositions(positions: Array<{
+    entityType: RelationNodeType; entityId: number; x: number; y: number,
+  }>): Promise<void> {
+    if (!canEdit || busy || transition.current || pendingGraphWrite.current)
+      throw new Error('当前无法整理关系图布局')
+    if (positions.length > 1000 || positions.some(row =>
+      !Number.isFinite(row.x) || !Number.isFinite(row.y) ||
+      !Number.isSafeInteger(row.entityId) || row.entityId <= 0))
+      throw new Error('节点位置数据无效')
+    setBusy(true)
+    const write = (async () => {
+      // Each cloud entity retains its own version and audit trail.
+      // A failed update stops the batch; the caller refreshes authoritative data.
+      for (const row of positions) {
+        await writeGraphPosition(row.entityType, row.entityId, {
+          x: Math.round(row.x * 10) / 10,
+          y: Math.round(row.y * 10) / 10,
+        })
+      }
+    })()
+    pendingGraphWrite.current = write
+    try { await write }
+    finally { pendingGraphWrite.current = null; setBusy(false) }
+  }
+
   async function saveGraphPosition(type: RelationNodeType, id: number, x: number, y: number) {
     if (busy || !canEdit || pendingGraphWrite.current) throw new Error('当前无法保存节点位置')
     setBusy(true)
@@ -711,6 +736,7 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
           error: graphError || characterList.error || countryList.error || eventList.error || noteList.error,
           refresh: refreshGraph,
           savePosition: canEdit && !busy ? saveGraphPosition : undefined,
+          savePositions: canEdit && !busy ? saveGraphPositions : undefined,
           createRelation: canEdit && !busy ? createGraphRelation : undefined,
           deleteRelation: canEdit && !busy ? deleteGraphRelation : undefined,
           patchRelation: canEdit && !busy ? patchGraphRelation : undefined,
