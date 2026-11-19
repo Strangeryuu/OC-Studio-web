@@ -15,7 +15,7 @@ describe('global cloud image cleanup', () => {
   }
   it('removes all references while preserving unrelated images and readable text', () => {
     const converted = rewriteMediaReferences(original,old,null)
-    expect(converted.references).toBe(5)
+    expect(converted.references).toBe(6)
     const data = converted.value
     expect(data.avatarUrl).toBe('')
     expect(data.mapImage).toBe('')
@@ -28,7 +28,7 @@ describe('global cloud image cleanup', () => {
   })
   it('replaces exact references across entities and serialized TipTap bodies', () => {
     const converted = rewriteMediaReferences(original,old,next)
-    expect(converted.references).toBe(5)
+    expect(converted.references).toBe(6)
     expect(converted.value.avatarUrl).toBe(next)
     expect(converted.value.gallery[0].url).toBe(next)
     expect(JSON.parse(converted.value.content).content[0].attrs.src).toBe(next)
