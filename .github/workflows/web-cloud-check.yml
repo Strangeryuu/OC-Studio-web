@@ -72,11 +72,25 @@ jobs:
       - name: 使用真实 PostgreSQL 完成登录与工作台 HTTP 联调
         run: |
           mkdir -p /tmp/ocstudio-ci-media
+          # CI-only sendmail captures the reset email for a real one-time token test.
+          # No message leaves this GitHub runner.
+          cat > /tmp/ocstudio-ci-sendmail <<'SH'
+          #!/bin/sh
+          cat > /tmp/ocstudio-ci-reset-mail.eml
+          SH
+          chmod 700 /tmp/ocstudio-ci-sendmail
+          export SENDMAIL_PATH=/tmp/ocstudio-ci-sendmail
+          export CI_MAIL_CAPTURE_PATH=/tmp/ocstudio-ci-reset-mail.eml
           node .next/standalone/server.js > /tmp/ocstudio-web-server.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT
           node scripts/cloud-http-smoke.cjs || {
             cat /tmp/ocstudio-web-server.log
+            exit 1
+          }
+          node scripts/cloud-reset-password-smoke.cjs || {
+            # Mail contains password-reset secrets: do not print it in CI logs.
+            tail -n 45 /tmp/ocstudio-web-server.log
             exit 1
           }
         env:
