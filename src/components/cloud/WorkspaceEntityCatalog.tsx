@@ -12,15 +12,14 @@ import { Avatar } from '@/components/shared/Avatar'
 import { CoverCard } from '@/components/shared/cover/CoverCard'
 import { CoverFlow } from '@/components/shared/CoverFlow'
 import { DeleteButton } from '@/components/shared/DeleteButton'
-import { SortableList, moveId } from '@/components/shared/list-dnd'
+import { SortableList, DragHandle, useSortableItem, moveId } from '@/components/shared/list-dnd'
 import { SortViewControls, normalizeViewMode, type ViewMode } from '@/components/shared/SortViewControls'
 import { CharacterFolderBar, type FolderFilter } from '@/features/characters/components/CharacterFolderBar'
 import { MoveToFolderMenu } from '@/features/characters/components/MoveToFolderMenu'
-import { sortCharacters, aliasesMatch, SORT_OPTIONS as CHARACTER_SORT_OPTIONS } from '@/features/characters/components/character-list-utils'
+import { sortCharacters, SORT_OPTIONS as CHARACTER_SORT_OPTIONS } from '@/features/characters/components/character-list-utils'
 import { sortCountryList, countryPreview, COUNTRY_SORT_OPTIONS } from '@/features/countries/components/country-list-utils'
 import { sortEvents, formatEventTime } from '@/features/events/utils'
 import { SORT_OPTIONS as EVENT_SORT_OPTIONS } from '@/features/events/components/event-list-utils'
-import { listFolders } from '@/features/characters/folders'
 import { resolveImageUrl } from '@/lib/image-service'
 import { coverExcerpt } from '@/lib/cover'
 import { flushPendingSaves } from '@/lib/pending-saves'
@@ -55,9 +54,6 @@ const allSorts: Record<CatalogKind, { label: string; value: string }[]> = {
   event: EVENT_SORT_OPTIONS,
 }
 
-function isCharacter(kind: CatalogKind, data: CatalogItem['data']): data is Character {
-  return kind === 'character'
-}
 function itemName(kind: CatalogKind, data: CatalogItem['data']) {
   return kind === 'event' ? (data as Event).title : (data as Character | Country).name
 }
@@ -99,6 +95,56 @@ async function catalogRequest(workspaceId: string, body: unknown) {
     throw new Error(payload.error ?? '目录保存失败')
   }
   return response.json() as Promise<{ folders?: string[]; folderVersion?: number }>
+}
+
+/** Local-only counter: the upstream folders module imports Dexie, which cloud pages must not load. */
+function countFolders(characters: Character[], registered: string[]) {
+  const counts = new Map<string, number>()
+  for (const name of registered) counts.set(name, 0)
+  let ungrouped = 0
+  for (const character of characters) {
+    const folder = (character.folder ?? '').trim()
+    if (!folder) ungrouped += 1
+    else counts.set(folder, (counts.get(folder) ?? 0) + 1)
+  }
+  return { folders: [...counts].map(([name, count]) => ({ name, count }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans')), ungrouped }
+}
+
+function CloudCatalogRow({ item, kind, label, selected, disabled, sortable, folders, canMove,
+  onSelect, onDelete, onMove }: {
+  item: CatalogItem
+  kind: CatalogKind
+  label: string
+  selected: boolean
+  disabled: boolean
+  sortable: boolean
+  folders: string[]
+  canMove: boolean
+  onSelect: () => void
+  onDelete?: () => Promise<void>
+  onMove: (folder: string | null) => void
+}) {
+  const { setNodeRef, style, attributes, listeners, cardAttributes, cardListeners } =
+    useSortableItem(item.data.id, !sortable)
+  const data = item.data
+  const avatar = iconUrl(kind, data)
+  return <div ref={setNodeRef} style={style} {...cardAttributes} {...cardListeners}
+    className={`group flex min-w-0 items-center gap-3 rounded-item border-b border-line/60 px-3 py-2.5 transition-colors hover:bg-[var(--oc-hover)]
+      ${selected ? 'bg-[var(--oc-hover)]' : ''}`}>
+    {sortable && <DragHandle handleProps={{ attributes, listeners }} />}
+    {(kind === 'character' || kind === 'country') &&
+      <Avatar src={avatar} type={kind === 'country' ? 'flag' : 'avatar'} size="md" />}
+    <button type="button" disabled={disabled} onClick={onSelect}
+      className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
+      <span className="truncate text-body font-medium text-ink">{itemName(kind, data)}</span>
+      <span className="truncate text-caption text-ink-muted">
+        {itemMeta(kind, data) || coverExcerpt(itemPreview(kind, data), 80) || '暂无简介'}
+      </span>
+    </button>
+    {canMove && <MoveToFolderMenu folders={folders} current={(data as Character).folder} onMove={onMove} />}
+    {onDelete && <DeleteButton onDelete={onDelete} label={'删除' + label} />}
+  </div>
 }
 
 export function WorkspaceEntityCatalog({
@@ -157,7 +203,7 @@ export function WorkspaceEntityCatalog({
     () => kind === 'character' ? rows.map(row => row.data as Character) : [],
     [kind, rows],
   )
-  const { folders, ungrouped } = useMemo(() => listFolders(characters, registeredFolders),
+  const { folders, ungrouped } = useMemo(() => countFolders(characters, registeredFolders),
     [characters, registeredFolders])
   const knownFolders = folders.map(folder => folder.name)
 
@@ -293,26 +339,13 @@ export function WorkspaceEntityCatalog({
       </>} />
   }
 
-  const renderRow = (item: CatalogItem) => {
-    const data = item.data
-    const avatar = iconUrl(kind, data)
-    return <div key={item.entityId}
-      className={`group flex min-w-0 items-center gap-3 rounded-item border-b border-line/60 px-3 py-2.5 transition-colors hover:bg-[var(--oc-hover)] ${selectedId === item.entityId ? 'bg-[var(--oc-hover)]' : ''}`}>
-      {kind === 'character' || kind === 'country'
-        ? <Avatar src={avatar} type={kind === 'country' ? 'flag' : 'avatar'} size="md" /> : null}
-      <button type="button" disabled={blocked} onClick={() => onSelect(item.entityId)}
-        className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
-        <span className="truncate text-body font-medium text-ink">{itemName(kind, data)}</span>
-        <span className="truncate text-caption text-ink-muted">
-          {itemMeta(kind, data) || coverExcerpt(itemPreview(kind, data), 80) || '暂无简介'}
-        </span>
-      </button>
-      {kind === 'character' && folderLoaded && !blocked && onCreate &&
-        <MoveToFolderMenu folders={knownFolders} current={(data as Character).folder}
-          onMove={folder => void moveCharacter(item, folder)} />}
-      {onDelete && !blocked && <DeleteButton onDelete={() => onDelete(item)} label={'删除' + label} />}
-    </div>
-  }
+  const renderRow = (item: CatalogItem) => <CloudCatalogRow key={item.entityId}
+    item={item} kind={kind} label={label} selected={selectedId === item.entityId}
+    disabled={blocked} sortable={canDrag} folders={knownFolders}
+    canMove={kind === 'character' && folderLoaded && !blocked && Boolean(onCreate)}
+    onSelect={() => onSelect(item.entityId)}
+    onDelete={onDelete && !blocked ? () => onDelete(item) : undefined}
+    onMove={folder => void moveCharacter(item, folder)} />
 
   return <section className="min-w-0 overflow-hidden rounded-panel border border-line bg-paper">
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-5">
