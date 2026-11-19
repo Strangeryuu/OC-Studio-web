@@ -23,7 +23,7 @@ GitHub web-dev push
 
 ## 一、发布分支与镜像版本
 
-1. 将代码推送到 `web-dev`。仓库已有 `.github/workflows/web-cloud-check.yml`：只有 `web` 与 `postgres-schema` 两个作业成功，才执行 `publish-docker`。每个测试通过的提交都发布独立 `sha-...` 镜像；仅当该提交仍为 `web-dev` 最新 HEAD 时才同步更新 `dev` 标签。
+1. 将代码推送到 `web-dev`。仓库已有 `.github/workflows/web-cloud-check.yml`：只有 `web`、`postgres-schema` 和 `first-run-onboarding` 三个作业成功，才执行 `publish-docker`。每个测试通过的提交都发布独立 `sha-...` 镜像；仅当该提交仍为 `web-dev` 最新 HEAD 时才同步更新 `dev` 标签。
 2. Actions 使用仓库的 `GITHUB_TOKEN` + `packages: write` 发布至 GitHub Container Registry；不需要把私人 Registry 令牌提交到仓库。
 3. 先发布迁移镜像，再发布 Web 镜像。每个通过 CI 的提交都有可回溯的 `:sha-<提交前 12 位>`；如果该提交仍为最新 `web-dev` HEAD，再将两张镜像提升为浮动 `:dev`。在持续频繁推送代码时，`dev` 可能暂时落后于仓库最新提交，仍以最近成功提升的版本为准。当前只针对 `linux/amd64` 构建；ARM VPS 需要增加多架构构建。
 4. 可从 GitHub 仓库 **Actions → Web cloud verification** 查看代码测试及 Docker 发布状态，也可在 **Packages** 查看 OCI 镜像。
@@ -41,6 +41,7 @@ git clone --branch web-dev --single-branch https://github.com/Strangeryuu/OC-Stu
 sudo mkdir -p /opt/ocstudio/data/media
 sudo install -m 0644 ocstudio-deploy-src/deploy/compose.yaml /opt/ocstudio/compose.yaml
 sudo install -m 0755 ocstudio-deploy-src/deploy/update.sh /opt/ocstudio/update.sh
+sudo install -m 0755 ocstudio-deploy-src/deploy/backup.sh /opt/ocstudio/backup.sh
 sudo cp ocstudio-deploy-src/deploy/.env.example /opt/ocstudio/.env
 sudo chown -R 10001:10001 /opt/ocstudio/data/media
 sudo chmod 700 /opt/ocstudio/data/media
@@ -89,13 +90,22 @@ sudo systemctl list-timers ocstudio-update.timer
 
 此定时器定期运行更新脚本，发现已通过 CI 的新 `:dev` 镜像才更新。无需把 VPS SSH 私钥提供给 GitHub，也不用开暴露在公网的部署 webhook。如果希望正式环境每次更新都人工审核，关闭 timer，并将 `IMAGE_TAG` 固定为已经验收的 SHA 标签。
 
-部署脚本/Compose 文件自身有改动时，请手动从 GitHub 同步到 VPS；自动更新的是已发布的**应用镜像**。
+部署脚本/Compose 文件自身有改动时，请手动从 GitHub 同步到 VPS；尤其要确保 `update.sh` 与 `backup.sh` 同步更新。自动更新的是已发布的**应用镜像**。
 
 ## 四、数据保存、备份及升级注意事项
 
 Compose 的 `postgres-data` 是持久命名卷，`data/media` 是宿主机私有媒体目录。二者都需要纳入离站备份。
 
-更新脚本在替换已有 Web 容器前，会备份 PostgreSQL dump 至 `backups/postgres-时间.dump`，媒体目录至 `backups/media-时间.tgz`。请定期将这些备份加密并复制到服务器外、实施保留期与恢复演练，特别是升级数据库结构前。
+更新脚本在执行迁移前调用 `backup.sh`，即使 Web 容器已经停止也会备份现存的 PostgreSQL 数据与私有媒体。备份保存在 `backups/UTC时间-PID/` 下，包含 `postgres.dump`、`media.tgz`、`SHA256SUMS` 和说明文件。脚本先检查 PostgreSQL 自定义归档可读取、媒体 tar 可解压、两份文件的 SHA-256 正确，随后原子发布这组备份；任一操作失败会中止升级并清理临时备份。可以单独执行：
+
+```bash
+sudo /opt/ocstudio/backup.sh
+# 将下面路径替换为实际输出的备份目录
+cd /opt/ocstudio/backups/UTC时间-PID
+sha256sum -c SHA256SUMS
+```
+
+请定期将整个备份目录加密后复制到服务器外，安排保留期并在隔离测试实例恢复数据库和媒体。数据库与媒体备份采集存在时间间隔，正式业务强一致性快照请安排写入维护窗口。
 
 重要：数据库迁移通常向前演进。回退到旧镜像时，仍应先检查数据库 schema 兼容性，必要时使用升级前备份在维护窗口恢复。脚本对健康检查失败会报错并保留备份，不自动回滚数据库。若使用 `IMAGE_TAG=sha-...` 做发布冻结，请分别确认 Web 和迁移镜像标签都存在。
 
