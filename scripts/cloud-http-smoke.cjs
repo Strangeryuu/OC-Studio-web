@@ -300,8 +300,7 @@ async function run() {
   const history = await fetch(BASE + '/api/entities/' + entityId + '/revisions', {
     headers: { Cookie: cookie },
   })
-  assert(history.status === 200 && (await history.json()).revisions.length === 2,
-    'Character revisions were not recorded')
+  assert(history.status === 410, 'Character change history must be disabled')
 
   const anotherWorld = await fetch(BASE + '/api/workspaces', {
     method: 'POST', headers: { Cookie: cookie, Origin: PUBLIC_ORIGIN, 'Content-Type': 'application/json' },
@@ -385,8 +384,7 @@ async function run() {
   const linkedHistory = await fetch(BASE + '/api/entities/' + countryEntityId + '/revisions', {
     headers: { Cookie: cookie },
   })
-  assert(linkedHistory.status === 200 && (await linkedHistory.json()).revisions.length === 2,
-    'Pin cascade revision missing')
+  assert(linkedHistory.status === 410, 'Pin change history must be disabled')
 
   const removeMap = await fetch(BASE + '/api/workspaces/' + workspaceId + '/maps/' + mapEntityId, {
     method: 'DELETE', headers: mapHeaders, body: JSON.stringify({ expectedVersion: 2 }),
@@ -672,8 +670,7 @@ async function run() {
   const graphHistory=await fetch(BASE+'/api/entities/'+graphLeft.id+'/revisions',{
     headers:{Cookie:cookie},
   })
-  assert(graphHistory.status===200&&(await graphHistory.json()).revisions.length===3,
-    'Cloud graph relationship revisions were not recorded')
+  assert(graphHistory.status===410,'Graph relationship history must be disabled')
 
   const graphMediaUrl='/api/media/'+asset.id
   const graphWithImageAndPosition={...graphLink,relatedCharacters:[],
@@ -698,9 +695,7 @@ async function run() {
   const graphExpandedHistory=await fetch(BASE+'/api/entities/'+graphLeft.id+'/revisions',{
     headers:{Cookie:cookie},
   })
-  assert(graphExpandedHistory.status===200&&
-    (await graphExpandedHistory.json()).revisions.length===5,
-    'Graph media, position and undo changes were missing from history')
+  assert(graphExpandedHistory.status===410,'Graph media and position history must be disabled')
 
 
   // Acceptance: real PostgreSQL + logged-in HTTP lifecycle for all four advanced modules.
@@ -852,11 +847,8 @@ async function run() {
   const sourceSnapshot = archive.cloud.records.find(row => row.id === sourceCharacter.id)
   const restoredRevisions = await fetch(BASE+'/api/entities/'+targetCharacterId+'/revisions',
     {headers:{Cookie:cookie}})
-  const restoredHistory = (await restoredRevisions.json()).revisions
-  assert(restoredRevisions.status === 200 &&
-    new Date(restoredHistory[0].created_at).getTime() ===
-      new Date(sourceSnapshot.history[0].createdAt).getTime(),
-    'Cross-VPS backup restore changed the original revision timestamp')
+  assert(sourceSnapshot?.history.length===0 && restoredRevisions.status===410,
+    'Backups must exclude modification history while preserving current content')
   const copiedConfigResponse = await scoped(restoreWorld,'/customization')
   assert((await copiedConfigResponse.json()).customization.categories.some(c=>c.name==='迁移文物'),
     'Custom categories were missing from restored archive')
