@@ -20,6 +20,7 @@ jobs:
           bash -n deploy/update.sh deploy/backup.sh scripts/cloud-deploy-backup-check.sh
           bash scripts/cloud-deploy-backup-check.sh
           docker compose --env-file deploy/.env.example -f deploy/compose.yaml config --quiet
+          docker compose --env-file deploy/.env.example -f deploy/compose.yaml -f deploy/compose.mail.yaml config --quiet
       - name: Verify first-deploy paired backup with real PostgreSQL container
         shell: bash
         run: |
@@ -232,6 +233,17 @@ jobs:
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
           cache-from: type=gha,scope=ocstudio-web
           cache-to: type=gha,mode=max,scope=ocstudio-web
+
+      - name: Verify sendmail executable and non-root runtime in published Web image
+        shell: bash
+        run: |
+          docker pull "${WEB_IMAGE}:${REVISION_TAG}"
+          docker run --rm --entrypoint sh "${WEB_IMAGE}:${REVISION_TAG}" -ec '
+            test "$(id -u)" = "10001"
+            test "$HOME" = "/home/ocstudio"
+            test -x /usr/sbin/sendmail
+            /usr/sbin/sendmail --version | grep -qi msmtp
+          '
 
       # Every verified commit publishes an immutable SHA image. Only a verified
       # current branch head may promote both SHA images to the floating dev tags.
