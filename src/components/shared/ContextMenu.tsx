@@ -23,7 +23,7 @@ function toPointItems(items: ContextMenuItem[]): PointMenuItem[] {
 }
 
 /**
- * 右键菜单：长按/右键弹出，位置自动贴边；带子菜单；选区变化时自动收起。
+ * 右键菜单：长按/右键弹出，位置自动贴边；带子菜单；仅明确关闭操作才收起。
  *
  * 布局 / 键盘 / 子菜单 / 点外关闭都归 `PointMenu`（Base UI Menu + 虚拟锚点）——
  * 子菜单现在能键盘进（→ / ← / Esc 逐层关 / Enter 确认）。
@@ -43,9 +43,7 @@ export function ContextMenu({ children, items }: ContextMenuProps) {
     // 坐标在「打开」的同一次更新里量好，不会先在左上角闪一帧
     setPosition({ x: e.clientX, y: e.clientY })
     setOpen(true)
-
   }, [])
-
 
   return (
     <div onContextMenu={handleContextMenu}>

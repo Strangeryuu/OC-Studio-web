@@ -263,6 +263,13 @@ export function PointMenu({
          * 子菜单的开关交给 `Menu.SubmenuRoot` 自己管。
          */
         if (details.reason === 'sibling-open') return
+        // Submenus render in separate portals. A press on a submenu item is
+        // still an interaction *inside* the menu hierarchy, even if a browser
+        // reports it as an outside press relative to the parent popup.
+        if (details.reason === 'outside-press') {
+          const target = details.event.target
+          if (target instanceof Element && target.closest('[role="menu"]')) return
+        }
         // A child popup can briefly move focus through the overlay root while
         // its sibling portal mounts. Only explicit dismissal should close the
         // entire menu. Pointer hover/blur must never dismiss a user's choices.

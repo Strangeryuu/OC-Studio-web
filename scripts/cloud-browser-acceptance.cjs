@@ -178,7 +178,8 @@ async function run() {
   assert(await avatarCategory.isVisible(), 'Avatar parent menu disappeared during submenu hover')
   const avatarFileChooser = desktopPage.waitForEvent('filechooser', { timeout: 5000 })
   await avatarUpload.click()
-  await avatarFileChooser
+  const chooser = await avatarFileChooser
+  await chooser.setFiles([])
 
   // Right-click insertion submenu must also stay open after the selection
   // changes as focus moves from the editor to its nested menu.

@@ -36,7 +36,6 @@ export function GlobalContextMenu({ children }: { children: ReactNode }) {
     // 坐标在「打开」的同一次更新里量好，不会先在左上角闪一帧
     setPosition({ x, y })
     setOpen(true)
-
   }, [])
 
   const handleContextMenu = useCallback(
@@ -72,7 +71,6 @@ export function GlobalContextMenu({ children }: { children: ReactNode }) {
   }, [handleContextMenu])
 
   const close = useCallback(() => setOpen(false), [])
-
 
   const handleCut = useCallback(() => {
     const el = targetRef.current
