@@ -24,6 +24,7 @@ import { EditorCore } from '@/components/editor/EditorCore'
 import { WorkspaceEntityHistory } from '@/components/cloud/WorkspaceEntityHistory'
 import { insertWorkspaceBodyImage, useWorkspaceDraftGuard, useWorkspaceImageUpload } from '@/components/cloud/workspace-editor-guards'
 import { WorkspaceBodyImageControls } from '@/components/cloud/WorkspaceBodyImageControls'
+import { MediaActionButton } from '@/components/shared/MediaActionButton'
 import { flushPendingSaves, registerPendingSave } from '@/lib/pending-saves'
 import { docRevisionChanged } from '@/lib/save-revision'
 import { hasNewBodyImages } from '@/lib/cloud/character-media'
@@ -71,6 +72,7 @@ function CloudBookInfo({ snapshot, adapter, canEdit, disabled, onSaved }: Mutabl
   snapshot: OriginalNoteSnapshot
 }) {
   const [draft, setDraft] = useState(() => rootFields(snapshot.entity))
+  const coverInput = useRef<HTMLInputElement>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const baseline = useRef(snapshot)
@@ -154,12 +156,12 @@ function CloudBookInfo({ snapshot, adapter, canEdit, disabled, onSaved }: Mutabl
       <div className={FIELD_ROW}><span className={FIELD_LABEL}>小说封面</span>
         {draft.novelCover && <img src={draft.novelCover} alt="当前小说封面"
           className="h-28 w-20 rounded-item object-cover" />}
-        <label className={BTN_QUIET + ' cursor-pointer'}>{draft.novelCover ? '替换小说封面' : '上传小说封面'}
-          <input type="file" aria-label="上传小说封面" accept="image/png,image/jpeg,image/webp"
-            onChange={event => {const file=event.target.files?.[0];event.target.value='';void uploadCover(file)}} className="sr-only" />
-        </label>
-        {draft.novelCover && <button type="button" className={BTN_QUIET}
-          onClick={() => void removeCover()}>删除小说封面</button>}
+        <input ref={coverInput} type="file" aria-label="上传小说封面" accept="image/png,image/jpeg,image/webp"
+          onChange={event => {const file=event.target.files?.[0];event.target.value='';void uploadCover(file)}} className="sr-only" />
+        <MediaActionButton label="小说封面操作" disabled={!writable} items={[
+          {label:draft.novelCover?'替换小说封面':'上传小说封面',onSelect:()=>coverInput.current?.click()},
+          ...(draft.novelCover?[{label:'删除小说封面',danger:true,onSelect:()=>void removeCover()}]:[]),
+        ]}/>
       </div>
       <label className="flex flex-col gap-1 text-ui"><span>简介</span>
         <textarea aria-label="小说简介" rows={2} value={draft.novelSynopsis}

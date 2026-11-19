@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ImagePlus, Save, Trash2 } from 'lucide-react'
+import { Save } from 'lucide-react'
+import { MediaActionButton } from '@/components/shared/MediaActionButton'
 import { DashboardView, type DashboardData, type DashboardProps } from '@/features/dashboard/components/Dashboard'
 import { useWorkspaceDraftGuard, useWorkspaceImageUpload } from '@/components/cloud/workspace-editor-guards'
 import { registerPendingSave } from '@/lib/pending-saves'
@@ -20,6 +21,7 @@ export function WorkspaceHome({ workspaceId, canUpdate, ...dashboard }: Workspac
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const writing = useRef<Promise<void> | null>(null)
+  const coverInput=useRef<HTMLInputElement>(null)
   const upload = useWorkspaceImageUpload(workspaceId, canUpdate && !saving, setUploading, setError)
 
   useEffect(() => {
@@ -78,21 +80,15 @@ export function WorkspaceHome({ workspaceId, canUpdate, ...dashboard }: Workspac
 
   return <section className="min-w-0">
     {canUpdate && <div className="flex flex-wrap items-center justify-end gap-2 border-b border-line py-1">
-      <label className={BTN_QUIET + ' cursor-pointer'}>
-        <ImagePlus size={14}/>上传世界封面
-        <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only"
-          disabled={uploading || saving} aria-label="上传世界封面"
-          onChange={event => {
-            const file = event.target.files?.[0]; event.target.value = ''
-            void choose(file)
-          }} />
-      </label>
-      {(coverUrl || draft) && <button type="button" className={BTN_QUIET}
-        disabled={saving || uploading} onClick={() => {
-          if (window.confirm('确认移除世界观封面？其他词条的同一图片仍保留。')) void save('')
-        }}>
-        <Trash2 size={14}/>移除封面
-      </button>}
+      <input ref={coverInput} type="file" accept="image/png,image/jpeg,image/webp" className="sr-only"
+        disabled={uploading || saving} aria-label="上传世界封面"
+        onChange={event => {const file=event.target.files?.[0];event.target.value='';void choose(file)}} />
+      <MediaActionButton label="世界封面操作" disabled={uploading||saving} items={[
+        {label:coverUrl||draft?'替换世界封面':'上传世界封面',onSelect:()=>coverInput.current?.click()},
+        ...((coverUrl||draft)?[{label:'删除世界封面',danger:true,onSelect:()=>{
+          if(window.confirm('确认移除世界观封面？其他词条的同一图片仍保留。'))void save('')
+        }}]:[]),
+      ]}/>
       {draft !== null && <button type="button" className={BTN_QUIET}
         disabled={saving || uploading} onClick={() => void save(draft)}>
         <Save size={14}/>重试保存
