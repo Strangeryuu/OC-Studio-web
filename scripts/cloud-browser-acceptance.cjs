@@ -15,10 +15,22 @@ async function login(context) {
   // Use the same Better Auth credential endpoint already validated by the
   // PostgreSQL HTTP smoke, but retain each browser context's separate cookie jar.
   // Browser acceptance here tests graph/timeline behavior, not login animations.
-  const loginResponse = await context.request.post(BASE + '/api/auth/sign-in/email', {
-    headers: { Origin: BASE },
-    data: { email: 'ci-admin@example.test', password: PASSWORD },
-  })
+  let loginResponse
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    loginResponse = await context.request.post(BASE + '/api/auth/sign-in/email', {
+      headers: { Origin: BASE },
+      data: { email: 'ci-admin@example.test', password: PASSWORD },
+    })
+    if (loginResponse.status() !== 429) break
+    // The existing HTTP smoke also signs in. Honor Better Auth's rate limit
+    // window instead of sharing tokens or disabling production protections.
+    if (attempt < 3) {
+      const retryAfter = Number(loginResponse.headers()['retry-after'])
+      const pause = Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.min(120, Math.max(1, retryAfter)) * 1000 : 65_000
+      await new Promise(resolve => setTimeout(resolve, pause))
+    }
+  }
   assert.equal(loginResponse.status(), 200,
     'Better Auth browser context login returned HTTP ' + loginResponse.status())
   const page = await context.newPage()
