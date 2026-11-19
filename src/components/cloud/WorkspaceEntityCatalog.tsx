@@ -235,8 +235,7 @@ export function WorkspaceEntityCatalog({
     return ordered.map(data => byId.get(data.id)!).filter(Boolean)
   }, [kind, filtered, sortKey])
 
-  const canDrag = sortKey === 'manual' && search.trim() === '' && (kind !== 'character' ||
-    (folderFilter === 'all' && countryFilter === 'all')) && !blocked && !loading && rows.length > 1
+  const canDrag = sortKey === 'manual' && !blocked && !loading && sorted.length > 1
 
   const updateFolders = async (nextFolders: string[], updates: { id: string; expectedVersion: number; folder: string | null }[]) => {
     if (blocked || !folderLoaded) return false
@@ -297,10 +296,17 @@ export function WorkspaceEntityCatalog({
 
   const reorder = (active: number | string, over: number | string) => {
     if (!canDrag) return
-    const ids = sorted.map(item => item.data.id)
+    // Keep every hidden entry in the batch, just as the upstream list does.
+    // A filtered folder may be reordered without losing unrelated entries.
+    const ordered = kind === 'character'
+      ? sortCharacters(rows.map(row => row.data as Character), 'manual')
+      : kind === 'country'
+        ? sortCountryList(rows.map(row => row.data as Country), 'manual')
+        : sortEvents(rows.map(row => row.data as Event), 'manual')
+    const ids = ordered.map(data => data.id)
     const moved = moveId(ids, Number(active), Number(over))
     if (moved.every((id, index) => id === ids[index])) return
-    const map = new Map(sorted.map(item => [item.data.id, item]))
+    const map = new Map(rows.map(item => [item.data.id, item]))
     setOperationBusy(true)
     setOperationError(null)
     void (async () => {
@@ -388,8 +394,7 @@ export function WorkspaceEntityCatalog({
           <option value="all">全部国家</option>
           {countries.map(country => <option key={country.id} value={country.id}>{country.name}</option>)}
         </select>
-        {sortKey === 'manual' && (search.trim() || folderFilter !== 'all' || countryFilter !== 'all') &&
-          <span>显示全部角色后可拖动手动排序</span>}
+        {sortKey === 'manual' && <span>拖动可调整顺序，其他分组的角色保持原有相对顺序</span>}
       </div>
     </div>}
     {(error || operationError) && <p role="alert" className="px-5 py-3 text-ui text-error">{error || operationError}</p>}
