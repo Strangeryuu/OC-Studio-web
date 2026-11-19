@@ -42,6 +42,23 @@ describe('global cloud image cleanup', () => {
     const onlyLayer = rewriteMediaReferences({ mapViews: { terrain: old } }, old, null)
     expect(onlyLayer.value.mapViews).toBeNull()
   })
+  it('clears legacy media UUIDs bound to the same deleted asset', () => {
+    const oldId = old.slice('/api/media/'.length)
+    const nextId = next.slice('/api/media/'.length)
+    const record = {
+      avatarMediaId: oldId, headerMediaId: oldId,
+      portraitMediaIds: [oldId, nextId], galleryMediaIds: [oldId],
+    }
+    const removed = rewriteMediaReferences(record, old, null)
+    expect(removed.references).toBe(4)
+    expect(removed.value).toEqual({
+      avatarMediaId: null, headerMediaId: null,
+      portraitMediaIds: [nextId], galleryMediaIds: [],
+    })
+    const replaced = rewriteMediaReferences(record, old, next)
+    expect(replaced.value.avatarMediaId).toBe(nextId)
+    expect(replaced.value.galleryMediaIds).toEqual([nextId])
+  })
   it('keeps an unrelated asset untouched', () => {
     expect(rewriteMediaReferences(original,next,null)).toEqual({value:original,references:0})
   })
