@@ -93,11 +93,11 @@ export function AlbumCard({
       {(onReplace || onDelete) && <div className="mt-1 flex flex-wrap items-center gap-1">
         {onReplace && <button type="button" onClick={onReplace}
           aria-label={'替换图片 ' + entry.sourceName}
-          className="flex items-center gap-1 rounded px-1.5 py-1 text-caption text-ink-muted hover:bg-paper-alt">
+          className="flex items-center gap-1 rounded-item px-1.5 py-1 text-caption text-ink-muted hover:bg-paper-alt">
           <Replace size={13}/>替换</button>}
         {onDelete && <button type="button" onClick={onDelete}
           aria-label={'删除图片 ' + entry.sourceName}
-          className="flex items-center gap-1 rounded px-1.5 py-1 text-caption text-error hover:bg-paper-alt">
+          className="flex items-center gap-1 rounded-item px-1.5 py-1 text-caption text-error hover:bg-paper-alt">
           <Trash2 size={13}/>删除</button>}
       </div>}
 
