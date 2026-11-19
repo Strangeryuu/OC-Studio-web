@@ -17,6 +17,7 @@ export function PeriodBar({
   onEdit,
   onDelete,
   onLongPress,
+  readOnly = false,
 }: {
   period: import('@/types').Period
   left: number
@@ -28,11 +29,12 @@ export function PeriodBar({
   onEdit: () => void
   onDelete: () => void
   onLongPress?: () => void
+  readOnly?: boolean
 }) {
   const isDark = useIsDarkTheme()
   const longPress = useLongPress({
     onLongPress: onLongPress ?? (() => {}),
-    enabled: isMobile,
+    enabled: isMobile && !readOnly,
   })
 
   // 底色是用户选的固定色，不随主题翻转 —— 文字也必须用固定墨色/纸色，
@@ -50,14 +52,14 @@ export function PeriodBar({
         height: 24,
         backgroundColor: fill,
       }}
-      onClick={onEdit}
+      onClick={readOnly ? undefined : onEdit}
       title={period.name}
       {...longPress}
     >
       <span className={`sticky left-2 truncate pl-2 text-caption font-medium leading-4 ${labelInk} ${isMobile ? 'pr-2' : 'pr-5'}`}>
         {period.name}
       </span>
-      {!isMobile ? (
+      {!isMobile && !readOnly ? (
         <button
           onClick={(e) => { e.stopPropagation(); onDelete() }}
           aria-label={`删除时期「${period.name}」`}
