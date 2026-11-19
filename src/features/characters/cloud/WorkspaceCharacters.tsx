@@ -34,7 +34,6 @@ import { OriginalEventEditor } from '@/features/events/cloud/OriginalEventEditor
 import { buildDefaultEvent } from '@/features/events/services'
 import { OriginalEventsCloudAdapter } from '@/lib/cloud/adapters/original-events'
 import { TimelineView } from '@/features/timeline/components/TimelineView'
-import { useDelayedFlag } from '@/lib/use-delayed-flag'
 import { buildDefaultCountry } from '@/features/countries/services'
 import { WorkspaceNavigation, type WorkspaceSection } from '@/components/cloud/WorkspaceNavigation'
 import { WorkspaceEntityCatalog } from '@/components/cloud/WorkspaceEntityCatalog'
@@ -206,43 +205,6 @@ function useWorkspaceRows<T extends { entityId: string }>(adapter: { list: () =>
     setRows(current => current.filter(row => row.entityId !== entityId))
   }, [])
   return { rows, loading, error, append, replace, reset, drop }
-}
-
-function WorkspaceEntryList<T extends { entityId: string }>({ label, rows, getLabel, selectedId, loading,
-  error, busy, onCreate, onSelect, onDelete }: {
-  label: string
-  rows: T[]
-  getLabel: (row: T) => string
-  selectedId: string | null
-  loading: boolean
-  error: string | null
-  busy: boolean
-  onCreate?: () => void
-  onSelect: (entityId: string) => void
-  onDelete?: (row: T) => Promise<void>
-}) {
-  const showLoading = useDelayedFlag(loading)
-  return <section className="flex flex-col gap-4 border-t border-line pt-5">
-    <div className="flex items-center justify-between gap-3">
-      <h2 className="text-reading font-semibold">{label}</h2>
-      {onCreate && <button type="button" className={BTN_QUIET} disabled={busy || loading || error !== null}
-        onClick={onCreate}>新建{label}</button>}
-    </div>
-    {error && <p role="alert" className="text-ui text-error">{error}</p>}
-    {showLoading && <p className="text-ui text-ink-muted">正在读取{label}…</p>}
-    {!loading && <div className="flex flex-wrap gap-2">
-      {rows.map(row => <div key={row.entityId} className="flex items-center gap-1 rounded-item border border-line/60 px-1 py-0.5">
-        <button type="button" className={BTN_QUIET}
-          aria-pressed={selectedId === row.entityId} disabled={busy}
-          onClick={() => onSelect(row.entityId)}>{getLabel(row)}</button>
-        {onDelete && <WorkspaceDeleteAction compact disabled={busy}
-          label={label + '「' + getLabel(row) + '」'}
-          description={'「' + getLabel(row) + '」将移入回收站，可恢复。相关引用会同步整理；有子词条时会保留子项并调整其层级。'}
-          onConfirm={() => onDelete(row)} />}
-      </div>)}
-      {rows.length === 0 && !error && <p className="text-ui text-ink-muted">暂无{label}</p>}
-    </div>}
-  </section>
 }
 
 function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescription, membersPanel }: WorkspaceProps) {
