@@ -23,8 +23,14 @@ export function readPeriodFields(v: unknown): PeriodFields | null {
   if (!obj(v) || typeof v.name !== 'string' || !v.name.trim() || v.name.length > 120 ||
       !validTime(v.startTime) || !validTime(v.endTime) || !colors.has(String(v.color)))
     return null
-  const a = parseYear(v.startTime)!, b = parseYear(v.endTime)!
-  if (a > b || (a === b && v.startTime > v.endTime)) return null
+  const sortKey = (date: string) => {
+    const p = date.replace(/^-/, '').split('-')
+    return [parseYear(date)!, Number(p[1] ?? 1), Number(p[2] ?? 1)]
+  }
+  const a = sortKey(v.startTime), b = sortKey(v.endTime)
+  if (a[0] > b[0] ||
+      (a[0] === b[0] && (a[1] > b[1] ||
+        (a[1] === b[1] && a[2] > b[2])))) return null
   return { name: v.name.trim(), startTime: v.startTime, endTime: v.endTime, color: v.color as string }
 }
 export function readWorkspacePeriods(value: unknown): Period[] | null {
