@@ -118,7 +118,34 @@ sha256sum -c SHA256SUMS
 
 1. 验证登录后才能读取任何资料库；两个世界观之间不可读取对方实体或私有图片。
 2. 验证上传角色立绘、小说封面、地图底图，重启/更新容器后仍能读取。
-3. 以 owner、editor、viewer 三个账号测试邀请、写入、删除与历史记录。
+3. 以 owner、editor、viewer 三个账号测试邀请、写入与删除；确认修改历史入口已关闭。
 4. 用第二个世界观和第二位成员测试并发保存、重排和删除版本冲突。
 5. 使用备份在独立测试环境恢复 PostgreSQL 与媒体目录，确认版本/图片一致。
 6. 升级到新 `:dev`，核对 Nginx HTTPS 和所有核心板块；在生产设置监控和告警。
+
+
+## 六、管理员可配置的世界观定时备份
+
+本次更新在管理员菜单增加 **自动备份**（路径：/admin/backups）。平台管理员可以启用或停用周期任务，设置每 1/6/12/24/72/168/720 小时执行，选择全部世界观或指定世界观，并设定每个世界观保留 1–30 个归档。页面支持手动生成、查看、下载归档。
+
+**第一次部署前**，在 /opt/ocstudio 下执行：
+
+```bash
+cd /opt/ocstudio
+# 确保 compose.yaml、update.sh 已更新为 web-dev 最新版
+mkdir -p data/scheduled-backups
+sudo chown -R 10001:10001 data/scheduled-backups
+sudo chmod 700 data/scheduled-backups
+# 在 .env 中设置独立的高强度调度密钥，例如：
+openssl rand -hex 32
+# 将生成的值填入 BACKUP_WORKER_TOKEN=...，切勿写入 Git 仓库
+sudo ./update.sh
+sudo docker compose --env-file .env -f compose.yaml ps backup-worker
+```
+
+Web 容器以 UID 10001 写入 data/scheduled-backups/<世界观UUID>/ 下的私有 .ocbak 归档，使用临时文件 + 原子改名避免产生半成品。调度容器每五分钟检查一次配置，根据管理员设定的备份周期判断是否需要执行；数据库 advisory lock 防止多个任务重复执行。归档下载接口仅面向平台管理员。
+
+定时备份针对**世界观资料与图片**；用户账号、系统认证设置和整个 PostgreSQL 数据库的灾难恢复仍由现有备份脚本 backup.sh 负责。建议同时保留全站 PostgreSQL+媒体双备份，并定期离站复制、验证恢复。设置范围为“指定世界观”时，至少选择一个世界观。
+
+旧部署目录里已有的 backups/UTC时间-PID/ 是升级前整站备份，新的 data/scheduled-backups/ 用于按周期生成世界观归档，两者分别管理。定时服务的密钥未配置时自动跳过定时请求，管理员仍可手动备份。
+
