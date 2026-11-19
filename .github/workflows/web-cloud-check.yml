@@ -96,9 +96,56 @@ jobs:
         env:
           MEDIA_ROOT: /tmp/ocstudio-ci-media
 
+  first-run-onboarding:
+    name: 全新实例管理员初始化验收
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ocstudio_ci
+          POSTGRES_PASSWORD: ci_only_pg_password
+          POSTGRES_DB: ocstudio_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ocstudio_ci -d ocstudio_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://ocstudio_ci:ci_only_pg_password@127.0.0.1:5432/ocstudio_ci
+      BETTER_AUTH_URL: http://localhost:3000
+      BETTER_AUTH_SECRET: ci_testing_only_randomized_secret_for_cloud_maps_2026
+      MEDIA_ROOT: /tmp/ocstudio-ci-media
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: 首次部署数据库初始化
+        run: |
+          npx auth migrate --yes --config ./src/lib/cloud/server/auth.ts
+          node scripts/cloud-migrate-business.cjs
+      - name: 构建首次部署服务
+        run: npm run build:web
+      - name: 首次访问引导、并发唯一管理员、初始化关闭测试
+        run: |
+          mkdir -p /tmp/ocstudio-ci-media
+          node .next/standalone/server.js > /tmp/ocstudio-first-run-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          node scripts/cloud-first-run-smoke.cjs || {
+            tail -n 100 /tmp/ocstudio-first-run-server.log
+            exit 1
+          }
+
   publish-docker:
     name: 构建并发布 Docker 至 GHCR
-    needs: [web, postgres-schema]
+    needs: [web, postgres-schema, first-run-onboarding]
     if: github.ref == 'refs/heads/web-dev'
     runs-on: ubuntu-latest
     timeout-minutes: 50
