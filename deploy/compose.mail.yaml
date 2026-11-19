@@ -1,0 +1,9 @@
+# Optional Sendmail-compatible SMTP relay for the Docker Web container.
+# Use with compose.yaml: update.sh automatically includes this file when present.
+# Before enabling, create BOTH bind-mounted files and set owner UID/GID 10001
+# with mode 0600. Missing files can otherwise become root-owned directories.
+services:
+  web:
+    volumes:
+      - ./mail/msmtprc:/home/ocstudio/.msmtprc:ro
+      - ./mail/smtp-password:/home/ocstudio/.msmtp-password:ro
