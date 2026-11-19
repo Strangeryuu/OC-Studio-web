@@ -514,7 +514,12 @@ export function WorkspaceMaps(props: Props) {
       </div>}
       {edit && canEdit && !generatorOpen && <div className="flex flex-wrap items-center gap-2 text-ui">
         <button type="button" className={BTN_QUIET} onClick={() => fileRef.current?.click()}
-          disabled={!canModify}>上传底图</button>
+          disabled={!canModify}>{map.image ? '替换底图' : '上传底图'}</button>
+        {map.image && <button type="button" className={BTN_QUIET} disabled={!canModify}
+          onClick={() => {
+            if (window.confirm('确认移除当前地图底图？地图锚点和标注会保留，其他引用图片仍保留。'))
+              updateMap({mapImage:null,mapViews:null,mapMode:null})
+          }}>删除底图</button>}
         <label>添加锚点 <select aria-label="选择要标注的条目" value={pick} disabled={!canModify}
           onChange={event => setPick(event.target.value)} className="rounded-control border border-line bg-paper px-2 py-1">
           <option value="">选择条目</option>

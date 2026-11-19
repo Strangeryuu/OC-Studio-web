@@ -113,6 +113,13 @@ function CloudBookInfo({ snapshot, adapter, canEdit, disabled, onSaved }: Mutabl
   const upload = useWorkspaceImageUpload(snapshot.workspaceId, writable,
     setBusy, setError)
 
+  async function removeCover() {
+    if (!writable || !draft.novelCover || !window.confirm('确认从当前小说移除封面？其他词条的同一图片仍会保留。')) return
+    setDraft(current => ({ ...current, novelCover: '' }))
+    draftRef.current = { ...draftRef.current, novelCover: '' }
+    await save({novelCover:''}).catch(() => undefined)
+  }
+
   async function uploadCover(file?: File) {
     if (!file || !writable) return
     const url = await upload(file, file.name)
@@ -144,10 +151,16 @@ function CloudBookInfo({ snapshot, adapter, canEdit, disabled, onSaved }: Mutabl
         <input aria-label="目标字数" type="number" min="0" value={draft.novelTargetWords}
           onChange={event => setDraft(row => ({ ...row, novelTargetWords: Math.max(0, Number(event.target.value) || 0) }))} className={FIELD_INPUT} />
       </label>
-      <label className={FIELD_ROW}><span className={FIELD_LABEL}>封面</span>
-        <input type="file" aria-label="上传小说封面" accept="image/png,image/jpeg,image/webp"
-          onChange={event => {const file=event.target.files?.[0];event.target.value='';void uploadCover(file)}} className="min-w-0 w-full text-caption" />
-      </label>
+      <div className={FIELD_ROW}><span className={FIELD_LABEL}>小说封面</span>
+        {draft.novelCover && <img src={draft.novelCover} alt="当前小说封面"
+          className="h-28 w-20 rounded-item object-cover" />}
+        <label className={BTN_QUIET + ' cursor-pointer'}>{draft.novelCover ? '替换小说封面' : '上传小说封面'}
+          <input type="file" aria-label="上传小说封面" accept="image/png,image/jpeg,image/webp"
+            onChange={event => {const file=event.target.files?.[0];event.target.value='';void uploadCover(file)}} className="sr-only" />
+        </label>
+        {draft.novelCover && <button type="button" className={BTN_QUIET}
+          onClick={() => void removeCover()}>删除小说封面</button>}
+      </div>
       <label className="flex flex-col gap-1 text-ui"><span>简介</span>
         <textarea aria-label="小说简介" rows={2} value={draft.novelSynopsis}
           onChange={event => setDraft(row => ({ ...row, novelSynopsis: event.target.value }))}
