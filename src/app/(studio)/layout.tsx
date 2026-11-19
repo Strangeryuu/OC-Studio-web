@@ -18,8 +18,9 @@ export const metadata: Metadata = {
 }
 
 export default async function StudioLayout({ children }: { children: React.ReactNode }) {
+  const requestHeaders=await headers()
   if(await setupNeeded())redirect('/setup')
-  const session = await auth.api.getSession({ headers: await headers() })
+  const session = await auth.api.getSession({ headers: requestHeaders })
   if (!session || session.user.banned) redirect('/login')
   return (
     <html lang="zh-CN" className="h-full antialiased" suppressHydrationWarning>
