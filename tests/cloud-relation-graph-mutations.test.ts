@@ -8,12 +8,12 @@ import {
 } from '@/features/relations/cloud/workspace-graph-mutations'
 
 const character = (id: number, name: string): Character =>
-  ({ id, name, relatedCharacters: [], relatedNotes: [], countryId: undefined }) as Character
+  ({ id, name, relatedCharacters: [], relatedNotes: [], countryId: undefined }) as unknown as Character
 const event = (id: number, title: string): Event =>
-  ({ id, title, characters: [], countries: [], relations: [] }) as Event
+  ({ id, title, characters: [], countries: [], relations: [] }) as unknown as Event
 const country = (id: number): Country => ({ id, name: '国度' + id }) as Country
 const note = (id: number, title: string): WorldEntry =>
-  ({ id, title, relations: [] }) as WorldEntry
+  ({ id, title, relations: [] }) as unknown as WorldEntry
 const rows = (): WorkspaceGraphEntities => ({
   characters: [character(1, '小羽'), character(2, '烟玖')],
   events: [event(3, '初次见面'), event(4, '再次相遇')],
