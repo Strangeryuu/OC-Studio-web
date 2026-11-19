@@ -78,7 +78,7 @@ describe('original entity adapters against PostgreSQL', () => {
     mediaRoot = mkdtempSync(join(tmpdir(), 'ocstudio-cloud-test-'))
     process.env.MEDIA_ROOT = mediaRoot
     state.db = new PGlite()
-    await state.db.exec('CREATE TABLE "user" (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL, banned BOOLEAN NOT NULL DEFAULT false)')
+    await state.db.exec('CREATE TABLE "user" (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL, role TEXT DEFAULT 'user', banned BOOLEAN NOT NULL DEFAULT false)')
     for (const file of readdirSync('cloud/migrations').filter(name => name.endsWith('.sql')).sort()) {
       await state.db.exec(readFileSync(`cloud/migrations/${file}`, 'utf8'))
     }
