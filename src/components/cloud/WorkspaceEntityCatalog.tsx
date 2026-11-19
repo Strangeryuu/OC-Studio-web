@@ -21,6 +21,7 @@ import { sortCountryList, countryPreview, COUNTRY_SORT_OPTIONS } from '@/feature
 import { sortEvents, formatEventTime } from '@/features/events/utils'
 import { SORT_OPTIONS as EVENT_SORT_OPTIONS } from '@/features/events/components/event-list-utils'
 import { resolveImageUrl } from '@/lib/image-service'
+import { resolveCharacterCountryId } from '@/lib/membership'
 import { coverExcerpt } from '@/lib/cover'
 import { flushPendingSaves } from '@/lib/pending-saves'
 import { BTN_PRIMARY } from '@/lib/ui-tokens'
@@ -62,10 +63,12 @@ function itemPreview(kind: CatalogKind, data: CatalogItem['data']) {
   if (kind === 'country') return countryPreview(data as Country)
   return (data as Event).summary
 }
-function itemMeta(kind: CatalogKind, data: CatalogItem['data']) {
+function itemMeta(kind: CatalogKind, data: CatalogItem['data'], countries: Country[] = []) {
   if (kind === 'character') {
     const character = data as Character
-    return [character.race, character.nationalityLegacy].filter(Boolean).join(' · ')
+    const countryId = resolveCharacterCountryId(character, countries)
+    const countryName = countries.find(country => country.id === countryId)?.name || character.nationalityLegacy
+    return [countryName, character.race].filter(Boolean).join(' · ')
   }
   if (kind === 'event') {
     const event = data as Event
@@ -220,10 +223,10 @@ export function WorkspaceEntityCatalog({
       const folder = (character.folder ?? '').trim()
       if (folderFilter === 'ungrouped' && folder !== '') return false
       if (folderFilter !== 'all' && folderFilter !== 'ungrouped' && folder !== folderFilter) return false
-      if (countryFilter !== 'all' && character.countryId !== countryFilter) return false
+      if (countryFilter !== 'all' && resolveCharacterCountryId(character, countries) !== countryFilter) return false
     }
     return true
-  }), [rows, search, kind, folderFilter, countryFilter])
+  }), [rows, search, kind, folderFilter, countryFilter, countries])
 
   const sorted = useMemo(() => {
     const ordered = kind === 'character'
@@ -335,7 +338,7 @@ export function WorkspaceEntityCatalog({
     const header = data.headerUrl
     return <CoverCard key={item.entityId} id={data.id} title={itemName(kind, data)}
       intro={coverExcerpt(itemPreview(kind, data), 84)}
-      meta={itemMeta(kind, data) || undefined}
+      meta={itemMeta(kind, data, countries) || undefined}
       imageSrc={header ? resolveImageUrl(header, 'header') : undefined}
       tintSrc={avatar ? resolveImageUrl(avatar, kind === 'country' ? 'flag' : 'avatar') : undefined}
       emblem={avatar && kind !== 'event' ? <Avatar src={avatar} type={kind === 'country' ? 'flag' : 'avatar'} fill /> : undefined}
