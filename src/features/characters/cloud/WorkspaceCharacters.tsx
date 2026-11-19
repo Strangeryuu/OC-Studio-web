@@ -734,7 +734,7 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
             return row.entityId
           })
         }} />}
-      {['character', 'country', 'event', 'world', 'category', 'novel', 'map', 'table', 'relations'].includes(section) &&
+      {['home', 'character', 'country', 'event', 'world', 'category', 'novel', 'map', 'table', 'relations'].includes(section) &&
         <WorkspacePresence workspaceId={workspaceId}
           scope={section === 'category' && activeCategory ? 'category:' + activeCategory.id : section === 'category' ? 'world' : section}
           editing={canEdit} />}
