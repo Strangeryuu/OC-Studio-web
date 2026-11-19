@@ -53,6 +53,7 @@ import {
 } from '../services'
 import { EdgeStylePanel, type EdgeStylePatchInput, type EdgeStyleSelection } from './EdgeStylePanel'
 import { useOptionalExportCenter } from '@/components/shared/export/ExportCenterHost'
+import { exportRelationGraphPng } from '../export-graph'
 import { computeForceLayout, NODE_SIZE, resolveGraphPositions } from '../layout'
 import { nodeRect } from './floating-edge'
 import { FitViewOnLoad, ZoomReader } from './RelationGraphHelpers'
@@ -155,6 +156,7 @@ export function RelationGraph({
   const [draft, setDraft] = useState<RelationDraft | null>(null)
   const [savingRelation, setSavingRelation] = useState(false)
   const openExportCenter = useOptionalExportCenter()
+  const [exportingWorkspaceGraph, setExportingWorkspaceGraph] = useState(false)
   const [edgePanel, setEdgePanel] = useState<{
     selection: EdgeStyleSelection
     anchor: { x: number; y: number }
@@ -859,6 +861,24 @@ export function RelationGraph({
 
   /* ── 菜单 ─────────────────────────────────────────────── */
 
+  const exportWorkspaceGraph = async () => {
+    if (exportingWorkspaceGraph) return
+    setExportingWorkspaceGraph(true)
+    try {
+      const filename = await exportRelationGraphPng({
+        nodes: rawNodes,
+        edges: rawEdges,
+        edgeStyle,
+        title: '关系图',
+      })
+      if (filename) toast.success('关系图 PNG 已导出')
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : '关系图导出失败，请重试')
+    } finally {
+      setExportingWorkspaceGraph(false)
+    }
+  }
+
   const moreItems: MediaMenuItem[] = [
     ...(canMutateGraph ? [{
       label: '重排全部',
@@ -874,6 +894,11 @@ export function RelationGraph({
       label: '导出图片…',
       icon: <ImageDown size={13} strokeWidth={2} />,
       onSelect: () => openExportCenter({ tab: 'graph' }),
+    }] : []),
+    ...(workspace ? [{
+      label: exportingWorkspaceGraph ? '导出中…' : '导出 PNG（原版渲染）',
+      icon: <ImageDown size={13} strokeWidth={2} />,
+      onSelect: () => void exportWorkspaceGraph(),
     }] : []),
   ]
 
