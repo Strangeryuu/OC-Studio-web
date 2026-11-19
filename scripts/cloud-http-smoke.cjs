@@ -634,6 +634,33 @@ async function run() {
   assert(graphHistory.status===200&&(await graphHistory.json()).revisions.length===3,
     'Cloud graph relationship revisions were not recorded')
 
+  const graphMediaUrl='/api/media/'+asset.id
+  const graphWithImageAndPosition={...graphLink,relatedCharacters:[],
+    avatarUrl:graphMediaUrl,graphPosition:{x:176.5,y:92.3}}
+  const graphImageSave=await fetch(BASE+'/api/entities/'+graphLeft.id,{
+    method:'PATCH',headers:{Cookie:cookie,Origin:PUBLIC_ORIGIN,'Content-Type':'application/json'},
+    body:JSON.stringify({title:'CI 图谱来源',expectedVersion:3,data:graphWithImageAndPosition}),
+  })
+  assert(graphImageSave.status===200&&(await graphImageSave.json()).version===4,
+    'Graph node image or dragged position did not save via versioned entity')
+  const graphImageRead=await fetch(BASE+'/api/entities/'+graphLeft.id,{headers:{Cookie:cookie}})
+  const graphImageRecord=(await graphImageRead.json()).entity.content
+  assert(graphImageRecord.avatarUrl===graphMediaUrl&&graphImageRecord.graphPosition.x===176.5 &&
+    graphImageRecord.graphPosition.y===92.3,'Graph position or private node image was not preserved')
+  const graphUndoSave=await fetch(BASE+'/api/entities/'+graphLeft.id,{
+    method:'PATCH',headers:{Cookie:cookie,Origin:PUBLIC_ORIGIN,'Content-Type':'application/json'},
+    body:JSON.stringify({title:'CI 图谱来源',expectedVersion:4,
+      data:{...graphWithImageAndPosition,graphPosition:{x:0,y:0}}}),
+  })
+  assert(graphUndoSave.status===200&&(await graphUndoSave.json()).version===5,
+    'Graph undo coordinates were not versioned')
+  const graphExpandedHistory=await fetch(BASE+'/api/entities/'+graphLeft.id+'/revisions',{
+    headers:{Cookie:cookie},
+  })
+  assert(graphExpandedHistory.status===200&&
+    (await graphExpandedHistory.json()).revisions.length===5,
+    'Graph media, position and undo changes were missing from history')
+
 
   // Acceptance: real PostgreSQL + logged-in HTTP lifecycle for all four advanced modules.
   // Independent workspaces ensure backup restore cannot overwrite an existing library.
