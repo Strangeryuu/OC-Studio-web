@@ -970,7 +970,7 @@ function OriginalCharacterEditor({ snapshot, adapter, characters, countries, cou
         onAvatarRemove={canEdit && !disabled ? () => form.setAvatarUrl('') : undefined}
         saveImage={uploadProfileImage} />
       <label className="flex flex-col gap-2 text-ui text-ink-muted">角色名称
-        <input value={form.name} onChange={event => form.setName(event.target.value)} className={TITLE_INPUT} />
+        <input aria-label="角色名称" value={form.name} onChange={event => form.setName(event.target.value)} className={TITLE_INPUT} />
       </label>
       <CharacterInfoSection form={form}
         fieldsOverride={countriesReady ? CLOUD_FIELDS : CLOUD_FIELDS.filter(field => field.type !== 'country')}
