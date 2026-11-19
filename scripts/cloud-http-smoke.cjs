@@ -70,6 +70,30 @@ async function run() {
     mode:'local',from:'noreply@ci.example.test',host:'',port:587,secure:false,username:'',
   })})
   assert(mailSaved.status===200,'Site admin cannot select local mail mode')
+  const unauthorizedMailTest=await fetch(BASE+'/api/admin/mail/test',{
+    method:'POST',headers:{Cookie:createdCookie,Origin:PUBLIC_ORIGIN},
+  })
+  assert(unauthorizedMailTest.status===403,'Ordinary user could send administrator test mail')
+  const crossSiteMailTest=await fetch(BASE+'/api/admin/mail/test',{
+    method:'POST',headers:{Cookie:cookie,Origin:'https://attacker.example'},
+  })
+  assert(crossSiteMailTest.status===403,'Cross-origin mail test was accepted')
+  if(process.env.CI_MAIL_CAPTURE_PATH){
+    const testMail=await fetch(BASE+'/api/admin/mail/test',{
+      method:'POST',headers:{Cookie:cookie,Origin:PUBLIC_ORIGIN},
+    })
+    const response=await testMail.json()
+    assert(testMail.status===200&&response.accepted&&response.to==='ci-admin@example.test',
+      'Admin self-addressed test email failed: '+JSON.stringify(response))
+    const {readFile}=require('node:fs/promises')
+    const body=await readFile(process.env.CI_MAIL_CAPTURE_PATH,'utf8')
+    assert(body.includes('To: ci-admin@example.test')&&body.includes('Subject: =?UTF-8?B?'),
+      'Admin test mail was not captured by local sendmail')
+    const throttled=await fetch(BASE+'/api/admin/mail/test',{
+      method:'POST',headers:{Cookie:cookie,Origin:PUBLIC_ORIGIN},
+    })
+    assert(throttled.status===429,'Repeated admin test emails were not rate limited')
+  }
   const mailPrivate=await fetch(BASE+'/api/admin/mail',{headers:{Cookie:createdCookie}})
   assert(mailPrivate.status===403,'Ordinary user accessed admin mail settings')
 
