@@ -229,11 +229,16 @@ async function run() {
   await cloudExport.getByRole('tab', { name: '网站' }).click()
   const websitePanel = cloudExport.getByRole('tabpanel', { name: '网站' })
   const iframe = websitePanel.getByTitle('静态站预览')
-  await iframe.waitFor({ timeout: 15000 })
+  try {
+    await iframe.waitFor({ state: 'attached', timeout: 15000 })
+  } catch (cause) {
+    const snapshot = (await websitePanel.innerText().catch(() => '')).slice(0, 1800)
+    throw new Error('Cloud site iframe missing; panel text: ' + snapshot, { cause })
+  }
   await desktopPage.waitForFunction(() => {
     const frame = document.querySelector('iframe[title="静态站预览"]')
     return frame && (frame.getAttribute('srcdoc') || '').includes('CI Touch Alpha')
-  }, { timeout: 15000 })
+  }, null, { timeout: 15000 })
   const html = await iframe.getAttribute('srcdoc')
   assert(html && html.includes('CI Touch Alpha'), 'Static site export omitted the cloud workspace character')
   await cloudExport.getByRole('button', { name: '返回' }).click()
