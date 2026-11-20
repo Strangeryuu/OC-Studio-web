@@ -21,22 +21,22 @@ const character = {
   avatarUrl: '', headerUrl: '', bio: '来自甲世界的角色', lifeStory: '',
   gallery: [], avatars: [], relatedCharacters: [], tags: [], updatedAt: 20,
   countryId: 30,
-} as Character
+} as unknown as Character
 const event = {
   id: 20, title: '远征事件', aliases: [], time: '123', endTime: '',
   location: '山谷', summary: '一次冒险', content: '', characters: [10],
   countries: [30], headerUrl: '', images: [], tags: [], updatedAt: 21,
   relations: [], isMajor: false,
-} as Event
+} as unknown as Event
 const country = {
   id: 30, name: '云端国度', aliases: [], parentId: null, description: '河谷国度',
   system: '议会', geography: '', culture: '', flagUrl: '', headerUrl: '',
   tags: [], updatedAt: 19,
-} as Country
+} as unknown as Country
 const note = {
   id: 40, title: '世界法则', content: '设定正文', category: '世界观',
   parentId: null, relations: [], references: [], tags: [], updatedAt: 18,
-} as WorldEntry
+} as unknown as WorldEntry
 const source = { characters: [character], events: [event], countries: [country], entries: [note] }
 
 describe('workspace export reuses the original model without Dexie reads', () => {
