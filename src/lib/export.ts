@@ -13,7 +13,7 @@ export {
 export type { BackupManifest, BackupStore } from './export/backup-manifest'
 export { downloadJson, downloadMarkdown, downloadTxt, downloadText } from './export/download'
 export { exportToMarkdown, exportToTxt } from './export/markdown'
-export { buildSite, buildStaticSite, exportStaticSite, loadSiteData, prepareSiteImages, applySiteSections } from './export/site'
+export { buildSite, buildStaticSite, exportStaticSite, loadSiteData, prepareSiteImages, applySiteSections, collectSiteImages } from './export/site'
 export { SITE_TEMPLATES, siteTemplateOf } from './export/site'
 export type { SiteData, BuildOptions, SiteExportConfig, SiteSectionOptions, SiteThemeTokens } from './export/site'
 export type { SiteTemplateId, SiteTemplateMeta } from './export/site'
