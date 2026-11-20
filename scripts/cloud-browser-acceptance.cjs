@@ -246,7 +246,7 @@ async function run() {
   await cloudExport.waitFor({ state: 'hidden' })
   // Category archive uses a separate incremental protocol. A real browser
   // verifies file contents and duplicate-preview UX without mutating live data.
-  await openSection(desktopPage, worldId, '备份')
+  await openSection(desktopPage, worldId, '备份与迁移')
   await desktopPage.getByText('分类归档 · 跨世界观迁移').waitFor({ timeout: 15000 })
   const categoryDownloadReady = desktopPage.waitForEvent('download', { timeout: 30000 })
   await desktopPage.getByRole('button', { name: '下载分类 .ocbak' }).click()
