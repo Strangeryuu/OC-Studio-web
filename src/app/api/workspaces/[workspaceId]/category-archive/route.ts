@@ -3,7 +3,7 @@ import { currentCloudUser, authorizedWorkspace, isUuid } from '@/lib/cloud/serve
 import { mutationOriginAllowed } from '@/lib/cloud/server/origin'
 import { pool } from '@/lib/cloud/server/db'
 import { readCategorySelection, type CategoryStrategy } from '@/lib/cloud/category-archive'
-import { exportCategoryArchive, importCategoryArchive, previewCategoryImport } from '@/lib/cloud/server/category-archive-io'
+import { categoryExportOptions, exportCategoryArchive, importCategoryArchive, previewCategoryImport } from '@/lib/cloud/server/category-archive-io'
 
 export const runtime='nodejs'
 export const dynamic='force-dynamic'
@@ -43,6 +43,10 @@ export async function GET(request:Request,context:Context) {
   if(!isUuid(workspaceId)||!await authorizedWorkspace(user,workspaceId,'export:create'))
     return responseError('NOT_FOUND',404)
   const url=new URL(request.url)
+  if(url.searchParams.get('mode')==='options') {
+    try {return NextResponse.json(await categoryExportOptions(workspaceId),{headers:{'Cache-Control':'private, no-store'}})}
+    catch(cause){return responseError(errorCode(cause),409)}
+  }
   const selection=readCategorySelection({
     kind:url.searchParams.get('kind'),
     ...(url.searchParams.has('folder')?{folder:url.searchParams.get('folder')}:{}),
