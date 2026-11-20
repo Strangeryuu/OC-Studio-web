@@ -96,14 +96,14 @@ export async function POST(request:Request,context:Context) {
   const fields=input as Record<string,unknown>
   try {
     if(fields.action==='preview') {
-      const result=await previewCategoryImport(workspaceId,fields.archive)
+      const result=await previewCategoryImport(workspaceId,user.id,fields.archive)
       return NextResponse.json(result,{headers:{'Cache-Control':'private, no-store'}})
     }
     if(fields.action==='import') {
       const strategy=fields.strategy as CategoryStrategy
-      if(strategy!=='skip'&&strategy!=='keep-both')
+      if(strategy!=='skip'&&strategy!=='keep-both'&&strategy!=='overwrite')
         return responseError('CATEGORY_INVALID_STRATEGY',400)
-      const result=await importCategoryArchive(workspaceId,user.id,fields.archive,strategy)
+      const result=await importCategoryArchive(workspaceId,user.id,fields.archive,strategy,fields.previewToken)
       return NextResponse.json(result,{headers:{'Cache-Control':'private, no-store'}})
     }
     return responseError('CATEGORY_INVALID_ACTION',400)
@@ -111,6 +111,7 @@ export async function POST(request:Request,context:Context) {
     const code=errorCode(cause)
     return responseError(code,code==='CATEGORY_TOO_LARGE'?413:
       code==='CATEGORY_AMBIGUOUS_SOURCE'||code==='CATEGORY_AMBIGUOUS_TARGET'||
-      code==='CATEGORY_NAME_CONFLICT'?409:400)
+      code==='CATEGORY_NAME_CONFLICT'||code==='CATEGORY_PREVIEW_STALE'||
+      code==='CATEGORY_PREVIEW_EXPIRED'?409:400)
   }
 }
