@@ -5,6 +5,8 @@ import { pool } from '@/lib/cloud/server/db'
 import { readPrivateImage, writePrivateImage, removePrivateImage } from '@/lib/cloud/server/media-store'
 import { detectAllowedImage, MAX_UPLOAD_BYTES } from '@/lib/cloud/image-types'
 import { readEntityDocument } from '@/lib/cloud/entity-input'
+import { defaultWorkspaceCustomization, readWorkspaceCustomization } from '@/lib/cloud/workspace-customization'
+import { isReservedCategoryName } from '@/lib/categories/types'
 import { remapPortableContent } from '@/lib/cloud/backup-format'
 import { characterMediaIds } from '@/lib/cloud/character-media'
 import { characterMediaAllowed } from '@/lib/cloud/server/character-media'
@@ -284,6 +286,33 @@ export async function importCategoryArchive(
         "UPDATE entities SET title=$1,content=$2::jsonb,updated_at=now() "+
         "WHERE id=$3 AND workspace_id=$4",
         [item.title,JSON.stringify(doc.data),item.id,workspaceId])
+    }
+    // Keep imported custom-section notes visible in the target sidebar.
+    // Any new category uses the built-in entry template; an existing target
+    // category and its chosen template are always preserved.
+    const category=archive.selection.kind==='worldEntry' ? archive.selection.category?.trim() : undefined
+    if(category && !isReservedCategoryName(category) &&
+       incoming.some(item=>item.row.kind==='worldEntry' && item.row.content.category===category)) {
+      const current=await client.query<{setting_value:unknown;version:number}>(
+        "SELECT setting_value,version FROM workspace_settings "+
+        "WHERE workspace_id=$1 AND setting_key='customization' FOR UPDATE",[workspaceId])
+      const config=current.rows.length?readWorkspaceCustomization(current.rows[0].setting_value):
+        defaultWorkspaceCustomization()
+      if(!config)fail('CATEGORY_CUSTOMIZATION_INVALID')
+      if(!config.categories.some(item=>item.name.toLocaleLowerCase('zh-CN')===
+          category.toLocaleLowerCase('zh-CN'))) {
+        const next={...config,categories:[...config.categories,{
+          id:'cat-'+randomUUID(),name:category,template:'entry',icon:'book' as const,
+          order:Math.max(0,...config.categories.map(item=>item.order))+1,enabled:true,
+        }]}
+        if(!readWorkspaceCustomization(next))fail('CATEGORY_CUSTOMIZATION_LIMIT')
+        await client.query(
+          "INSERT INTO workspace_settings(workspace_id,setting_key,setting_value,version) "+
+          "VALUES($1,'customization',$2::jsonb,1) ON CONFLICT(workspace_id,setting_key) "+
+          "DO UPDATE SET setting_value=EXCLUDED.setting_value, "+
+          "version=workspace_settings.version+1,updated_at=now()",
+          [workspaceId,JSON.stringify(next)])
+      }
     }
     await client.query(
       "INSERT INTO audit_logs(workspace_id,actor_id,action,target_id,details) "+
