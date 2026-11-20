@@ -86,6 +86,22 @@ describe('selective cloud category archive',()=>{
     ])
   })
 
+  it('remaps cloud UUID relations while keeping original numeric relations',()=>{
+    const first='11111111-1111-4111-8111-111111111111'
+    const second='99999999-9999-4999-8999-999999999999'
+    const maps={local:new Map([['character:4',42]]),
+      uuid:new Map([[first,second]]),media:new Map<string,string>(),tags:new Map<string,string>()}
+    const output=remapPortableContent('character',{relatedCharacters:[
+      {characterId:4,name:'友人',relation:'朋友'},
+    ],cloudRelations:[{id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      targetId:first,relation:'朋友',arrow:'none'}]},maps)
+    expect((output.relatedCharacters as {characterId:number}[])[0].characterId).toBe(42)
+    expect((output.cloudRelations as {targetId:string}[])[0].targetId).toBe(second)
+    expect(()=>remapPortableContent('character',{cloudRelations:[{
+      targetId:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    }]},maps)).toThrow('BACKUP_REFERENCE_MISSING')
+  })
+
   it('scopes duplicate names by entity kind and world entry category',()=>{
     expect(recordKey('worldEntry',' 风暴 ',{category:'人物'}))
       .not.toBe(recordKey('worldEntry','风暴',{category:'事件'}))
