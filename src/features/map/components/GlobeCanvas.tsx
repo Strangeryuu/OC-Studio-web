@@ -454,13 +454,13 @@ export function GlobeCanvas({ image, layers }: GlobeCanvasProps) {
           orbitRef.current = { yaw: 0.2, pitch: 0.18, zoom: 1 }
           draw()
         }}
-        className="absolute right-4 top-4 flex h-7 items-center gap-1 rounded border border-line bg-paper/85 px-2 text-[10px] text-ink-muted backdrop-blur hover:text-ink"
+        className="absolute right-4 top-4 flex h-7 items-center gap-1 rounded-control border border-line bg-paper/85 px-2 text-[10px] text-ink-muted backdrop-blur hover:text-ink"
         title="重置球体视角"
       >
         <RotateCcw size={12} strokeWidth={2} />
         复位
       </button>
-      <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded border border-line bg-paper/80 px-2 py-1 text-[10px] text-ink-faint backdrop-blur">
+      <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-control border border-line bg-paper/80 px-2 py-1 text-[10px] text-ink-faint backdrop-blur">
         拖动旋转 · 滚轮缩放 · 六面瓦片 LOD {lod} · {layers ? '真实高程位移' : '底图球面投影'}
       </div>
       {error ? (
