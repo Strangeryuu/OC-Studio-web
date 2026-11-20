@@ -16,7 +16,7 @@ type Row = Record<string,unknown>
 const isRow=(x:unknown):x is Row=>x!==null&&typeof x==='object'&&!Array.isArray(x)
 const numeric=(x:unknown):x is number=>typeof x==='number'&&Number.isSafeInteger(x)&&x>0&&x<2**48
 const validName=(x:unknown):x is string=>typeof x==='string'&&x.trim().length>0&&x.trim().length<=200
-const throwCode=(code:string):never=>{throw new Error(code)}
+function throwCode(code:string):never { throw new Error(code) }
 const types:Record<string,CategoryKind>={
   characters:'character',events:'event',countries:'country',worldEntries:'worldEntry',
 }
@@ -83,13 +83,14 @@ export function isOcEditorCategory(value:unknown):boolean {
 export function convertOcEditorCategory(value:unknown):CategoryArchive|null {
   if(!isOcEditorCategory(value))return null
   const raw=value as Row
-  if(raw.version!==1||!isRow(raw.payload)||!Array.isArray(raw.payload.items))
+  const payload=raw.payload
+  if(raw.version!==1||!isRow(payload)||!Array.isArray(payload.items))
     throwCode('OC_EDITOR_INVALID')
-  const items=rows(raw.payload.items)
+  const items=rows(payload.items)
   if(items.length===0)throwCode('OC_EDITOR_EMPTY')
-  const table=resolveTable(items,raw.payload.table,raw.kind)
-  const context=isRow(raw.payload.context)?raw.payload.context:{}
-  const contextMode=raw.payload.contextMode==='link-only'?'link-only':'create'
+  const table=resolveTable(items,payload.table,raw.kind)
+  const context=isRow(payload.context)?payload.context:{}
+  const contextMode=payload.contextMode==='link-only'?'link-only':'create'
   const sections=table==='customSections'
   const primaryKind:CategoryKind=sections?'worldEntry':types[table]
   if(!primaryKind)throwCode('OC_EDITOR_UNRECOGNIZED_KIND')
@@ -99,7 +100,7 @@ export function convertOcEditorCategory(value:unknown):CategoryArchive|null {
   const sourceDate=typeof raw.exportedAt==='string'&&!Number.isNaN(Date.parse(raw.exportedAt))
     ?raw.exportedAt:new Date().toISOString()
   const folderNames=new Map<string,string>()
-  for(const folder of rows(raw.payload.folders)){
+  for(const folder of rows(payload.folders)){
     if(typeof folder.id!=='string'||!validName(folder.name)||folder.name.length>60)
       throwCode('OC_EDITOR_INVALID_FOLDER')
     folderNames.set(folder.id,folder.name)
@@ -287,7 +288,7 @@ export function convertOcEditorCategory(value:unknown):CategoryArchive|null {
     }
   }
 
-  const refs=rows(raw.payload.refs)
+  const refs=rows(payload.refs)
   for(const ref of refs){
     const kind=ref.type==='world'?'worldEntry':ref.type
     if(typeof kind!=='string'||!Object.values(types).includes(kind as CategoryKind)||
