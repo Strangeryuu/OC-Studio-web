@@ -262,6 +262,35 @@ async function run() {
   await desktopPage.getByText('确认导入内容').waitFor({ timeout: 20000 })
   assert(await desktopPage.getByText(/目标同名条目/).count(),
     'Category preview did not show duplicate detection')
+  // Overwrite is opt-in and gated by the signed, version-bound preview.
+  const overwriteChoice = desktopPage.getByRole('radio', { name: /覆盖同名条目/ })
+  await overwriteChoice.waitFor({ timeout: 12000 })
+  await overwriteChoice.click()
+  assert.equal(await overwriteChoice.isChecked(), true, 'Overwrite strategy could not be selected')
+  assert.equal(await desktopPage.getByRole('button', { name: '确认导入' }).isDisabled(), true,
+    'Overwrite must require explicit user acknowledgement')
+  await desktopPage.getByRole('button', { name: '取消' }).click()
+  // OC-editor's OCAV payload is recognized without touching its original
+  // source file or performing an import during browser acceptance.
+  const nativeOcav = {
+    format: 'oc-editor-ocav', version: 1, kind: 'character',
+    exportedAt: '2026-11-20T00:00:00Z', world: { name: 'OC editor browser' },
+    payload: {
+      table: 'characters', contextMode: 'create',
+      items: [{ id: 1, name: 'CI Touch Alpha', avatarUrl: '', bio: 'CI fixture',
+        relatedCharacters: [], tags: [] }],
+      context: { characters: [], events: [], countries: [], worldEntries: [], tags: [] },
+      folders: [], refs: [],
+    },
+    relations: [],
+  }
+  await desktopPage.getByLabel('选择分类归档').setInputFiles({
+    name: 'oc-editor-native.ocbak', mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(nativeOcav)),
+  })
+  await desktopPage.getByText('确认导入内容').waitFor({ timeout: 20000 })
+  assert(await desktopPage.getByText(/OC editor browser/).count(),
+    'Native OC-editor file did not reach the incremental preview')
   await desktopPage.getByRole('button', { name: '取消' }).click()
   process.stdout.write('Chromium browser acceptance passed: cloud original export tabs and scoped previews; desktop timeline export; stable avatar/editor submenus; mobile touch drag; two-device layout version conflict.\\n')
 }
