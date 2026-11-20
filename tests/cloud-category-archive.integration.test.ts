@@ -269,6 +269,55 @@ describe('PostgreSQL category archives use one atomic scope and ID mapping',()=>
     const result=await importCategoryArchive(overwrittenWorld,userId,file,'overwrite',pre.previewToken)
     expect(result.overwritten).toBe(3)
   })
+  it('overwrites OC-editor primary items while reusing and preserving context records',async()=>{
+    const native={
+      format:'oc-editor-ocav',version:1,kind:'character',
+      exportedAt:'2026-11-20T08:00:00Z',world:{name:'增量编辑'},
+      payload:{table:'characters',contextMode:'create',
+        items:[{id:1,name:'星河',bio:'新一版设定',avatarUrl:'',
+          relatedCharacters:[{characterId:2,name:'日影',relation:'朋友'}],tags:[]}],
+        context:{characters:[{id:2,name:'日影',bio:'此条上下文不应覆盖',avatarUrl:'',
+          relatedCharacters:[]}],events:[],countries:[],worldEntries:[],tags:[]},
+        folders:[],refs:[]},
+      relations:[],
+    }
+    const pre=await previewCategoryImport(imported,userId,native)
+    expect(pre).toMatchObject({overwriteCount:1,duplicates:2,selected:1,context:1})
+    const before=await state.db!.query<{id:string;version:number;title:string;content:Record<string,unknown>}>(
+      "SELECT id,version,title,content FROM entities WHERE workspace_id=$1 AND title=ANY($2::text[])",
+      [imported,['星河','日影']])
+    const outcome=await importCategoryArchive(imported,userId,native,'overwrite',pre.previewToken)
+    expect(outcome).toMatchObject({added:0,overwritten:1,skipped:1})
+    const after=await state.db!.query<{id:string;version:number;title:string;content:Record<string,unknown>}>(
+      "SELECT id,version,title,content FROM entities WHERE workspace_id=$1 AND title=ANY($2::text[])",
+      [imported,['星河','日影']])
+    const origin=before.rows.find(row=>row.title==='星河')!
+    const updated=after.rows.find(row=>row.title==='星河')!
+    expect(updated.id).toBe(origin.id)
+    expect(updated.version).toBe(origin.version+1)
+    expect(updated.content.bio).toBe('新一版设定')
+    const preserved=before.rows.find(row=>row.title==='日影')!
+    const current=after.rows.find(row=>row.title==='日影')!
+    expect(current).toEqual(preserved)
+    expect((updated.content.relatedCharacters as {characterId:number}[])[0].characterId)
+      .toBe(Number((await state.db!.query<{local_id:string}>(
+        "SELECT local_id::text FROM entities WHERE id=$1",[preserved.id])).rows[0].local_id))
+  })
+  it('rejects newly created same-name targets after preview before any overwrite or insert',async()=>{
+    const file:CategoryArchive={
+      format:'oc-studio-web-category-v1',version:1,sourceName:'覆盖冲突测试',
+      exportedAt:'2026-11-20T08:00:00Z',selection:{kind:'character'},
+      records:[{kind:'character',sourceId:'77777777-7777-4777-8777-777777777777',
+        localId:900,title:'新成员',content:char('新成员','')}],assets:[],tags:[],
+    }
+    const pre=await previewCategoryImport(overwrittenWorld,userId,file)
+    expect(pre.overwriteCount).toBe(0)
+    await insert(overwrittenWorld,'character','新成员',char('新成员','',{bio:'新创建的本地设定'}))
+    const before=await rows(overwrittenWorld)
+    await expect(importCategoryArchive(overwrittenWorld,userId,file,'overwrite',pre.previewToken))
+      .rejects.toThrow('CATEGORY_PREVIEW_STALE')
+    expect(await rows(overwrittenWorld)).toEqual(before)
+  })
   it('rolls back all inserts and imported tags on an unresolved foreign reference',async()=>{
     const before=await rows(target)
     const fresh:CategoryArchive={
