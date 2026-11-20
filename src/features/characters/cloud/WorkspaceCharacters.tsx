@@ -21,7 +21,7 @@ import { flushPendingSaves, registerPendingSave } from '@/lib/pending-saves'
 import { BTN_PRIMARY, BTN_QUIET, TITLE_INPUT } from '@/lib/ui-tokens'
 import { OriginalCharactersCloudAdapter, type OriginalCharacterSnapshot, type OriginalCharacterPatch } from '@/lib/cloud/adapters/original-characters'
 import type { WorkspaceRole } from '@/lib/cloud/permissions'
-import type { Character, Country, WorldEntry } from '@/types'
+import type { Character, Country, WorldEntry, Period } from '@/types'
 import type { Editor } from '@tiptap/core'
 import { EditorCore } from '@/components/editor/EditorCore'
 import { ActiveEditorProvider } from '@/lib/editor-context'
@@ -225,6 +225,8 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
   const eventList = useWorkspaceRows(eventAdapter, '事件')
   const [section, setSection] = useState<WorkspaceSection>('character')
   const [exportOpen, setExportOpen] = useState(false)
+  const [exportLoading, setExportLoading] = useState(false)
+  const [exportResources, setExportResources] = useState<{ coverUrl: string; periods: Period[] }>({ coverUrl: '', periods: [] })
   const [customization,setCustomization]=useState<WorkspaceCustomization>(defaultWorkspaceCustomization)
   const [configurationRefresh,setConfigurationRefresh]=useState(0)
   const [activeCategoryId,setActiveCategoryId]=useState<string|null>(null)
@@ -261,11 +263,11 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
   const cloudExportData = useMemo<CloudExportData>(() => ({
     poster: { characters, events, countries, entries: notes },
     site: {
-      meta: { id: 1, worldName: workspaceName ?? '世界观', tagline: workspaceDescription ?? '', coverUrl: '', updatedAt: 0 },
-      characters, events, countries, worldEntries: notes, tags: [], periods: [],
+      meta: { id: 1, worldName: workspaceName ?? '世界观', tagline: workspaceDescription ?? '', coverUrl: exportResources.coverUrl, updatedAt: 0 },
+      characters, events, countries, worldEntries: notes, tags: [], periods: exportResources.periods,
     },
     document: buildDocumentModelFromData({ characters, events, countries, worldEntries: notes, worldName: workspaceName ?? '世界观' }),
-  }), [characters, events, countries, notes, workspaceName, workspaceDescription])
+  }), [characters, events, countries, notes, workspaceName, workspaceDescription, exportResources])
   const activeCategory=customization.categories.find(c=>c.id===activeCategoryId)??null
   const visibleCategories=customization.categories.filter(c=>c.enabled)
   const worldNotes=notes.filter(row=>
@@ -670,13 +672,40 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
     }
   }
 
+  const openCloudExport = async () => {
+    if (exportLoading || busy || leaving) return
+    setExportLoading(true)
+    setError(null)
+    try {
+      await flushPendingSaves()
+      const base = '/api/workspaces/' + workspaceId
+      const [coverResponse, periodsResponse] = await Promise.all([
+        fetch(base + '/cover', { cache: 'no-store' }),
+        fetch(base + '/periods', { cache: 'no-store' }),
+      ])
+      if (!coverResponse.ok || !periodsResponse.ok) throw new Error('无法读取当前世界观的封面或历史时期')
+      const cover = await coverResponse.json() as { coverUrl?: unknown }
+      const periods = await periodsResponse.json() as { periods?: unknown }
+      if (!Array.isArray(periods.periods)) throw new Error('历史时期数据异常，请先检查时期设置')
+      setExportResources({
+        coverUrl: typeof cover.coverUrl === 'string' ? cover.coverUrl : '',
+        periods: (periods.periods as Period[]).filter(item => !item.deleted),
+      })
+      setExportOpen(true)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '准备导出数据失败')
+    } finally {
+      setExportLoading(false)
+    }
+  }
+
   return <div className="grid min-w-0 gap-5 md:grid-cols-[10rem_minmax(0,1fr)]">
     {workspaceName && <header className="md:col-span-2 flex flex-wrap items-center justify-between gap-3">
       <div className="min-w-0"><h1 className="text-lg font-semibold">{workspaceName}</h1>
       {workspaceDescription && <p className="mt-1 text-ui text-ink-muted">{workspaceDescription}</p>}</div>
-      {canEdit && <button type="button" className={BTN_PRIMARY + ' border border-line'} disabled={busy || leaving}
-        onClick={() => void flushPendingSaves().then(() => setExportOpen(true)).catch(cause => setError(cause instanceof Error ? cause.message : '保存草稿失败，请重试'))}>
-        <FileDown size={16} aria-hidden />导出中心
+      {canEdit && <button type="button" className={BTN_PRIMARY + ' border border-line'} disabled={busy || leaving || exportLoading}
+        onClick={() => void openCloudExport()}>
+        <FileDown size={16} aria-hidden />{exportLoading ? '读取导出数据…' : '导出中心'}
       </button>}
     </header>}
     <WorkspaceNavigation active={section} busy={busy || leaving} hasMembers={membersPanel !== undefined}
