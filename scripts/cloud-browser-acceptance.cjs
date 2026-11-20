@@ -292,7 +292,63 @@ async function run() {
   assert(await desktopPage.getByText(/OC editor browser/).count(),
     'Native OC-editor file did not reach the incremental preview')
   await desktopPage.getByRole('button', { name: '取消' }).click()
-  process.stdout.write('Chromium browser acceptance passed: cloud original export tabs and scoped previews; desktop timeline export; stable avatar/editor submenus; mobile touch drag; two-device layout version conflict.\\n')
+  // Map advanced-mode acceptance: private 2:1 world image, WebGL canvas,
+  // non-destructive 2D fallback and original worker-backed profile sampling.
+  const mapImageUrl=await desktopPage.evaluate(async(worldId)=>{
+    const canvas=document.createElement('canvas')
+    canvas.width=512;canvas.height=256
+    const ctx=canvas.getContext('2d')
+    if(!ctx)throw new Error('Chrome 2D canvas unavailable')
+    for(let y=0;y<256;y+=16){
+      ctx.fillStyle='hsl('+Math.floor(y/256*150)+',45%,45%)'
+      ctx.fillRect(0,y,512,16)
+    }
+    const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'))
+    if(!blob)throw new Error('Could not encode map fixture')
+    const form=new FormData()
+    form.append('file',new File([blob],'ci-globe.png',{type:'image/png'}))
+    const response=await fetch('/api/workspaces/'+worldId+'/media',{method:'POST',body:form})
+    if(!response.ok)throw new Error('Map media upload HTTP '+response.status+': '+await response.text())
+    const result=await response.json()
+    return result.asset.url
+  },worldId)
+  await requestOk(await desktop.request.post(BASE+'/api/workspaces/'+worldId+'/entities',{
+    headers:{Origin:BASE},
+    data:{
+      kind:'worldEntry',title:'CI Globe World',
+      data:{
+        title:'CI Globe World',category:'地图',
+        mapImage:mapImageUrl,mapWidth:512,mapHeight:256,
+        mapSeed:1234,mapMode:'terrain',
+        mapParams:JSON.stringify({kind:'world',width:1024,height:512}),
+        mapViews:{terrain:mapImageUrl},
+      },
+    },
+  }),'create cloud map')
+  await openSection(desktopPage,worldId,'地图')
+  const globeButton=desktopPage.getByRole('button',{name:'3D 地球'})
+  await globeButton.waitFor({timeout:20000})
+  assert(await globeButton.isEnabled(),'2:1 map did not enable WebGL globe mode')
+  await globeButton.click()
+  await desktopPage.getByTestId('cloud-globe-view').waitFor({timeout:20000})
+  const globeCanvas=desktopPage.getByTestId('cloud-globe-canvas')
+  await globeCanvas.waitFor({timeout:20000})
+  // Some CI Chrome devices use a software WebGL fallback; canvas presence
+  // is still verified and the user-visible WebGL support message remains.
+  await globeCanvas.hover()
+  await desktopPage.mouse.wheel(0,-160)
+  await desktopPage.getByRole('button',{name:'平面地图'}).click()
+  const profileButton=desktopPage.getByRole('button',{name:'取地形剖面'})
+  assert(await profileButton.isEnabled(),'Generated map did not expose terrain sampling')
+  await profileButton.click()
+  const picker=desktopPage.getByTestId('cloud-profile-picker')
+  await picker.waitFor({timeout:10000})
+  await picker.click({position:{x:100,y:80}})
+  await desktopPage.getByText(/选择剖面的终点/).waitFor()
+  await picker.click({position:{x:260,y:140}})
+  await desktopPage.getByRole('img',{name:'地形剖面'}).waitFor({timeout:90000})
+  await desktopPage.getByRole('button',{name:'关闭剖面'}).click()
+  process.stdout.write('Chromium browser acceptance passed: 3D globe, terrain profile, cloud original export tabs and scoped previews; desktop timeline export; stable avatar/editor submenus; mobile touch drag; two-device layout version conflict.\\n')
 }
 run().catch(async error => {
   process.stderr.write('Browser acceptance failed: ' + (error.stack || error) + '\n')
