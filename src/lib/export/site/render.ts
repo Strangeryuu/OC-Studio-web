@@ -38,8 +38,10 @@ const ROUTE_BY_KIND: Record<string, string> = {
   world: 'world',
 }
 
-export function escapeHtml(input: string): string {
-  return input
+export function escapeHtml(input: string | null | undefined): string {
+  // Legacy cloud records may omit optional text fields (for example nationalityLegacy).
+  // Static site rendering should treat missing values as empty while escaping all HTML.
+  return (input ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
