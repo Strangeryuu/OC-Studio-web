@@ -525,6 +525,8 @@ export function MapGeneratorPanel({
 
   const switchView = (next: MapView) => {
     if (next === view) return
+    setGlobeMode(false)
+    setGlobeImage(null)
     setView(next)
     if (ready) send((requestId) => ({ type: 'render', requestId, view: next, contourInterval }))
   }
