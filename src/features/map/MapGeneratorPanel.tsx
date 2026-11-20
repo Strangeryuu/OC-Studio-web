@@ -11,7 +11,10 @@
  * 每个请求带递增 `requestId`，只认最新那一个的响应：重新生成时旧结果直接丢弃。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Dices, ImageDown, Lock, Minus, Plus, Save, Wand2 } from 'lucide-react'
+import dynamic from 'next/dynamic'
+import type { MapLayers } from '@/plugins/map-generator'
+import {canProjectMapAsGlobe} from './globe-data'
+import { Dices, ImageDown, Lock, Minus, Plus, Save, Wand2, Globe2, Map as MapIcon } from 'lucide-react'
 import {
   DEFAULT_MAP_PARAMS,
   MAP_MAX_SIZE,
@@ -268,6 +271,11 @@ const RANGE_INPUT =
  * - `existing`：从地图里打开的生成器，写完就替换那张图的底图
  * - `new`：工具页（直接进入生成器），每次提交都**新建一张地图**
  */
+const GlobeCanvas=dynamic(
+  ()=>import('./components/GlobeCanvas').then(module=>module.GlobeCanvas),
+  {ssr:false},
+)
+
 export type MapGeneratorTarget =
   | { kind: 'existing'; name: string }
   | { kind: 'new' }
@@ -330,6 +338,9 @@ export function MapGeneratorPanel({
   const [progress, setProgress] = useState<{ stage: string; value: number } | null>(null)
   const [meta, setMeta] = useState<GeneratedMeta | null>(null)
   const [ready, setReady] = useState(false)
+  const [globeMode,setGlobeMode]=useState(false)
+  const [globeImage,setGlobeImage]=useState<ImageData|null>(null)
+  const [globeLayers,setGlobeLayers]=useState<MapLayers|null>(null)
   const [error, setError] = useState<string | null>(null)
   const busy = progress !== null
 
@@ -415,6 +426,20 @@ export function MapGeneratorPanel({
     }
 
     if (message.type === 'generated') {
+      if(message.meta.params.kind==='world') {
+        const size=message.meta.width*message.meta.height
+        if(message.height.byteLength===size*2 && message.biome.byteLength===size &&
+          message.water.byteLength===size && message.temperature.byteLength===size*2 &&
+          message.moisture.byteLength===size){
+          setGlobeLayers({
+            height:new Int16Array(message.height),biome:new Uint8Array(message.biome),
+            water:new Uint8Array(message.water),
+            temperature:new Int16Array(message.temperature),
+            moisture:new Uint8Array(message.moisture),
+            width:message.meta.width,mapHeight:message.meta.height,
+          })
+        } else setGlobeLayers(null)
+      } else setGlobeLayers(null)
       metaRef.current = message.meta
       setMeta(message.meta)
       // 把 Worker 实际生效的参数写回 state：滑块位置 = 像素所用参数
@@ -487,6 +512,9 @@ export function MapGeneratorPanel({
   }, [])
 
   const generate = () => {
+    setGlobeMode(false)
+    setGlobeImage(null)
+    setGlobeLayers(null)
     const effective = normalizeMapParams(params)
     setParams(effective)
     setError(null)
@@ -499,6 +527,24 @@ export function MapGeneratorPanel({
     if (next === view) return
     setView(next)
     if (ready) send((requestId) => ({ type: 'render', requestId, view: next, contourInterval }))
+  }
+
+  const showGlobe=()=>{
+    if(!ready||!meta||!canProjectMapAsGlobe(meta.width,meta.height))return
+    const canvas=canvasRef.current
+    if(!canvas)return
+    try {
+      const factor=Math.min(1,2048/canvas.width,1024/canvas.height)
+      const imageCanvas=document.createElement('canvas')
+      imageCanvas.width=Math.max(1,Math.round(canvas.width*factor))
+      imageCanvas.height=Math.max(1,Math.round(canvas.height*factor))
+      const context=imageCanvas.getContext('2d',{willReadFrequently:true})
+      if(!context)throw new Error('当前浏览器无法绘制 3D 地球预览')
+      context.drawImage(canvas,0,0,imageCanvas.width,imageCanvas.height)
+      setGlobeImage(context.getImageData(0,0,imageCanvas.width,imageCanvas.height))
+      setGlobeMode(true)
+      setError(null)
+    }catch(cause){setError(cause instanceof Error?cause.message:'3D 预览不可用')}
   }
 
   const canvasBlob = (): Promise<Blob | null> =>
@@ -795,7 +841,8 @@ export function MapGeneratorPanel({
 
       {/* 右：视图 → 预览 → 统计与出口 */}
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex flex-wrap items-center gap-0.5" role="group" aria-label="视图">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-0.5" role="group" aria-label="视图">
           {VIEWS.map((item) => (
             <button
               key={item}
@@ -812,6 +859,16 @@ export function MapGeneratorPanel({
               {MAP_VIEW_LABELS[item]}
             </button>
           ))}
+          </div>
+          <div role="group" aria-label="生成器预览模式"
+            className="flex shrink-0 items-center gap-1">
+            <button type="button" className={BTN_QUIET} aria-pressed={!globeMode}
+              onClick={()=>setGlobeMode(false)}><MapIcon size={13}/>平面</button>
+            <button type="button" className={BTN_QUIET} aria-pressed={globeMode}
+              disabled={!ready||!meta||!canProjectMapAsGlobe(meta.width,meta.height)}
+              title="世界地图生成后可以查看实时高程地球"
+              onClick={showGlobe}><Globe2 size={13}/>3D 预览</button>
+          </div>
         </div>
 
         <div className="relative mt-3 flex min-h-[240px] flex-1 flex-col overflow-hidden">
@@ -824,7 +881,7 @@ export function MapGeneratorPanel({
           <div
             ref={viewportRef}
             {...viewportProps}
-            className={`relative min-h-0 flex-1 touch-none select-none overflow-hidden ${
+            className={`relative min-h-0 flex-1 touch-none select-none overflow-hidden ${globeMode?'hidden ':''}${
               panning ? 'cursor-grabbing' : ready ? 'cursor-grab' : ''
             }`}
           >
@@ -843,6 +900,7 @@ export function MapGeneratorPanel({
             </div>
           </div>
 
+          {globeMode && globeImage && <GlobeCanvas image={globeImage} layers={globeLayers}/>}
           {ready ? null : (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
               <div
@@ -862,13 +920,13 @@ export function MapGeneratorPanel({
             </div>
           )}
 
-          {ready ? (
+          {ready && !globeMode ? (
             <div className={`pointer-events-none absolute right-3 top-3 w-[168px] p-2 ${PANEL}`}>
               <MapLegend view={view} />
             </div>
           ) : null}
 
-          {ready ? (
+          {ready && !globeMode ? (
             <div className={`pointer-events-auto absolute bottom-3 right-3 ${FLOAT_BAR}`}>
               <button
                 type="button"
