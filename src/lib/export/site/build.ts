@@ -941,9 +941,15 @@ export function collectSiteImages(data: SiteData): string[] {
     push(e.headerUrl)
     for (const g of e.images ?? []) push(g.url)
   }
-  for (const c of data.countries) { push(c.flagUrl); push(c.headerUrl) }
+  for (const c of data.countries) {
+    push(c.flagUrl); push(c.headerUrl)
+    for (const image of c.gallery ?? []) push(image.url)
+  }
   push(data.meta?.coverUrl)
-  for (const entry of data.worldEntries) push(entry.cover)
+  for (const entry of data.worldEntries) {
+    push(entry.cover)
+    for (const image of entry.gallery ?? []) push(image.url)
+  }
 
   const bodies: unknown[] = [
     ...data.characters.map((c) => c.document),
