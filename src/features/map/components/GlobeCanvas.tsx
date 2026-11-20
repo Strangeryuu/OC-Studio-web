@@ -248,6 +248,8 @@ export function GlobeCanvas({ image, layers }: GlobeCanvasProps) {
   const orbitRef = useRef({ yaw: 0.2, pitch: 0.18, zoom: 1 })
   const lodRef = useRef(1)
   const dragRef = useRef<null | { x: number; y: number; yaw: number; pitch: number }>(null)
+  const pointersRef = useRef(new Map<number,{x:number;y:number}>())
+  const pinchRef = useRef<{distance:number;zoom:number}|null>(null)
   const [lod, setLod] = useState(1)
   const [error, setError] = useState<string | null>(null)
 
@@ -295,6 +297,22 @@ export function GlobeCanvas({ image, layers }: GlobeCanvasProps) {
     info.indexCount = mesh.indexCount
     draw()
   }, [draw, image, layers])
+
+  const zoomTo = useCallback((value:number)=>{
+    const next=Math.max(0.7,Math.min(3.2,value))
+    orbitRef.current.zoom=next
+    const nextLod=lodForZoom(next)
+    if(nextLod!==lodRef.current){
+      lodRef.current=nextLod
+      setLod(nextLod)
+      uploadMesh()
+    }else draw()
+  },[draw,uploadMesh])
+  const resetOrbit=useCallback(()=>{
+    orbitRef.current.yaw=0.2
+    orbitRef.current.pitch=0.18
+    zoomTo(1)
+  },[zoomTo])
 
   const uploadMeshRef = useRef(uploadMesh)
   useEffect(() => { uploadMeshRef.current = uploadMesh }, [uploadMesh])
@@ -399,6 +417,18 @@ export function GlobeCanvas({ image, layers }: GlobeCanvasProps) {
     uploadMesh()
   }, [uploadMesh])
 
+  // A non-passive wheel listener keeps zoom inside the globe on desktop.
+  useEffect(()=>{
+    const canvas=canvasRef.current
+    if(!canvas)return
+    const handleWheel=(event:WheelEvent)=>{
+      event.preventDefault()
+      zoomTo(orbitRef.current.zoom*(event.deltaY<0?1.08:1/1.08))
+    }
+    canvas.addEventListener('wheel',handleWheel,{passive:false})
+    return()=>canvas.removeEventListener('wheel',handleWheel)
+  },[zoomTo])
+
   return (
     <div
       ref={containerRef}
@@ -411,49 +441,62 @@ export function GlobeCanvas({ image, layers }: GlobeCanvasProps) {
         aria-label="3D 地球，可拖动旋转并滚轮缩放"
         onPointerDown={(event) => {
           event.currentTarget.setPointerCapture(event.pointerId)
-          dragRef.current = {
-            x: event.clientX,
-            y: event.clientY,
-            yaw: orbitRef.current.yaw,
-            pitch: orbitRef.current.pitch,
+          pointersRef.current.set(event.pointerId,{x:event.clientX,y:event.clientY})
+          if(pointersRef.current.size===1){
+            pinchRef.current=null
+            dragRef.current={
+              x:event.clientX,y:event.clientY,
+              yaw:orbitRef.current.yaw,pitch:orbitRef.current.pitch,
+            }
+          }else if(pointersRef.current.size===2){
+            const [a,b]=[...pointersRef.current.values()]
+            pinchRef.current={
+              distance:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y)),
+              zoom:orbitRef.current.zoom,
+            }
+            dragRef.current=null
           }
         }}
         onPointerMove={(event) => {
-          const drag = dragRef.current
-          if (!drag) return
-          orbitRef.current.yaw = drag.yaw + (event.clientX - drag.x) * 0.007
-          orbitRef.current.pitch = Math.max(-1.2, Math.min(1.2, drag.pitch + (event.clientY - drag.y) * 0.007))
+          if(!pointersRef.current.has(event.pointerId))return
+          pointersRef.current.set(event.pointerId,{x:event.clientX,y:event.clientY})
+          if(pointersRef.current.size>=2&&pinchRef.current){
+            const [a,b]=[...pointersRef.current.values()]
+            zoomTo(pinchRef.current.zoom*
+              Math.hypot(a.x-b.x,a.y-b.y)/pinchRef.current.distance)
+            return
+          }
+          const drag=dragRef.current
+          if(!drag)return
+          orbitRef.current.yaw=drag.yaw+(event.clientX-drag.x)*0.007
+          orbitRef.current.pitch=Math.max(-1.2,Math.min(1.2,
+            drag.pitch+(event.clientY-drag.y)*0.007))
           draw()
         }}
         onPointerUp={(event) => {
-          dragRef.current = null
-          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+          pointersRef.current.delete(event.pointerId)
+          if(event.currentTarget.hasPointerCapture(event.pointerId))
             event.currentTarget.releasePointerCapture(event.pointerId)
-          }
+          pinchRef.current=null
+          const remaining=[...pointersRef.current.values()]
+          if(remaining.length===1){
+            dragRef.current={
+              x:remaining[0].x,y:remaining[0].y,
+              yaw:orbitRef.current.yaw,pitch:orbitRef.current.pitch,
+            }
+          }else dragRef.current=null
         }}
-        onWheel={(event) => {
-          event.preventDefault()
-          const next = Math.max(0.7, Math.min(3.2, orbitRef.current.zoom * (event.deltaY < 0 ? 1.08 : 1 / 1.08)))
-          orbitRef.current.zoom = next
-          const nextLod = lodForZoom(next)
-          if (nextLod !== lodRef.current) {
-            lodRef.current = nextLod
-            setLod(nextLod)
-            uploadMesh()
-          } else {
-            draw()
-          }
+        onPointerCancel={(event) => {
+          pointersRef.current.delete(event.pointerId)
+          pinchRef.current=null
+          dragRef.current=null
+          if(event.currentTarget.hasPointerCapture(event.pointerId))
+            event.currentTarget.releasePointerCapture(event.pointerId)
         }}
-        onDoubleClick={() => {
-          orbitRef.current = { yaw: 0.2, pitch: 0.18, zoom: 1 }
-          draw()
-        }}
+        onDoubleClick={resetOrbit}
       />
       <button
-        onClick={() => {
-          orbitRef.current = { yaw: 0.2, pitch: 0.18, zoom: 1 }
-          draw()
-        }}
+        onClick={resetOrbit}
         className="absolute right-4 top-4 flex h-7 items-center gap-1 rounded-control border border-line bg-paper/85 px-2 text-[10px] text-ink-muted backdrop-blur hover:text-ink"
         title="重置球体视角"
       >
@@ -461,7 +504,7 @@ export function GlobeCanvas({ image, layers }: GlobeCanvasProps) {
         复位
       </button>
       <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-control border border-line bg-paper/80 px-2 py-1 text-[10px] text-ink-faint backdrop-blur">
-        拖动旋转 · 滚轮缩放 · 六面瓦片 LOD {lod} · {layers ? '真实高程位移' : '底图球面投影'}
+        拖动旋转 · 滚轮或双指缩放 · 六面瓦片 LOD {lod} · {layers ? '真实高程位移' : '底图球面投影'}
       </div>
       {error ? (
         <div className="absolute inset-0 flex items-center justify-center bg-paper/90 px-6 text-center text-xs text-error">
