@@ -9,6 +9,8 @@ import { defaultWorkspaceCustomization, readWorkspaceCustomization } from '@/lib
 import { isReservedCategoryName } from '@/lib/categories/types'
 import { remapPortableContent } from '@/lib/cloud/backup-format'
 import { parseSupportedCategory } from '@/lib/cloud/oc-editor-category'
+import { issueCategoryOverwritePreview, verifyCategoryOverwritePreview,
+  type CategoryTargetSnapshot } from '@/lib/cloud/server/category-import-preview'
 import { characterMediaIds } from '@/lib/cloud/character-media'
 import { characterMediaAllowed } from '@/lib/cloud/server/character-media'
 import { characterLinksAllowed } from '@/lib/cloud/server/character-links'
@@ -209,7 +211,27 @@ function remapOcEditorFields(kind:string, content:Record<string,unknown>,
   return next
 }
 
-export async function previewCategoryImport(workspaceId:string,raw:unknown) {
+function isOcEditorContext(archive:CategoryArchive,row:CategoryRecord):boolean {
+  return archive.sourceFormat==='oc-editor-ocav'&&
+    archive.primarySourceIds!==undefined&&!archive.primarySourceIds.includes(row.sourceId)
+}
+function previewTargets(archive:CategoryArchive,existing:TargetRow[]):CategoryTargetSnapshot[] {
+  const {lookup}=chooseTarget(archive,existing)
+  const external=resolveExternalRefs(archive,existing)
+  return [
+    ...archive.records.map(row=>{
+      const target=lookup.get(recordKey(row.kind,row.title,row.content))?.[0]
+      return {sourceKey:'record:'+row.kind+':'+row.localId,
+        targetId:target?.id??null,version:target?.version??null}
+    }),
+    ...(archive.externalRefs??[]).map(ref=>{
+      const target=external.get(ref.kind+':'+ref.localId)
+      return {sourceKey:'external:'+ref.kind+':'+ref.localId,
+        targetId:target?.id??null,version:target?.version??null}
+    }),
+  ]
+}
+export async function previewCategoryImport(workspaceId:string,actorId:string,raw:unknown) {
   const archive=parseSupportedCategory(raw)
   if(!archive)fail('CATEGORY_INVALID')
   const existing=await pool.query<TargetRow>(
@@ -218,6 +240,13 @@ export async function previewCategoryImport(workspaceId:string,raw:unknown) {
     [workspaceId])
   const {duplicates}=chooseTarget(archive,existing.rows)
   const linked=resolveExternalRefs(archive,existing.rows)
+  const {lookup}=chooseTarget(archive,existing.rows)
+  const overwriteCount=archive.records.filter(row=>
+    !isOcEditorContext(archive,row)&&
+    (lookup.get(recordKey(row.kind,row.title,row.content))?.length??0)>0).length
+  const previewToken=issueCategoryOverwritePreview({
+    archive,workspaceId,actorId,targets:previewTargets(archive,existing.rows),
+  })
   const primary=archive.primarySourceIds?.length??selectCategoryRecords(archive.records,archive.selection).length
   return {
     sourceName:archive.sourceName,kind:archive.selection.kind,
@@ -226,14 +255,16 @@ export async function previewCategoryImport(workspaceId:string,raw:unknown) {
     media:archive.assets.length,duplicates,addable:archive.records.length-duplicates,
     sourceFormat:archive.sourceFormat??'web-category',relations:archive.nativeRelations??0,
     linked:linked.size,unresolved:(archive.externalRefs??[]).length-linked.size,
+    overwriteCount,previewToken,
   }
 }
 
 export async function importCategoryArchive(
   workspaceId:string,actorId:string,raw:unknown,strategy:CategoryStrategy,
+  previewToken?:unknown,
 ) {
   const archive=parseSupportedCategory(raw)
-  if(!archive||!['skip','keep-both'].includes(strategy))fail('CATEGORY_INVALID')
+  if(!archive||!['skip','keep-both','overwrite'].includes(strategy))fail('CATEGORY_INVALID')
   const client=await pool.connect()
   const written:string[]=[]
   let started=false
@@ -244,6 +275,9 @@ export async function importCategoryArchive(
     if(locked.rowCount!==1)fail('NOT_FOUND')
     const existing=await targetRows(client,workspaceId)
     const {lookup}=chooseTarget(archive,existing)
+    if(strategy==='overwrite')verifyCategoryOverwritePreview({
+      token:previewToken,archive,workspaceId,actorId,targets:previewTargets(archive,existing),
+    })
     const external=resolveExternalRefs(archive,existing)
     if(external.size!==(archive.externalRefs??[]).length)fail('CATEGORY_LINK_TARGET_MISSING')
     const usedKeys=new Set(existing.filter(r=>isOriginalKind(r.kind))
@@ -253,8 +287,8 @@ export async function importCategoryArchive(
       media:new Map<string,string>(),tags:new Map<string,string>(),
     }
     for(const [key,row] of external)maps.local.set(key,Number(row.local_id))
-    const incoming:{row:CategoryRecord;id:string;title:string}[]=[]
-    let skipped=0,renamed=0
+    const incoming:{row:CategoryRecord;id:string;title:string;previous?:TargetRow}[]=[]
+    let skipped=0,renamed=0,overwritten=0
     // Allocate all new IDs before rewriting references. The workspace lock
     // serializes cloud entity mutations and prevents mapping partial graphs.
     for(const row of archive.records) {
@@ -262,12 +296,18 @@ export async function importCategoryArchive(
       const target=lookup.get(key)?.[0]
       // OC-editor context records link to an existing target by name,
       // regardless of how the user handles conflicts for primary items.
-      const isContext=archive.sourceFormat==='oc-editor-ocav'&&
-        !!archive.primarySourceIds&&!archive.primarySourceIds.includes(row.sourceId)
+      const isContext=isOcEditorContext(archive,row)
       if(target&&(strategy==='skip'||isContext)) {
         maps.local.set(row.kind+':'+row.localId,Number(target.local_id))
         maps.uuid.set(row.sourceId,target.id)
         skipped++;continue
+      }
+      if(target&&strategy==='overwrite') {
+        maps.local.set(row.kind+':'+row.localId,Number(target.local_id))
+        maps.uuid.set(row.sourceId,target.id)
+        incoming.push({row,id:target.id,title:row.title,previous:target})
+        overwritten++
+        continue
       }
       let title=row.title
       if(usedKeys.has(key)) {
@@ -344,16 +384,24 @@ export async function importCategoryArchive(
       const doc=readEntityDocument({title:item.title,data:adjusted})
       if(!doc)fail('CATEGORY_INVALID_ENTITY')
       if(!await characterMediaAllowed(client,workspaceId,item.row.kind,doc.data)||
-         !await characterLinksAllowed(client,workspaceId,item.row.kind,doc.data,item.id)||
-         item.row.kind==='event'&&!await eventLinksAllowed(client,workspaceId,doc.data,item.id)||
-         !await worldLinksAllowed(client,workspaceId,item.row.kind,doc.data,item.id)||
+         !await characterLinksAllowed(client,workspaceId,item.row.kind,doc.data,item.id,item.previous?.content)||
+         item.row.kind==='event'&&!await eventLinksAllowed(client,workspaceId,doc.data,item.id,item.previous?.content)||
+         !await worldLinksAllowed(client,workspaceId,item.row.kind,doc.data,item.id,item.previous?.content)||
          !await cloudMapAllowed(client,workspaceId,item.row.kind,doc.data,item.title,item.id)||
          !await cloudNovelAllowed(client,workspaceId,item.row.kind,doc.data))
         fail('CATEGORY_REFERENCE_INVALID')
-      await client.query(
-        "UPDATE entities SET title=$1,content=$2::jsonb,updated_at=now() "+
-        "WHERE id=$3 AND workspace_id=$4",
-        [item.title,JSON.stringify(doc.data),item.id,workspaceId])
+      if(item.previous) {
+        const updated=await client.query(
+          "UPDATE entities SET title=$1,content=$2::jsonb,version=version+1, "+
+          "updated_by=$3,updated_at=now() WHERE id=$4 AND workspace_id=$5 AND version=$6",
+          [item.title,JSON.stringify(doc.data),actorId,item.id,workspaceId,item.previous.version])
+        if(updated.rowCount!==1)fail('CATEGORY_PREVIEW_STALE')
+      } else {
+        await client.query(
+          "UPDATE entities SET title=$1,content=$2::jsonb,updated_at=now() "+
+          "WHERE id=$3 AND workspace_id=$4",
+          [item.title,JSON.stringify(doc.data),item.id,workspaceId])
+      }
     }
     // Register imported character folders so they remain renameable and
     // selectable via the cloud catalog, without resetting existing folders.
@@ -432,9 +480,9 @@ export async function importCategoryArchive(
       "VALUES($1,$2,'workspace:category:import',$3,$4::jsonb)",
       [workspaceId,actorId,workspaceId,JSON.stringify({
         format:archive.format,sourceName:archive.sourceName,kind:archive.selection.kind,
-        added:incoming.length,skipped,renamed,media:selectedAssets.length})])
+        added:incoming.length-overwritten,overwritten,skipped,renamed,media:selectedAssets.length})])
     await client.query('COMMIT');started=false
-    return {added:incoming.length,skipped,renamed,media:selectedAssets.length,
+    return {added:incoming.length-overwritten,overwritten,skipped,renamed,media:selectedAssets.length,
       total:archive.records.length}
   } catch (cause) {
     if(started)await client.query('ROLLBACK').catch(()=>undefined)
