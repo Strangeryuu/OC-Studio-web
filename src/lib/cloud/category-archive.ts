@@ -1,0 +1,217 @@
+/**
+ * Selective OC Studio Web archives. Inspired by OC-editor's OCAV user flow,
+ * implemented separately for PostgreSQL and workspace-scoped cloud identities.
+ *
+ * Files are JSON with .ocbak extension. Full-library restore keeps its own v1
+ * protocol; this parser deliberately rejects full backups.
+ */
+import { readEntityDocument } from '@/lib/cloud/entity-input'
+import { isUuid } from '@/lib/cloud/backup-id'
+
+export const CATEGORY_FORMAT = 'oc-studio-web-category-v1'
+export type CategoryKind = 'character' | 'event' | 'country' | 'worldEntry'
+export type CategoryStrategy = 'skip' | 'keep-both'
+export interface CategorySelection {
+  kind: CategoryKind
+  folder?: string
+  category?: string
+}
+export interface CategoryRecord {
+  sourceId: string
+  localId: number
+  kind: CategoryKind
+  title: string
+  content: Record<string, unknown>
+}
+export interface CategoryAsset { id: string; mime: string; base64: string }
+export interface CategoryTag { id: string; name: string; color: string }
+export interface CategoryArchive {
+  format: typeof CATEGORY_FORMAT
+  version: 1
+  sourceName: string
+  exportedAt: string
+  selection: CategorySelection
+  records: CategoryRecord[]
+  assets: CategoryAsset[]
+  tags: CategoryTag[]
+}
+const kinds = new Set<CategoryKind>(['character','event','country','worldEntry'])
+const imageMimes = new Set(['image/png','image/jpeg','image/gif','image/webp'])
+const obj = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+const goodId = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+
+export function readCategorySelection(input: unknown): CategorySelection | null {
+  if (!obj(input) || !kinds.has(input.kind as CategoryKind)) return null
+  const kind = input.kind as CategoryKind
+  const folder = input.folder
+  const category = input.category
+  if (folder !== undefined && (kind !== 'character' || typeof folder !== 'string' || folder.length > 100)) return null
+  if (category !== undefined && (kind !== 'worldEntry' || typeof category !== 'string' || category.length > 100)) return null
+  return {kind, ...(folder === undefined ? {} : {folder: folder as string}),
+    ...(category === undefined ? {} : {category: category as string})}
+}
+
+export function parseCategoryArchive(input: unknown): CategoryArchive | null {
+  if (!obj(input) || input.format !== CATEGORY_FORMAT || input.version !== 1 ||
+      typeof input.sourceName !== 'string' || input.sourceName.length > 200 ||
+      typeof input.exportedAt !== 'string' || Number.isNaN(Date.parse(input.exportedAt)) ||
+      !Array.isArray(input.records) || input.records.length < 1 || input.records.length > 500 ||
+      !Array.isArray(input.assets) || input.assets.length > 100 ||
+      !Array.isArray(input.tags) || input.tags.length > 500) return null
+  const selection = readCategorySelection(input.selection)
+  if (!selection) return null
+  const records: CategoryRecord[] = []
+  const seen = new Set<string>(), ids = new Set<string>()
+  for (const row of input.records) {
+    if (!obj(row) || !kinds.has(row.kind as CategoryKind) ||
+        !isUuid(row.sourceId) || !goodId(row.localId) ||
+        !obj(row.content) || typeof row.title !== 'string') return null
+    const doc = readEntityDocument({title:row.title,data:row.content})
+    if (!doc) return null
+    const key = row.kind + ':' + row.localId
+    if (seen.has(key) || ids.has(row.sourceId.toLowerCase())) return null
+    seen.add(key); ids.add(row.sourceId.toLowerCase())
+    records.push({kind:row.kind as CategoryKind, sourceId:row.sourceId.toLowerCase(),
+      localId:row.localId, title:doc.title,content:doc.data as Record<string,unknown>})
+  }
+  const assets: CategoryAsset[] = [], assetIds = new Set<string>()
+  let encodedSize = 0
+  for (const asset of input.assets) {
+    if (!obj(asset) || !isUuid(asset.id) || typeof asset.mime !== 'string' ||
+        !imageMimes.has(asset.mime) || typeof asset.base64 !== 'string' ||
+        asset.base64.length > 12000000 || !/^[A-Za-z0-9+/]*={0,2}$/.test(asset.base64) ||
+        assetIds.has(asset.id.toLowerCase())) return null
+    encodedSize += asset.base64.length
+    if (encodedSize > 40_000_000) return null
+    assetIds.add(asset.id.toLowerCase())
+    assets.push({id:asset.id.toLowerCase(),mime:asset.mime,base64:asset.base64})
+  }
+  const tags: CategoryTag[] = [], tagIds = new Set<string>()
+  for (const tag of input.tags) {
+    if (!obj(tag) || !isUuid(tag.id) || typeof tag.name !== 'string' ||
+        !tag.name.trim() || tag.name.length > 40 || typeof tag.color !== 'string' ||
+        !/^#[a-f0-9]{6}$/i.test(tag.color) || tagIds.has(tag.id.toLowerCase())) return null
+    tagIds.add(tag.id.toLowerCase())
+    tags.push({id:tag.id.toLowerCase(),name:tag.name.trim(),color:tag.color})
+  }
+  if (!records.some(row=>row.kind===selection.kind)) return null
+  return {format:CATEGORY_FORMAT,version:1,sourceName:input.sourceName,
+    exportedAt:input.exportedAt,selection,records,assets,tags}
+}
+
+export function recordKey(kind: CategoryKind, title: string, content: Record<string,unknown>): string {
+  const category = kind === 'worldEntry' && typeof content.category === 'string'
+    ? content.category.trim().toLocaleLowerCase('zh-CN') : ''
+  return kind + ':' + category + ':' + title.trim().toLocaleLowerCase('zh-CN')
+}
+
+export function selectCategoryRecords<T extends {kind: CategoryKind; content: Record<string,unknown>}>(
+  rows: T[], selection: CategorySelection,
+): T[] {
+  return rows.filter(row=>{
+    if (row.kind !== selection.kind) return false
+    if (selection.folder !== undefined && row.content.folder !== selection.folder) return false
+    if (selection.category !== undefined && row.content.category !== selection.category) return false
+    return true
+  })
+}
+
+export interface Dependency {kind:CategoryKind; localId?:number; uuid?:string}
+/** Numeric original relationships and UUID cloud relationships; no arbitrary JSON ID rewriting. */
+export function entityDependencies(row: Pick<CategoryRecord,'kind'|'content'>): Dependency[] {
+  const c = row.content, refs:Dependency[] = []
+  const add = (kind:CategoryKind, id:unknown) => {
+    if (id === undefined || id === null || id === '') return
+    if (!goodId(id)) throw new Error('CATEGORY_REFERENCE_INVALID')
+    refs.push({kind,localId:id})
+  }
+  const many = (kind:CategoryKind, values:unknown) => {
+    if (values === undefined || values === null) return
+    if (!Array.isArray(values) || values.length > 1000) throw new Error('CATEGORY_REFERENCE_INVALID')
+    for (const id of values) add(kind,id)
+  }
+  const rel = (kind:CategoryKind, values:unknown, key='targetId') => {
+    if (values === undefined || values === null) return
+    if (!Array.isArray(values) || values.length > 1000) throw new Error('CATEGORY_REFERENCE_INVALID')
+    for (const value of values) {
+      if (!obj(value)) throw new Error('CATEGORY_REFERENCE_INVALID')
+      add(kind,value[key])
+    }
+  }
+  if (row.kind==='character') {
+    add('country',c.countryId)
+    rel('character',c.relatedCharacters,'characterId')
+    rel('worldEntry',c.relatedNotes)
+    if (c.cloudRelations !== undefined) {
+      if (!Array.isArray(c.cloudRelations) || c.cloudRelations.length > 100) throw new Error('CATEGORY_REFERENCE_INVALID')
+      for (const relation of c.cloudRelations) {
+        if (!obj(relation) || !isUuid(relation.targetId)) throw new Error('CATEGORY_REFERENCE_INVALID')
+        refs.push({kind:'character',uuid:String(relation.targetId).toLowerCase()})
+      }
+    }
+  }
+  if (row.kind==='event') {
+    many('character',c.characters);many('country',c.countries)
+    add('event',c.parentEventId);rel('event',c.relations)
+  }
+  if (row.kind==='country') add('country',c.parentId)
+  if (row.kind==='worldEntry') {
+    add('worldEntry',c.parentId);rel('worldEntry',c.relations)
+    if (c.references !== undefined) {
+      if (!Array.isArray(c.references) || c.references.length > 1000) throw new Error('CATEGORY_REFERENCE_INVALID')
+      for (const ref of c.references) {
+        if (!obj(ref)) throw new Error('CATEGORY_REFERENCE_INVALID')
+        const kind = ref.targetType==='world' ? 'worldEntry' : ref.targetType
+        if (kinds.has(kind as CategoryKind)) add(kind as CategoryKind,ref.targetId)
+      }
+    }
+  }
+  return refs
+}
+
+export function collectCategoryClosure<T extends CategoryRecord>(
+  rows: T[], selection:CategorySelection,
+): {rows:T[];primary:number} {
+  const byId=new Map(rows.map(row=>[row.kind+':'+row.localId,row]))
+  const byUuid=new Map(rows.map(row=>[row.sourceId.toLowerCase(),row]))
+  const primary=selectCategoryRecords(rows,selection)
+  const chosen=new Map<string,T>()
+  const pending=[...primary]
+  while(pending.length) {
+    const row=pending.shift()!
+    const key=row.kind+':'+row.localId
+    if (chosen.has(key)) continue
+    if (chosen.size>=500) throw new Error('CATEGORY_TOO_LARGE')
+    chosen.set(key,row)
+    for (const ref of entityDependencies(row)) {
+      const target=ref.uuid ? byUuid.get(ref.uuid) : byId.get(ref.kind+':'+ref.localId)
+      // Existing workspaces may contain legacy references to deleted entries;
+      // only resolvable, active references may be carried into a new workspace.
+      if (!target) throw new Error('CATEGORY_REFERENCE_MISSING')
+      pending.push(target)
+    }
+  }
+  return {rows:[...chosen.values()],primary:primary.length}
+}
+
+export function collectArchiveMedia(records: Pick<CategoryRecord,'content'>[]): Set<string> {
+  const found=new Set<string>()
+  const visit=(value:unknown,depth:number):void=>{
+    if(depth>25)throw new Error('CATEGORY_TOO_DEEP')
+    if(typeof value==='string') {
+      const match=/^\/api\/media\/([0-9a-f-]{36})$/i.exec(value)
+      if(match) {
+        if(!isUuid(match[1]))throw new Error('CATEGORY_MEDIA_INVALID')
+        found.add(match[1].toLowerCase())
+      }
+    } else if(Array.isArray(value)) {
+      for(const child of value)visit(child,depth+1)
+    } else if(obj(value)) {
+      for(const child of Object.values(value))visit(child,depth+1)
+    }
+  }
+  for(const row of records)visit(row.content,0)
+  return found
+}
