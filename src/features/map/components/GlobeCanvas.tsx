@@ -199,7 +199,7 @@ function buildMesh(image: ImageData, layers: MapLayers | null, level = 1): MeshD
             const pixel = (sampleY * image.width + sampleX) * 4
             let elevation = 0
             if (layers) {
-              const lx = Math.max(0, Math.min(layers.width - 1, sampleX % layers.width))
+              const lx = Math.max(0, Math.min(layers.width - 1, Math.floor((sampleX / image.width) * layers.width)))
               const ly = Math.max(0, Math.min(layers.mapHeight - 1, Math.floor((sampleY / image.height) * layers.mapHeight)))
               elevation = layers.height[ly * layers.width + lx] ?? 0
             }
