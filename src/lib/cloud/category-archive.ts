@@ -53,6 +53,32 @@ export function readCategorySelection(input: unknown): CategorySelection | null 
     ...(category === undefined ? {} : {category: category as string})}
 }
 
+/** Images in exported cloud archives must be private assets, never external URLs. */
+export function categoryMediaLinksSafe(data:Record<string,unknown>):boolean {
+  const slots=new Set([
+    'avatarUrl','headerUrl','flagUrl','cover','avatar','image','mapImage',
+    'novelCover','coverUrl','animationUrl',
+  ])
+  const allowed=(value:unknown):boolean=>
+    value===null||value===undefined||value===''||
+    (typeof value==='string' && /^\/api\/media\//.test(value) &&
+     isUuid(value.slice('/api/media/'.length)))
+  const walk=(value:unknown,parent:string,depth:number):boolean=>{
+    if(depth>35)return false
+    if(Array.isArray(value))return value.every(x=>walk(x,parent,depth+1))
+    if(!obj(value))return true
+    for(const [key,item] of Object.entries(value)) {
+      const imageSource=slots.has(key)||
+        (key==='url'&&['gallery','avatars','images'].includes(parent))||
+        (key==='src'&&(value.type==='imageBlock'||value.type==='image'))
+      if(imageSource && !allowed(item))return false
+      if(!walk(item,key,depth+1))return false
+    }
+    return true
+  }
+  return walk(data,'',0)
+}
+
 export function parseCategoryArchive(input: unknown): CategoryArchive | null {
   if (!obj(input) || input.format !== CATEGORY_FORMAT || input.version !== 1 ||
       typeof input.sourceName !== 'string' || input.sourceName.length > 200 ||
@@ -68,6 +94,7 @@ export function parseCategoryArchive(input: unknown): CategoryArchive | null {
     if (!obj(row) || !kinds.has(row.kind as CategoryKind) ||
         !isUuid(row.sourceId) || !goodId(row.localId) ||
         !obj(row.content) || typeof row.title !== 'string') return null
+    if(!categoryMediaLinksSafe(row.content))return null
     const doc = readEntityDocument({title:row.title,data:row.content})
     if (!doc) return null
     const key = row.kind + ':' + row.localId
