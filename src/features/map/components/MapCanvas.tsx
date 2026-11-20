@@ -363,6 +363,7 @@ export function MapCanvas({
         {draft || profilePicking ? (
           <div
             className="absolute inset-0 z-10 cursor-crosshair touch-none"
+            data-testid={profilePicking?'cloud-profile-picker':undefined}
             onPointerDown={(event) => event.stopPropagation()}
             onContextMenu={(event) => event.preventDefault()}
             onClick={(event) => {
