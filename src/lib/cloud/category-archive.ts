@@ -97,6 +97,7 @@ export function parseCategoryArchive(input: unknown): CategoryArchive | null {
   const seen = new Set<string>(), ids = new Set<string>()
   for (const row of input.records) {
     if (!obj(row) || !kinds.has(row.kind as CategoryKind) ||
+        (row.kind==='worldEntry' && obj(row.content) && ['小说','地图'].includes(String(row.content.category??''))) ||
         !isUuid(row.sourceId) || !goodId(row.localId) ||
         !obj(row.content) || typeof row.title !== 'string') return null
     if(!categoryMediaLinksSafe(row.content))return null
@@ -128,7 +129,7 @@ export function parseCategoryArchive(input: unknown): CategoryArchive | null {
     tagIds.add(tag.id.toLowerCase())
     tags.push({id:tag.id.toLowerCase(),name:tag.name.trim(),color:tag.color})
   }
-  if (!records.some(row=>row.kind===selection.kind)) return null
+  if (!selectCategoryRecords(records,selection).length) return null
   return {format:CATEGORY_FORMAT,version:1,sourceName:input.sourceName,
     exportedAt:input.exportedAt,selection,records,assets,tags}
 }
@@ -246,7 +247,8 @@ export function entityDependencies(row: Pick<CategoryRecord,'kind'|'content'>): 
       for (const ref of c.references) {
         if (!obj(ref)) throw new Error('CATEGORY_REFERENCE_INVALID')
         const kind = ref.targetType==='world' ? 'worldEntry' : ref.targetType
-        if (kinds.has(kind as CategoryKind)) add(kind as CategoryKind,ref.targetId)
+        if (!kinds.has(kind as CategoryKind)) throw new Error('CATEGORY_REFERENCE_INVALID')
+        add(kind as CategoryKind,ref.targetId)
       }
     }
   }
