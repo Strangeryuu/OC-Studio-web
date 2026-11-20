@@ -133,7 +133,7 @@ export function WorkspaceMaps(props: Props) {
   const fileRef = useRef<HTMLInputElement | null>(null)
   const archiveRef = useRef<HTMLInputElement | null>(null)
   const writing = useRef<Promise<void> | null>(null)
-  const viewport = useMapViewport(map?.width && map?.height ? map.width / map.height : 16 / 9, map?.id ?? 0)
+  const viewport = useMapViewport(map?.width && map?.height ? map.width / map.height : 16 / 9, `${map?.id??0}:${displayMode}`)
   const pins = useMemo(() => makePins(countries, events, rows), [countries, events, rows])
   const activeName = map?.name ?? ''
   const shown = useMemo<AnchorPoint[]>(() => pins.filter(pin => pin.position && pin.mapId === activeName && shownLayers.includes(pin.kind))
