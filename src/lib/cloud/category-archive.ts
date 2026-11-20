@@ -119,6 +119,56 @@ export function selectCategoryRecords<T extends {kind: CategoryKind; content: Re
 }
 
 export interface Dependency {kind:CategoryKind; localId?:number; uuid?:string}
+
+/** Rewrite numeric TipTap mention / wikiLink IDs without touching ordinary text. */
+function mapDocRefs(value:unknown, replace:(kind:CategoryKind,id:number)=>number):unknown {
+  const isJson=typeof value==='string'&&value.trim().startsWith('{')
+  let source:unknown=value
+  if(isJson) {
+    try {source=JSON.parse(value as string) as unknown}
+    catch {return value}
+  }
+  if(!obj(source)||source.type!=='doc')return value
+  const walk=(node:unknown,depth:number):unknown=>{
+    if(depth>35)throw new Error('CATEGORY_TOO_DEEP')
+    if(Array.isArray(node))return node.map(item=>walk(item,depth+1))
+    if(!obj(node))return node
+    const output={...node}
+    if((node.type==='mention'||node.type==='wikiLink')&&obj(node.attrs)) {
+      const target=node.type==='wikiLink'?'worldEntry':
+        node.attrs.entityType==='world'?'worldEntry':node.attrs.entityType
+      if(kinds.has(target as CategoryKind)&&node.attrs.id!==undefined&&node.attrs.id!==null) {
+        const id=Number(node.attrs.id)
+        if(!goodId(id))throw new Error('CATEGORY_REFERENCE_INVALID')
+        output.attrs={...node.attrs,id:String(replace(target as CategoryKind,id))}
+      }
+    }
+    if(Array.isArray(node.content))output.content=node.content.map(child=>walk(child,depth+1))
+    return output
+  }
+  const result=walk(source,0)
+  return isJson?JSON.stringify(result):result
+}
+export function documentDependencies(data:Record<string,unknown>):Dependency[] {
+  const refs:Dependency[]=[]
+  const track=(kind:CategoryKind,id:number):number=>{
+    refs.push({kind,localId:id});return id
+  }
+  mapDocRefs(data.document,track)
+  mapDocRefs(data.content,track)
+  return refs
+}
+export function remapCategoryDocumentRefs(
+  data:Record<string,unknown>, maps:ReadonlyMap<string,number>,
+):Record<string,unknown> {
+  const replace=(kind:CategoryKind,id:number):number=>{
+    const mapped=maps.get(kind+':'+id)
+    if(mapped===undefined)throw new Error('CATEGORY_REFERENCE_MISSING')
+    return mapped
+  }
+  return {...data,document:mapDocRefs(data.document,replace),
+    ...(data.content===undefined?{}:{content:mapDocRefs(data.content,replace)})}
+}
 /** Numeric original relationships and UUID cloud relationships; no arbitrary JSON ID rewriting. */
 export function entityDependencies(row: Pick<CategoryRecord,'kind'|'content'>): Dependency[] {
   const c = row.content, refs:Dependency[] = []
@@ -168,6 +218,7 @@ export function entityDependencies(row: Pick<CategoryRecord,'kind'|'content'>): 
       }
     }
   }
+  refs.push(...documentDependencies(c))
   return refs
 }
 
