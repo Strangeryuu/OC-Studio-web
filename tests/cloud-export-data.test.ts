@@ -76,5 +76,10 @@ describe('workspace export reuses the original model without Dexie reads', () =>
     expect(html).toContain('甲世界')
     expect(html).toContain('云端主角')
     expect(html).toContain('世界法则')
+    // Early cloud records may omit nationalityLegacy and other optional display fields.
+    const legacy = { ...character, nationalityLegacy: undefined, element: undefined } as unknown as Character
+    expect(() => buildSite({
+      meta: null, characters: [legacy], events: [], countries: [], worldEntries: [], tags: [], periods: [],
+    }, { images: new Map() })).not.toThrow()
   })
 })
