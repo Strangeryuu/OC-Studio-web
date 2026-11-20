@@ -8,6 +8,7 @@ import { readEntityDocument } from '@/lib/cloud/entity-input'
 import { defaultWorkspaceCustomization, readWorkspaceCustomization } from '@/lib/cloud/workspace-customization'
 import { isReservedCategoryName } from '@/lib/categories/types'
 import { remapPortableContent } from '@/lib/cloud/backup-format'
+import { parseSupportedCategory } from '@/lib/cloud/oc-editor-category'
 import { characterMediaIds } from '@/lib/cloud/character-media'
 import { characterMediaAllowed } from '@/lib/cloud/server/character-media'
 import { characterLinksAllowed } from '@/lib/cloud/server/character-links'
@@ -154,27 +155,84 @@ async function targetRows(client:PoolClient,workspaceId:string):Promise<TargetRo
   return existing.rows
 }
 
+function resolveExternalRefs(archive:CategoryArchive,existing:TargetRow[]):Map<string,TargetRow> {
+  const found=new Map<string,TargetRow>()
+  for(const ref of archive.externalRefs??[]) {
+    const matches=existing.filter(row=>row.kind===ref.kind&&
+      row.title.trim().toLocaleLowerCase('zh-CN')===ref.name.trim().toLocaleLowerCase('zh-CN'))
+    if(matches.length>1)fail('CATEGORY_AMBIGUOUS_TARGET')
+    if(matches.length===1)found.set(ref.kind+':'+ref.localId,matches[0])
+  }
+  return found
+}
+/** OC-editor-specific legacy numeric links. Full backups are never modified here. */
+function remapOcEditorFields(kind:string, content:Record<string,unknown>,
+  ids:ReadonlyMap<string,number>):Record<string,unknown> {
+  const next={...content}
+  const list=(field:string,target:string)=>{
+    if(next[field]===undefined)return
+    if(!Array.isArray(next[field]))fail('CATEGORY_REFERENCE_INVALID')
+    next[field]=(next[field] as unknown[]).map(old=>{
+      if(typeof old!=='number'||!Number.isSafeInteger(old))fail('CATEGORY_REFERENCE_INVALID')
+      const mapped=ids.get(target+':'+old)
+      if(mapped===undefined)fail('CATEGORY_REFERENCE_MISSING')
+      return mapped
+    })
+  }
+  const labels=(field:string,target:string)=>{
+    if(next[field]===undefined)return
+    if(!next[field]||typeof next[field]!=='object'||Array.isArray(next[field]))
+      fail('CATEGORY_REFERENCE_INVALID')
+    const output:Record<string,unknown>={}
+    for(const [old,label] of Object.entries(next[field] as Record<string,unknown>)){
+      const mapped=ids.get(target+':'+Number(old))
+      if(mapped!==undefined)output[String(mapped)]=label
+    }
+    next[field]=output
+  }
+  if(kind==='character'){
+    list('relatedNations','country');list('relatedEvents','event')
+    labels('relatedNationLabels','country');labels('relatedEventLabels','event')
+    if(Array.isArray(next.relatedCharacters)){
+      next.relatedCharacters=(next.relatedCharacters as Record<string,unknown>[]).map(row=>{
+        const {relationId: _sourceId,...rest}=row
+        void _sourceId
+        return rest
+      })
+    }
+  }
+  if(kind==='country'){
+    list('relatedNations','country');list('relatedEvents','event')
+    list('characters','character');list('events','event')
+    labels('relatedNationLabels','country');labels('relatedEventLabels','event')
+  }
+  return next
+}
+
 export async function previewCategoryImport(workspaceId:string,raw:unknown) {
-  const archive=parseCategoryArchive(raw)
+  const archive=parseSupportedCategory(raw)
   if(!archive)fail('CATEGORY_INVALID')
   const existing=await pool.query<TargetRow>(
     "SELECT id,local_id::text,kind,title,content,version FROM entities "+
     "WHERE workspace_id=$1 AND deleted_at IS NULL ORDER BY local_id",
     [workspaceId])
   const {duplicates}=chooseTarget(archive,existing.rows)
+  const linked=resolveExternalRefs(archive,existing.rows)
   const primary=selectCategoryRecords(archive.records,archive.selection).length
   return {
     sourceName:archive.sourceName,kind:archive.selection.kind,
     selected:primary,
     total:archive.records.length,context:archive.records.length-primary,
     media:archive.assets.length,duplicates,addable:archive.records.length-duplicates,
+    sourceFormat:archive.sourceFormat??'web-category',relations:archive.nativeRelations??0,
+    linked:linked.size,unresolved:(archive.externalRefs??[]).length-linked.size,
   }
 }
 
 export async function importCategoryArchive(
   workspaceId:string,actorId:string,raw:unknown,strategy:CategoryStrategy,
 ) {
-  const archive=parseCategoryArchive(raw)
+  const archive=parseSupportedCategory(raw)
   if(!archive||!['skip','keep-both'].includes(strategy))fail('CATEGORY_INVALID')
   const client=await pool.connect()
   const written:string[]=[]
@@ -186,12 +244,15 @@ export async function importCategoryArchive(
     if(locked.rowCount!==1)fail('NOT_FOUND')
     const existing=await targetRows(client,workspaceId)
     const {lookup}=chooseTarget(archive,existing)
+    const external=resolveExternalRefs(archive,existing)
+    if(external.size!==(archive.externalRefs??[]).length)fail('CATEGORY_LINK_TARGET_MISSING')
     const usedKeys=new Set(existing.filter(r=>isOriginalKind(r.kind))
       .map(r=>recordKey(r.kind as CategoryRecord['kind'],r.title,r.content)))
     const maps={
       local:new Map<string,number>(),uuid:new Map<string,string>(),
       media:new Map<string,string>(),tags:new Map<string,string>(),
     }
+    for(const [key,row] of external)maps.local.set(key,Number(row.local_id))
     const incoming:{row:CategoryRecord;id:string;title:string}[]=[]
     let skipped=0,renamed=0
     // Allocate all new IDs before rewriting references. The workspace lock
@@ -271,7 +332,9 @@ export async function importCategoryArchive(
     }
     for(const item of incoming) {
       const content=remapCategoryDocumentRefs(cleanForImport(item.row.kind,item.row.content),maps.local)
-      const adjusted=remapPortableContent(item.row.kind,content,maps)
+      const adjusted=remapPortableContent(item.row.kind,
+        archive.sourceFormat==='oc-editor-ocav'
+          ?remapOcEditorFields(item.row.kind,content,maps.local):content,maps)
       const primary=item.row.kind==='character'||item.row.kind==='country'?'name':'title'
       adjusted[primary]=item.title
       const doc=readEntityDocument({title:item.title,data:adjusted})
