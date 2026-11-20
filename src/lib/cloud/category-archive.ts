@@ -66,6 +66,11 @@ export function categoryMediaLinksSafe(data:Record<string,unknown>):boolean {
   const walk=(value:unknown,parent:string,depth:number):boolean=>{
     if(depth>35)return false
     if(Array.isArray(value))return value.every(x=>walk(x,parent,depth+1))
+    if(typeof value==='string'&&['document','content'].includes(parent)&&value.trim().startsWith('{')) {
+      try {const parsed=JSON.parse(value) as unknown
+        if(obj(parsed)&&parsed.type==='doc')return walk(parsed,parent,depth+1)
+      } catch {return true}
+    }
     if(!obj(value))return true
     for(const [key,item] of Object.entries(value)) {
       const imageSource=slots.has(key)||
