@@ -62,13 +62,12 @@ export function verifyCategoryOverwritePreview(input:{
   targets:CategoryTargetSnapshot[]
   now?:number
 }):void {
-  const token=input.token
-  if(typeof token!=='string'||token.length>1500||!token.includes('.'))invalid()
+  if(typeof input.token!=='string')invalid()
+  const token=input.token as string
+  if(token.length>1500||!token.includes('.'))invalid()
   const parts=token.split('.')
   if(parts.length!==2||!parts[0]||!parts[1])invalid()
-  let provided:Buffer
-  try {provided=Buffer.from(parts[1],'base64url')}
-  catch {invalid()}
+  const provided=Buffer.from(parts[1],'base64url')
   const expected=sign(parts[0])
   if(provided.length!==expected.length||!timingSafeEqual(provided,expected))invalid()
   let decoded:unknown
@@ -82,7 +81,9 @@ export function verifyCategoryOverwritePreview(input:{
     !Number.isSafeInteger(body.issuedAt)||!Number.isSafeInteger(body.expiresAt)||
     body.expiresAt-body.issuedAt!==TTL_MS)invalid()
   const now=input.now??Date.now()
-  if(now<body.issuedAt||now>body.expiresAt)
+  const issuedAt=body.issuedAt as number
+  const expiresAt=body.expiresAt as number
+  if(now<issuedAt||now>expiresAt)
     throw new Error('CATEGORY_PREVIEW_EXPIRED')
   if(body.archiveHash!==hash(input.archive)||
      body.targetHash!==hash(sorted(input.targets)))
