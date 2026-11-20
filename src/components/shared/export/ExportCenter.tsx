@@ -9,7 +9,9 @@ import { BackupPanel } from './BackupPanel'
 import { GraphPanel } from './GraphPanel'
 import { TimelinePanel } from './TimelinePanel'
 import { NovelPanel } from './NovelPanel'
-import type { PosterSubjectKind } from '@/lib/export/poster/subjects'
+import type { PosterSubjectKind, PosterSubjectSource } from '@/lib/export/poster/subjects'
+import type { SiteData } from '@/lib/export/site/build'
+import type { DocumentModel } from '@/lib/export/document'
 
 export type ExportTabId = 'poster' | 'site' | 'document' | 'novel' | 'graph' | 'timeline' | 'backup'
 
@@ -32,7 +34,15 @@ const TABS: TabMeta[] = [
 const FOCUSABLE =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
+export interface CloudExportData {
+  poster: PosterSubjectSource
+  site: SiteData
+  document: DocumentModel
+}
+
 export interface ExportCenterProps {
+  /** Workspace-scoped data: cloud mode exposes only the three adapted original panels. */
+  cloudData?: CloudExportData
   /** 小说：按小说根笔记 id 打开（面板自己读章节） */
   novelId?: number
   onClose: () => void
@@ -41,7 +51,8 @@ export interface ExportCenterProps {
   initialSubject?: { kind: PosterSubjectKind; id: number }
 }
 
-export function ExportCenter({ onClose, initialTab = 'poster', initialSubject, novelId }: ExportCenterProps) {
+export function ExportCenter({ onClose, initialTab = 'poster', initialSubject, novelId, cloudData }: ExportCenterProps) {
+  const availableTabs = cloudData ? TABS.filter(item => ['poster', 'site', 'document'].includes(item.id)) : TABS
   const [tab, setTab] = useState<ExportTabId>(initialTab)
   const [visited, setVisited] = useState<Set<ExportTabId>>(new Set([initialTab]))
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -99,21 +110,21 @@ export function ExportCenter({ onClose, initialTab = 'poster', initialSubject, n
   const onTabKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
     event.preventDefault()
-    const index = TABS.findIndex((item) => item.id === tab)
+    const index = availableTabs.findIndex((item) => item.id === tab)
     let next = index
-    if (event.key === 'ArrowLeft') next = (index - 1 + TABS.length) % TABS.length
-    if (event.key === 'ArrowRight') next = (index + 1) % TABS.length
+    if (event.key === 'ArrowLeft') next = (index - 1 + availableTabs.length) % availableTabs.length
+    if (event.key === 'ArrowRight') next = (index + 1) % availableTabs.length
     if (event.key === 'Home') next = 0
-    if (event.key === 'End') next = TABS.length - 1
-    const target = TABS[next]
+    if (event.key === 'End') next = availableTabs.length - 1
+    const target = availableTabs[next]
     selectTab(target.id)
     tabStripRef.current?.querySelector<HTMLElement>(`[data-tab="${target.id}"]`)?.focus()
   }
 
   const panels: Record<ExportTabId, ReactNode> = {
-    poster: <PosterPanel initialSubject={initialSubject} />,
-    site: <SitePanel />,
-    document: <DocumentPanel />,
+    poster: <PosterPanel initialSubject={initialSubject} dataSource={cloudData?.poster} />,
+    site: <SitePanel cloudData={cloudData?.site} />,
+    document: <DocumentPanel cloudModel={cloudData?.document} />,
     novel: <NovelPanel novelId={novelId} />,
     graph: <GraphPanel />,
     timeline: <TimelinePanel />,
@@ -146,7 +157,7 @@ export function ExportCenter({ onClose, initialTab = 'poster', initialSubject, n
         onKeyDown={onTabKeyDown}
         className="flex h-10 shrink-0 items-stretch gap-0.5 overflow-x-auto border-b border-line px-3"
       >
-        {TABS.map((item) => {
+        {availableTabs.map((item) => {
           const Icon = item.icon
           const active = tab === item.id
           return (
@@ -174,7 +185,7 @@ export function ExportCenter({ onClose, initialTab = 'poster', initialSubject, n
       </div>
 
       <div className="flex min-h-0 flex-1">
-        {TABS.map((item) =>
+        {availableTabs.map((item) =>
           visited.has(item.id) ? (
             <div
               key={item.id}

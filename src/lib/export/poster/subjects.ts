@@ -43,6 +43,14 @@ export interface PosterSubjectBundle {
   data: PosterData
 }
 
+/** A caller may provide scoped in-memory cloud records, bypassing Dexie reads. */
+export interface PosterSubjectSource {
+  characters: Character[]
+  events: Event[]
+  countries: Country[]
+  entries: WorldEntry[]
+}
+
 function text(value: unknown): string {
   return plainTextOf(value).replace(/\s+/g, ' ').trim()
 }
@@ -296,9 +304,9 @@ async function collectData(): Promise<{
 }
 
 /** 可选对象列表（按最近编辑排序），四种实体各一组。 */
-export async function listPosterSubjects(): Promise<Record<PosterSubjectKind, PosterSubject[]>> {
-  await Promise.all([loadTemplates(), loadCategories()])
-  const { characters, events, countries, entries } = await collectData()
+export async function listPosterSubjects(source?: PosterSubjectSource): Promise<Record<PosterSubjectKind, PosterSubject[]>> {
+  if (!source) await Promise.all([loadTemplates(), loadCategories()])
+  const { characters, events, countries, entries } = source ?? await collectData()
 
   const toSubjects = <T extends { id: number; updatedAt: number }>(
     rows: T[],
@@ -341,16 +349,16 @@ export async function listPosterSubjects(): Promise<Record<PosterSubjectKind, Po
 }
 
 /** 取一张海报的完整数据；对象不存在返回 null。 */
-export async function loadPosterSubject(kind: PosterSubjectKind, id: number): Promise<PosterSubjectBundle | null> {
-  await Promise.all([loadTemplates(), loadCategories()])
-  const data = await collectData()
+export async function loadPosterSubject(kind: PosterSubjectKind, id: number, source?: PosterSubjectSource): Promise<PosterSubjectBundle | null> {
+  if (!source) await Promise.all([loadTemplates(), loadCategories()])
+  const data = source ?? await collectData()
 
   const withTags = async (poster: PosterData, ids: number[] | undefined, subject: PosterSubject): Promise<PosterSubjectBundle> => ({
     subject,
     data: {
       ...poster,
       serial: `NO. ${String(id).padStart(3, '0')}`,
-      tags: await tagNames(ids),
+      tags: source ? [] : await tagNames(ids),
     },
   })
 

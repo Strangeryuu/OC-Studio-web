@@ -39,7 +39,7 @@ function localDate(): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
-export function DocumentPanel() {
+export function DocumentPanel({ cloudModel }: { cloudModel?: DocumentModel }) {
   const [format, setFormat] = useState<Format>('word')
   const [sections, setSections] = useState<Record<DocumentSection, boolean>>({
     characters: true,
@@ -47,8 +47,8 @@ export function DocumentPanel() {
     countries: true,
     world: true,
   })
-  const [model, setModel] = useState<DocumentModel | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [model, setModel] = useState<DocumentModel | null>(cloudModel ?? null)
+  const [loading, setLoading] = useState(!cloudModel)
   /**
    * 「全部 / 选条目」与已选条目。
    *
@@ -63,7 +63,7 @@ export function DocumentPanel() {
 
   useEffect(() => {
     let alive = true
-    void buildDocumentModel()
+    void (cloudModel ? Promise.resolve(cloudModel) : buildDocumentModel())
       .then((next) => {
         if (alive) setModel(next)
       })
@@ -81,7 +81,7 @@ export function DocumentPanel() {
     return () => {
       alive = false
     }
-  }, [])
+  }, [cloudModel])
 
   const counts = useMemo(
     () => (model === null ? { characters: 0, events: 0, countries: 0, world: 0 } : documentCounts(model)),

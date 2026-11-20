@@ -3,6 +3,9 @@
 import dynamic from 'next/dynamic'
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { FileDown } from 'lucide-react'
+import { buildDocumentModelFromData } from '@/lib/export/document'
+import type { CloudExportData } from '@/components/shared/export/ExportCenter'
 import { Providers } from '@/app/providers'
 import { SaveStatusProvider, useSaveStatus } from '@/components/layout/SaveStatusContext'
 import { Toaster } from '@/components/shared/toaster'
@@ -60,6 +63,11 @@ import {
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { WorkspacePresence } from '@/components/cloud/WorkspacePresence'
 import { WorkspaceBodyImageControls } from '@/components/cloud/WorkspaceBodyImageControls'
+
+const CloudExportCenter = dynamic(
+  () => import('@/components/shared/export/ExportCenter').then(mod => mod.ExportCenter),
+  { ssr: false },
+)
 
 const WorkspaceHome = dynamic(
   () => import('@/features/dashboard/cloud/WorkspaceHome').then(mod => mod.WorkspaceHome),
@@ -216,6 +224,7 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
   const countryList = useWorkspaceRows(countryAdapter, '国家')
   const eventList = useWorkspaceRows(eventAdapter, '事件')
   const [section, setSection] = useState<WorkspaceSection>('character')
+  const [exportOpen, setExportOpen] = useState(false)
   const [customization,setCustomization]=useState<WorkspaceCustomization>(defaultWorkspaceCustomization)
   const [configurationRefresh,setConfigurationRefresh]=useState(0)
   const [activeCategoryId,setActiveCategoryId]=useState<string|null>(null)
@@ -249,6 +258,14 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
   const events = useMemo(() => eventList.rows.map(row => row.entity), [eventList.rows])
 
   const notes = useMemo(() => noteList.rows.map(row => row.entity).filter(isCodexEntry), [noteList.rows])
+  const cloudExportData = useMemo<CloudExportData>(() => ({
+    poster: { characters, events, countries, entries: notes },
+    site: {
+      meta: { id: 1, worldName: workspaceName ?? '世界观', tagline: workspaceDescription ?? '', coverUrl: '', updatedAt: 0 },
+      characters, events, countries, worldEntries: notes, tags: [], periods: [],
+    },
+    document: buildDocumentModelFromData({ characters, events, countries, worldEntries: notes, worldName: workspaceName ?? '世界观' }),
+  }), [characters, events, countries, notes, workspaceName, workspaceDescription])
   const activeCategory=customization.categories.find(c=>c.id===activeCategoryId)??null
   const visibleCategories=customization.categories.filter(c=>c.enabled)
   const worldNotes=notes.filter(row=>
@@ -654,9 +671,13 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
   }
 
   return <div className="grid min-w-0 gap-5 md:grid-cols-[10rem_minmax(0,1fr)]">
-    {workspaceName && <header className="md:col-span-2">
-      <h1 className="text-lg font-semibold">{workspaceName}</h1>
-      {workspaceDescription && <p className="mt-1 text-ui text-ink-muted">{workspaceDescription}</p>}
+    {workspaceName && <header className="md:col-span-2 flex flex-wrap items-center justify-between gap-3">
+      <div className="min-w-0"><h1 className="text-lg font-semibold">{workspaceName}</h1>
+      {workspaceDescription && <p className="mt-1 text-ui text-ink-muted">{workspaceDescription}</p>}</div>
+      {canEdit && <button type="button" className={BTN_PRIMARY + ' border border-line'} disabled={busy || leaving}
+        onClick={() => void flushPendingSaves().then(() => setExportOpen(true)).catch(cause => setError(cause instanceof Error ? cause.message : '保存草稿失败，请重试'))}>
+        <FileDown size={16} aria-hidden />导出中心
+      </button>}
     </header>}
     <WorkspaceNavigation active={section} busy={busy || leaving} hasMembers={membersPanel !== undefined}
       categories={customization.categories} activeCategoryId={activeCategoryId}
@@ -672,6 +693,7 @@ function CharacterWorkspace({ workspaceId, role, workspaceName, workspaceDescrip
         return null
       }) : undefined} />
     <div className="flex min-w-0 flex-col gap-4">
+      {exportOpen && <CloudExportCenter key={workspaceId} onClose={() => setExportOpen(false)} cloudData={cloudExportData} />}
       {error && <p role="alert" className="text-ui text-error">{error}</p>}
       {section === 'home' && <WorkspaceHome workspaceId={workspaceId}
         canUpdate={role === 'owner' || role === 'admin'} worldName={workspaceName ?? '未命名世界'}

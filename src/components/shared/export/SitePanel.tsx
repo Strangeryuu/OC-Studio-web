@@ -14,6 +14,7 @@ import {
   buildSite,
   loadSiteData,
   prepareSiteImages,
+  collectSiteImages,
   type SiteData,
   type SiteSectionOptions,
   type SiteTemplateId,
@@ -168,19 +169,19 @@ function SitePreviewFrame({
   )
 }
 
-export function SitePanel() {
+export function SitePanel({ cloudData }: { cloudData?: SiteData }) {
   const { settings, updateSetting } = useSettings()
   const [stored] = useState<StoredConfig>(loadStoredConfig)
 
   const [title, setTitle] = useState(stored.title ?? '')
   const [sections, setSections] = useState<SiteSectionOptions>({ ...DEFAULT_SECTIONS, ...stored.sections })
   const [themeChoice, setThemeChoice] = useState<SiteThemeChoice>(stored.theme ?? 'current')
-  const [inlineImages, setInlineImages] = useState(stored.inlineImages !== false)
+  const [inlineImages, setInlineImages] = useState(cloudData ? true : stored.inlineImages !== false)
   const [template, setTemplate] = useState<SiteTemplateId>(stored.template ?? 'book')
   const [presets, setPresets] = useState<SiteExportPreset[]>([])
   const [presetName, setPresetName] = useState('')
   const [previewMode, setPreviewMode] = useState<'desktop' | 'mobile'>('desktop')
-  const [data, setData] = useState<SiteData | null>(null)
+  const [data, setData] = useState<SiteData | null>(cloudData ?? null)
   const [images, setImages] = useState<Map<string, string>>(new Map())
   const [imagesReady, setImagesReady] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -190,7 +191,7 @@ export function SitePanel() {
 
   useEffect(() => {
     let alive = true
-    void loadSiteData()
+    void (cloudData ? Promise.resolve(cloudData) : loadSiteData())
       .then((next) => {
         if (!alive) return
         setData(next)
@@ -202,7 +203,7 @@ export function SitePanel() {
     return () => {
       alive = false
     }
-  }, [])
+  }, [cloudData])
 
   useEffect(() => {
     if (data === null) return
@@ -253,7 +254,8 @@ export function SitePanel() {
     })
   }, [data, images, title, sections, themeChoice, settings.themePreset, isDark, template])
 
-  const ready = data !== null && (!inlineImages || imagesReady)
+  const cloudMissingImages = cloudData ? data === null ? [] : collectSiteImages(data).filter(url => !images.has(url)) : []
+  const ready = data !== null && (cloudData ? imagesReady && cloudMissingImages.length === 0 : (!inlineImages || imagesReady))
   const sizeKb = previewHtml === '' ? 0 : Math.max(1, Math.round(previewHtml.length / 1024))
 
   const savePreset = async (): Promise<void> => {
@@ -288,7 +290,7 @@ export function SitePanel() {
     setError('')
     try {
       const html = buildSite(applySiteSections(data, sections), {
-        images: inlineImages ? images : new Map<string, string>(),
+        images: cloudData || inlineImages ? images : new Map<string, string>(),
         title,
         sections,
         theme: resolveTheme(themeChoice, settings.themePreset, isDark),
@@ -382,13 +384,16 @@ export function SitePanel() {
               <button
                 type="button"
                 role="switch"
-                aria-checked={inlineImages}
+                aria-checked={cloudData ? true : inlineImages}
+                disabled={Boolean(cloudData)}
                 onClick={() => setInlineImages((previous) => !previous)}
                 className={`${SWITCH_CLASSES.base} ${inlineImages ? SWITCH_CLASSES.on : SWITCH_CLASSES.off}`}
               >
                 <span className={`${SWITCH_DOT} ${inlineImages ? 'translate-x-[18px] bg-paper' : 'translate-x-[2px]'}`} />
               </button>
             </ExportRow>
+            {cloudData && <p className="text-micro leading-relaxed text-ink-muted">Web 云端导出强制内嵌图片；无法读取的图片需先修复后再下载，以免生成依赖登录权限的公开页面。</p>}
+            {cloudData && cloudMissingImages.length > 0 && <p role="alert" className="text-caption text-error">有 {cloudMissingImages.length} 张图片未能安全内嵌，导出暂不可用。</p>}
           </ExportSection>
 
           <ExportSection title="分区">

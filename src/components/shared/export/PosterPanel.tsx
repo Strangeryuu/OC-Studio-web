@@ -55,6 +55,7 @@ import {
   type PosterSubject,
   type PosterSubjectBundle,
   type PosterSubjectKind,
+  type PosterSubjectSource,
 } from '@/lib/export/poster/subjects'
 import { downloadMediaFile } from '@/lib/media-download'
 import { useSettings } from '@/lib/settings'
@@ -251,8 +252,10 @@ function samePosterOptions(a: PosterOptions, b: PosterOptions): boolean {
 
 export function PosterPanel({
   initialSubject,
+  dataSource,
 }: {
   initialSubject?: { kind: PosterSubjectKind; id: number }
+  dataSource?: PosterSubjectSource
 }) {
   const { settings, updateSetting } = useSettings()
   const posterRef = useRef<HTMLDivElement | null>(null)
@@ -282,7 +285,7 @@ export function PosterPanel({
 
   useEffect(() => {
     let alive = true
-    void listPosterSubjects()
+    void listPosterSubjects(dataSource)
       .then((next) => {
         if (!alive) return
         setSubjects(next)
@@ -301,8 +304,8 @@ export function PosterPanel({
     return () => {
       alive = false
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在挂载时读一次；后续选择由用户驱动
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 初始对象由当前作用域决定
+  }, [dataSource])
 
   // 默认预设只在打开面板时落一次。它挂在 `defaultImagePresetId` 上，但点「设为默认」
   // 也会改这个值 —— 每变一次就重新套用，会把用户刚调好的取景 / 字号当场抹掉。
@@ -327,7 +330,7 @@ export function PosterPanel({
     // 读一条对象是异步 IO；这里只是把「正在读取」告诉预览区
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSubjectLoading(true)
-    void loadPosterSubject(kind, subjectId)
+    void loadPosterSubject(kind, subjectId, dataSource)
       .then((next) => {
         if (!alive) return
         setBundle(next)
@@ -345,7 +348,7 @@ export function PosterPanel({
     return () => {
       alive = false
     }
-  }, [kind, subjectId])
+  }, [kind, subjectId, dataSource])
 
   const changeKind = (next: PosterSubjectKind): void => {
     setKind(next)

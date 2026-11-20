@@ -12,6 +12,7 @@ import { db } from '@/lib/db'
 import type { PageDoc } from './page'
 import { hasRichText, plainTextOf, renderRichText } from './site/render'
 import { isCodexEntry } from '@/lib/entry-kinds'
+import type { Character, Event, Country, WorldEntry } from '@/types'
 
 export type DocumentSection = 'characters' | 'events' | 'countries' | 'world'
 
@@ -99,17 +100,31 @@ function bodyOf(primary: unknown, fallback: string): { html: string; text: strin
   }
 }
 
+export interface DocumentDataSource {
+  characters: Character[]
+  events: Event[]
+  countries: Country[]
+  worldEntries: WorldEntry[]
+  worldName?: string
+}
+
 export async function buildDocumentModel(options: DocumentBuildOptions = {}): Promise<DocumentModel> {
   const [characters, events, countries, worldEntries, meta] = await Promise.all([
     db.characters.filter((row) => !row.deleted).toArray(),
     db.events.filter((row) => !row.deleted).toArray(),
     db.countries.filter((row) => !row.deleted).toArray(),
-    // 小说章节与地图也是 `worldEntries`，但它们不是「词条」：
-    // 前者属于小说导出，后者是纯底图（正文几乎是空的）。
-    // 以前不过滤，导出的设定集里会混进「第一章」「世界地图」这类空白条目。
     db.worldEntries.filter((row) => !row.deleted && isCodexEntry(row)).toArray(),
     db.meta.get(1).catch(() => undefined),
   ])
+  return buildDocumentModelFromData({ characters, events, countries, worldEntries, worldName: meta?.worldName }, options)
+}
+
+/** Uses the original document serializer with already-authorized workspace data. */
+export function buildDocumentModelFromData(
+  { characters, events, countries, worldEntries, worldName = '' }: DocumentDataSource,
+  options: DocumentBuildOptions = {},
+): DocumentModel {
+  const meta = { worldName }
 
   const sections: DocumentSectionModel[] = []
 
