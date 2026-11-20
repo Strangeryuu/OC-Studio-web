@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { Download, Upload, DatabaseBackup } from 'lucide-react'
 import { BTN_PRIMARY, BTN_QUIET } from '@/lib/ui-tokens'
+import { WorkspaceCategoryArchive } from './WorkspaceCategoryArchive'
 
 export function WorkspaceBackup({workspaceId,workspaceName,canExport,canImport,onImported}:{
   workspaceId:string;workspaceName:string;canExport:boolean;canImport:boolean;
@@ -84,6 +85,8 @@ export function WorkspaceBackup({workspaceId,workspaceName,canExport,canImport,o
           onChange={event=>{const file=event.target.files?.[0];event.target.value='';void importFile(file)}}/>
       </label>:<p className="text-caption text-ink-faint">仅世界观所有者或管理员可执行恢复。</p>}
     </div>
+    <WorkspaceCategoryArchive workspaceId={workspaceId} workspaceName={workspaceName}
+      canExport={canExport} canImport={canImport} onImported={onImported}/>
     {error&&<p role="alert" className="text-ui text-error">{error}</p>}
     {report&&<p role="status" className="text-ui text-ink-muted">{report}</p>}
   </section>
