@@ -10,7 +10,7 @@ import { isUuid } from '@/lib/cloud/backup-id'
 
 export const CATEGORY_FORMAT = 'oc-studio-web-category-v1'
 export type CategoryKind = 'character' | 'event' | 'country' | 'worldEntry'
-export type CategoryStrategy = 'skip' | 'keep-both'
+export type CategoryStrategy = 'skip' | 'keep-both' | 'overwrite'
 export interface CategorySelection {
   kind: CategoryKind
   folder?: string
