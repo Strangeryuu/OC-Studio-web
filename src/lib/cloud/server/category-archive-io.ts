@@ -53,11 +53,31 @@ async function categoryRows(workspaceId:string):Promise<CategoryRecord[]> {
   return normalizeSource(result.rows)
 }
 
+export async function categoryExportOptions(workspaceId:string) {
+  const rows=await categoryRows(workspaceId)
+  const unique=(values:string[])=>[...new Set(values)].sort((a,b)=>a.localeCompare(b,'zh-CN'))
+  const active=rows.filter(row=>row.kind!=='worldEntry' ||
+    !['小说','地图'].includes(String(row.content.category??'')))
+  return {
+    counts:{
+      character:active.filter(row=>row.kind==='character').length,
+      event:active.filter(row=>row.kind==='event').length,
+      country:active.filter(row=>row.kind==='country').length,
+      worldEntry:active.filter(row=>row.kind==='worldEntry').length,
+    },
+    folders:unique(active.filter(row=>row.kind==='character')
+      .map(row=>String(row.content.folder??'').trim()).filter(Boolean)),
+    categories:unique(active.filter(row=>row.kind==='worldEntry')
+      .map(row=>String(row.content.category??'').trim()).filter(Boolean)),
+  }
+}
+
 export async function exportCategoryArchive(
   workspaceId:string, sourceName:string, selection:CategorySelection,
 ):Promise<CategoryArchive> {
   const records=await categoryRows(workspaceId)
-  const {rows,primary}=collectCategoryClosure(records,selection)
+  const allowed=records.filter(row=>row.kind!=='worldEntry'||!['小说','地图'].includes(String(row.content.category??'')))
+  const {rows,primary}=collectCategoryClosure(allowed,selection)
   if(primary===0)fail('CATEGORY_EMPTY')
   const ids=collectArchiveMedia(rows)
   for(const row of rows) {
