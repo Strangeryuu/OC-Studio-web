@@ -12,7 +12,24 @@
 - **跳过同名**：保留目标条目，把其他条目导入，并将关系指向保留的实体。
 - **保留两者**：导入同名实体副本，名称自动添加「（导入）」，重新分配 UUID 和数字 ID；已有条目保持原样。
 
-这套增量迁移与整库恢复使用**不同的协议和入口**。完整备份 `version: 1` 仍需空白目标世界观，分类文件 `format: "oc-studio-web-category-v1"` 支持有内容的目标世界观。当前分类导入入口仅接受 Web 分类文件；OC-editor 的 `oc-editor-ocav` 格式仍待单独转换与验收。
+三类 `.ocbak` 会在选择文件时自动区分：
+- **原版 OC Studio**：`version:1` 和 `data`，继续调用原有 `/backup` 整库恢复；要求空白世界观。
+- **OC Studio Web 分类**：`format:'oc-studio-web-category-v1'`，调用独立 `/category-archive` 增量导入。
+- **OC-editor 原生 OCAV**：`format:'oc-editor-ocav'`，通过 `src/lib/cloud/oc-editor-category.ts` 安全转换后进入相同的分类导入事务。
+
+即使从原版整库备份输入框选择了 OC-editor 分类文件，也会自动打开分类预览；原版 `parsePortableBackup` 的解析协议和数据库恢复路径保持独立。
+
+## OC-editor 的差异与转换
+
+OC-editor 的分类文件使用本地 Dexie 数字 ID，Web 端实体同时具有 UUID 和数值 ID。转换器会重建以下内容：
+
+- 根据条目的字段形状识别角色、事件、国家、设定词条，拒绝混合或结构错误的条目。
+- 将 `payload.context` 中的关联角色/国家/事件作为依赖实体处理；`payload.refs` 中的 link-only 引用依靠**当前世界观中同类型、同名称**匹配。预览显示未找到的目标，缺少关联对象时暂停导入。
+- 将 `payload.folders` 的旧分组 ID 解析为角色分组名称，将本地数字标签转换成当前世界观的云端标签。
+- 将 OC-editor 单独保存的 `relations` 投影到 Web 角色、事件、国家关系字段；自定义分类的 `entries` 与 `scopedEdges` 转换为分类词条和命名连线。特殊字段存入 `ocEditorSection` 以保留来源信息。
+- 图片需内嵌为 PNG、JPEG、GIF、WebP 的 base64 data URI，统一写入目标世界观私有图片库。残留的外链图片会在预览时拒绝导入。
+
+OC-editor 的自定义分类与 Web 自定义分类底层模型有所不同；转换保留词条内容、内部命名连线及来源元数据。某些跨分类专属属性或原版页面展示行为仍需单项验收；同一对节点的完全同名平行边在当前原版关系图中可能合并展示，原文件应作为长期原始备份保留。
 
 ## 数据隔离及事务约束
 
@@ -31,9 +48,11 @@
 3. 自定义分类会在目标缺少同名分类时登记为通用「词条」模板；自定义模板的跨世界观精确复制与重名解决仍需进一步实现。
 4. 保留关联的原始数据优先于猜测修复；历史遗留的悬空关系需要先在源世界观处理。
 5. 尚需 Android Chrome / iOS Safari 的真实文件保存与选择器验收。
+6. OC-editor 某些扩展关系类别会返回专用错误并停止导入，避免数据被悄然丢弃；后续按类别扩展投影算法。
 
 ## 回归测试
 
 - `tests/cloud-category-archive.test.ts`：格式校验、分组范围、引用闭包、Tiptap 引用转换、同名语义。
-- `tests/cloud-category-archive.integration.test.ts`：真实 PostgreSQL 分类导入、跨库隔离、重复跳过、保留两者、分组与自建分类登记、失败整批回滚。
+- `tests/cloud-category-archive.integration.test.ts`：真实 PostgreSQL 分类导入（含 OC-editor 原生归档）、跨库隔离、关系 ID 映射、重复跳过、保留两者、分组与自建分类登记、失败整批回滚。
+- `tests/cloud-oc-editor-category.test.ts`：三种协议识别、原版 v1 隔离、OC-editor 原生关系、分组、标签、自定义分类及图片来源校验。
 - `scripts/cloud-browser-acceptance.cjs`：使用 Chromium 检查分类归档下载及同名预览。
