@@ -240,6 +240,8 @@ export function buildGlobeMesh(image: ImageData, layers: MapLayers | null, level
   return { positions, normals, colors, indices, indexCount: indexOffset }
 }
 
+function lodForZoom(zoom:number):number { return zoom<0.9?0:zoom<1.5?1:2 }
+
 export function GlobeCanvas({ image, layers }: GlobeCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -253,7 +255,7 @@ export function GlobeCanvas({ image, layers }: GlobeCanvasProps) {
   const [lod, setLod] = useState(1)
   const [error, setError] = useState<string | null>(null)
 
-  const lodForZoom = (zoom: number): number => (zoom < 0.9 ? 0 : zoom < 1.5 ? 1 : 2)
+
 
   const draw = useCallback(() => {
     const gl = glRef.current
