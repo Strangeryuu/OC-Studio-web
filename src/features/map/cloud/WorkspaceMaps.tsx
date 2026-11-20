@@ -143,7 +143,7 @@ export function WorkspaceMaps(props: Props) {
   const annotations = useMemo(() => parseAnnotations(map?.annotations), [map?.annotations])
   const canModify = canEdit && !disabled && !saving
   const globeEligible = Boolean(map?.image) && canProjectMapAsGlobe(map?.width,map?.height)
-  const hasGeneratedTerrain = map?.seed !== undefined && Boolean(map?.params)
+  const hasGeneratedTerrain = typeof map?.seed==='number' && Number.isSafeInteger(map.seed) && Boolean(map.params)
 
   function resetAdvancedView() {
     profileRequest.current += 1
@@ -321,7 +321,7 @@ export function WorkspaceMaps(props: Props) {
             : '地图管理操作失败：' + (result.error ?? response.status))
       }
       await props.onReconciled()
-      if (method === 'DELETE') setActiveId(null)
+      if (method === 'DELETE') {setActiveId(null);resetAdvancedView()}
       setSwitcherOpen(false)
     }, { method, mapId: id, name: nextName })
   }
@@ -377,6 +377,7 @@ export function WorkspaceMaps(props: Props) {
         mapSeed: seed, mapParams: JSON.stringify(params), mapMode: view, mapViews: views,
       })
       props.onMapSaved(saved)
+      resetAdvancedView()
       setGeneratorOpen(false)
       onProgress?.('', 1)
     }, { map: selected.entity.title, seed, view, params }, true)
@@ -515,6 +516,7 @@ export function WorkspaceMaps(props: Props) {
         mapSeed: null, mapParams: null, mapMode: null, mapViews: null,
       })
       props.onMapSaved(saved)
+      resetAdvancedView()
     }, { file: file.name, width, height })
   }
 
