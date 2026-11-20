@@ -32,6 +32,12 @@ const ERROR_MESSAGES:Record<string,string>={
   CATEGORY_MEDIA_MISSING:'部分图片缺失，已取消本次操作',
   CATEGORY_AMBIGUOUS_SOURCE:'源文件中存在无法自动判断的重复名称',
   CATEGORY_AMBIGUOUS_TARGET:'目标世界观存在多个同名条目，请先整理重复名称',
+  CATEGORY_CUSTOMIZATION_INVALID:'目标分类配置无效，请先检查世界观分类设置',
+  CATEGORY_CUSTOMIZATION_LIMIT:'目标分类数量已达上限，请先整理分类',
+  CATEGORY_FOLDER_INVALID:'现有角色分组清单损坏，请先检查分组设置',
+  CATEGORY_FOLDER_LIMIT:'目标角色分组数量已达上限',
+  CATEGORY_TAG_INVALID:'标签关联无效，请先检查源世界观标签',
+  CATEGORY_OPERATION_FAILED:'操作未完成，数据未写入，请检查日志后重试',
 }
 function message(error:unknown) {
   const code=error instanceof Error?error.message:String(error)

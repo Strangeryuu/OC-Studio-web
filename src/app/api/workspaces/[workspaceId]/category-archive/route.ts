@@ -12,7 +12,13 @@ const MAX_BYTES=40_000_000
 const responseError=(code:string,status:number)=>NextResponse.json({error:code},{status,headers:{'Cache-Control':'private, no-store'}})
 function errorCode(cause:unknown):string {
   const code=cause instanceof Error?cause.message:''
-  return /^CATEGORY_[A-Z_]+$/.test(code)?code:'CATEGORY_OPERATION_FAILED'
+  const mapping:Record<string,string>={
+    BACKUP_REFERENCE_MISSING:'CATEGORY_REFERENCE_MISSING',
+    BACKUP_REFERENCE_INVALID:'CATEGORY_REFERENCE_INVALID',
+    BACKUP_MEDIA_MISSING:'CATEGORY_MEDIA_MISSING',
+    BACKUP_TAG_MISSING:'CATEGORY_TAG_INVALID',
+  }
+  return mapping[code]??(/^CATEGORY_[A-Z_]+$/.test(code)?code:'CATEGORY_OPERATION_FAILED')
 }
 async function boundedBody(request:Request):Promise<unknown> {
   if(Number(request.headers.get('content-length')??0)>MAX_BYTES)throw new Error('CATEGORY_TOO_LARGE')
