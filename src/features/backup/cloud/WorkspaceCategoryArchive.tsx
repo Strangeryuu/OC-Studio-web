@@ -16,6 +16,7 @@ type Preview={
   sourceName:string;kind:CategoryKind;selected:number;total:number
   context:number;media:number;duplicates:number;addable:number
   sourceFormat:'oc-editor-ocav'|'web-category';relations:number;linked:number;unresolved:number
+  overwriteCount:number;previewToken:string
 }
 const KINDS:{value:CategoryKind;label:string}[]=[
   {value:'character',label:'角色'},
@@ -40,6 +41,10 @@ const ERROR_MESSAGES:Record<string,string>={
   CATEGORY_FOLDER_LIMIT:'目标角色分组数量已达上限',
   CATEGORY_TAG_INVALID:'标签关联无效，请先检查源世界观标签',
   CATEGORY_OPERATION_FAILED:'操作未完成，数据未写入，请检查日志后重试',
+  CATEGORY_PREVIEW_INVALID:'覆盖确认已失效，请重新选择文件并预览',
+  CATEGORY_PREVIEW_EXPIRED:'覆盖预览已超过 15 分钟，请重新选择文件并预览',
+  CATEGORY_PREVIEW_STALE:'预览后目标条目发生了变化。为保护其他用户的修改，请重新选择文件并预览',
+  CATEGORY_PREVIEW_UNAVAILABLE:'服务器尚未配置备份确认密钥，请联系管理员',
   CATEGORY_LINK_TARGET_MISSING:'尚有引用对象缺失，请先将所需角色、事件或国家导入当前世界观',
   OC_EDITOR_INVALID:'OC-editor 分类文件结构无效',
   OC_EDITOR_EMPTY:'OC-editor 分类文件内没有条目',
@@ -151,20 +156,30 @@ export function WorkspaceCategoryArchive({workspaceId,workspaceName,canExport,ca
   },[base,canImport])
   useEffect(()=>{if(incomingFile)void prepareImport(incomingFile)},[incomingFile,prepareImport])
   const applyImport=async()=>{
-    if(!pending||!preview||!acknowledged||!canImport||busy)return
+    if(!pending||!preview||!acknowledged||!canImport||busy||
+      (strategy==='overwrite'&&!preview.previewToken))return
     setBusy(true);setError('');setResult('')
     try {
-      const outcome=await readJson<{added:number;skipped:number;renamed:number;media:number}>(
+      const outcome=await readJson<{added:number;overwritten:number;skipped:number;renamed:number;media:number}>(
         await fetch(base,{
           method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({action:'import',archive:pending,strategy}),
+          body:JSON.stringify({action:'import',archive:pending,strategy,
+            ...(strategy==='overwrite'?{previewToken:preview.previewToken}:{})}),
         }),
       )
       setPending(null);setPreview(null);setAcknowledged(false)
-      setResult('导入完成：新增 '+outcome.added+' 条，跳过 '+outcome.skipped+
-        ' 条，重命名 '+outcome.renamed+' 条，导入图片 '+outcome.media+' 张。')
+      setResult('导入完成：新增 '+outcome.added+' 条，覆盖 '+outcome.overwritten+
+        ' 条，跳过 '+outcome.skipped+' 条，重命名 '+outcome.renamed+
+        ' 条，导入图片 '+outcome.media+' 张。')
       await onImported()
-    } catch(cause){setError(message(cause))}
+    } catch(cause){
+      const code=cause instanceof Error?cause.message:''
+      setError(message(cause))
+      if(code==='CATEGORY_PREVIEW_INVALID'||code==='CATEGORY_PREVIEW_EXPIRED'||
+         code==='CATEGORY_PREVIEW_STALE') {
+        setPending(null);setPreview(null);setAcknowledged(false)
+      }
+    }
     finally{setBusy(false)}
   }
 
@@ -240,7 +255,19 @@ export function WorkspaceCategoryArchive({workspaceId,workspaceName,canExport,ca
           checked={strategy==='keep-both'} onChange={()=>setStrategy('keep-both')}/>
           保留两者（新条目添加“导入”后缀，关联重新映射）
         </label>
+        {preview.overwriteCount>0&&<label className="flex items-start gap-2">
+          <input type="radio" name="category-import-strategy" className="mt-0.5"
+            checked={strategy==='overwrite'}
+            onChange={()=>{setStrategy('overwrite');setAcknowledged(false)}}/>
+          <span>覆盖同名条目（预计覆盖 {preview.overwriteCount} 条，保留原 ID，
+            版本自动递增）。确认有效期 15 分钟；若其他用户修改了相关条目，
+            系统会撤销整批导入并提示重新预览。</span>
+        </label> 
       </fieldset>
+      {strategy==='overwrite'&&<p className="mt-3 text-caption leading-relaxed text-ink-muted">
+        覆盖将以归档内容更新同名条目。操作前建议保留目标世界观的整库备份；
+        修改期间其他用户提交的新版本会受到保护。
+      </p>}
       <label className="mt-3 flex items-start gap-2 text-caption leading-relaxed">
         <input type="checkbox" className="mt-1" checked={acknowledged}
           onChange={event=>setAcknowledged(event.target.checked)}/>
