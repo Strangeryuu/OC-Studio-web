@@ -105,6 +105,18 @@ describe('PostgreSQL category archives use one atomic scope and ID mapping',()=>
       'SELECT local_id::text FROM entities WHERE workspace_id=$1 AND title=$2',[target,'雾之国（导入）'])
     expect(duplicate.content.countryId).toBe(Number(newCountry.rows[0].local_id))
   })
+  it('creates a safe default category in target without replacing existing templates',async()=>{
+    await insert(source,'worldEntry','魔法剑',{title:'魔法剑',category:'神器',content:'神话级武器'})
+    const file=await exportCategoryArchive(source,'原始世界',{kind:'worldEntry',category:'神器'})
+    const outcome=await importCategoryArchive(other,userId,file,'skip')
+    expect(outcome.added).toBe(1)
+    const setting=await state.db!.query<{setting_value:{categories:{name:string;template:string;enabled:boolean}[]}}>(
+      "SELECT setting_value FROM workspace_settings WHERE workspace_id=$1 AND setting_key='customization'",[other])
+    expect(setting.rows[0].setting_value.categories).toEqual(expect.arrayContaining([
+      expect.objectContaining({name:'神器',template:'entry',enabled:true}),
+    ]))
+    expect((await rows(other)).map(row=>row.title)).toContain('魔法剑')
+  })
   it('rolls back all inserts and imported tags on an unresolved foreign reference',async()=>{
     const before=await rows(target)
     const fresh:CategoryArchive={
