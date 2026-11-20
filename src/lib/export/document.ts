@@ -121,10 +121,10 @@ export async function buildDocumentModel(options: DocumentBuildOptions = {}): Pr
 
 /** Uses the original document serializer with already-authorized workspace data. */
 export function buildDocumentModelFromData(
-  { characters, events, countries, worldEntries, worldName = '' }: DocumentDataSource,
+  { characters, events, countries, worldEntries, worldName: providedWorldName = '' }: DocumentDataSource,
   options: DocumentBuildOptions = {},
 ): DocumentModel {
-  const meta = { worldName }
+  const meta = { worldName: providedWorldName }
 
   const sections: DocumentSectionModel[] = []
 
