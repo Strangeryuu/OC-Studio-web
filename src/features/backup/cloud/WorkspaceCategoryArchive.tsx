@@ -132,11 +132,11 @@ export function WorkspaceCategoryArchive({workspaceId,workspaceName,canExport,ca
   }
   const prepareImport=useCallback(async(file:File|undefined)=>{
     if(!file||!canImport||preparing.current)return
-    preparing.current=true
     setError('');setResult('');setPending(null);setPreview(null)
     if(file.size>40_000_000) {
       setError('分类文件大小超过 40 MB，请缩小导出范围');return
     }
+    preparing.current=true
     setBusy(true)
     try {
       const archive=parseSupportedCategory(JSON.parse(await file.text()) as unknown)
