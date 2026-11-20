@@ -63,21 +63,22 @@ export function categoryMediaLinksSafe(data:Record<string,unknown>):boolean {
     value===null||value===undefined||value===''||
     (typeof value==='string' && /^\/api\/media\//.test(value) &&
      isUuid(value.slice('/api/media/'.length)))
-  const walk=(value:unknown,parent:string,depth:number):boolean=>{
+  const walk=(value:unknown,parent:string,depth:number,inImageNode=false):boolean=>{
     if(depth>35)return false
-    if(Array.isArray(value))return value.every(x=>walk(x,parent,depth+1))
+    if(Array.isArray(value))return value.every(x=>walk(x,parent,depth+1,inImageNode))
     if(typeof value==='string'&&['document','content'].includes(parent)&&value.trim().startsWith('{')) {
       try {const parsed=JSON.parse(value) as unknown
-        if(obj(parsed)&&parsed.type==='doc')return walk(parsed,parent,depth+1)
+        if(obj(parsed)&&parsed.type==='doc')return walk(parsed,parent,depth+1,inImageNode)
       } catch {return true}
     }
     if(!obj(value))return true
+    const imageNode=inImageNode||value.type==='imageBlock'||value.type==='image'
     for(const [key,item] of Object.entries(value)) {
       const imageSource=slots.has(key)||
         (key==='url'&&['gallery','avatars','images'].includes(parent))||
-        (key==='src'&&(value.type==='imageBlock'||value.type==='image'))
+        (key==='src'&&imageNode)
       if(imageSource && !allowed(item))return false
-      if(!walk(item,key,depth+1))return false
+      if(!walk(item,key,depth+1,imageNode))return false
     }
     return true
   }
