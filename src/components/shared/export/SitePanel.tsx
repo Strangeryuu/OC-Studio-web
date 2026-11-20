@@ -243,19 +243,29 @@ export function SitePanel({ cloudData }: { cloudData?: SiteData }) {
       .catch(() => setPresets([]))
   }, [settings.defaultSitePresetId])
 
-  const previewHtml = useMemo(() => {
-    if (data === null) return ''
-    return buildSite(applySiteSections(data, sections), {
-      images,
-      title,
-      sections,
-      theme: resolveTheme(themeChoice, settings.themePreset, isDark),
-      template,
-    })
+  // Invalid/legacy fields must not crash the entire workspace while previewing.
+  // Show a recoverable panel error and keep the export button disabled instead.
+  const preview = useMemo(() => {
+    if (data === null) return { html: '', error: '' }
+    try {
+      return {
+        html: buildSite(applySiteSections(data, sections), {
+          images,
+          title,
+          sections,
+          theme: resolveTheme(themeChoice, settings.themePreset, isDark),
+          template,
+        }),
+        error: '',
+      }
+    } catch (cause) {
+      return { html: '', error: cause instanceof Error ? cause.message : '站点预览生成失败' }
+    }
   }, [data, images, title, sections, themeChoice, settings.themePreset, isDark, template])
+  const previewHtml = preview.html
 
   const cloudMissingImages = cloudData ? data === null ? [] : collectSiteImages(data).filter(url => !images.has(url)) : []
-  const ready = data !== null && (cloudData ? imagesReady && cloudMissingImages.length === 0 : (!inlineImages || imagesReady))
+  const ready = data !== null && !preview.error && (cloudData ? imagesReady && cloudMissingImages.length === 0 : (!inlineImages || imagesReady))
   const sizeKb = previewHtml === '' ? 0 : Math.max(1, Math.round(previewHtml.length / 1024))
 
   const savePreset = async (): Promise<void> => {
@@ -339,6 +349,10 @@ export function SitePanel({ cloudData }: { cloudData?: SiteData }) {
           <div className={`relative min-h-0 flex-1 overflow-hidden border border-line bg-paper ${ROUND_CONTROL}`}>
             {data === null ? (
               <div className="flex h-full items-center justify-center text-caption text-ink-faint">正在读取笔记库…</div>
+            ) : preview.error ? (
+              <div role="alert" className="m-5 rounded-item border border-line bg-paper p-4 text-caption text-error">
+                网站预览生成失败：{preview.error}
+              </div>
             ) : (
               <SitePreviewFrame html={previewHtml} mode={previewMode} />
             )}
