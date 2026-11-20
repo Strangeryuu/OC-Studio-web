@@ -27,7 +27,7 @@ const tag={id:10,name:'亲属',color:'#123abc'}
 describe('OC-editor native OCAV protocol compatibility',()=>{
   it('distinguishes three .ocbak types and leaves original v1 backup parser intact',()=>{
     const original={version:1,data:{characters:[],events:[],countries:[],worldEntries:[],tags:[],periods:[],meta:[]}}
-    const nativeFile=native('character','characters',[character])
+    const nativeFile=native('character','characters',[character],{tags:[tag]})
     expect(detectArchiveType(nativeFile)).toBe('oc-editor')
     expect(detectArchiveType(original)).toBe('oc-studio-full')
     expect(parsePortableBackup(original)?.source).toBe('legacy')
@@ -59,7 +59,7 @@ describe('OC-editor native OCAV protocol compatibility',()=>{
     expect(archive.tags[0].name).toBe('亲属')
   })
   it('identifies actual row shape over inaccurate headers and rejects mixed types',()=>{
-    const wrong=native('country','countries',[character])
+    const wrong=native('country','countries',[character],{tags:[tag]})
     const a=convertOcEditorCategory(wrong)!
     expect(a.selection.kind).toBe('character')
     expect(a.records[0].kind).toBe('character')
