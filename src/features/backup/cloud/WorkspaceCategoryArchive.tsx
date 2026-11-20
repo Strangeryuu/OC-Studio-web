@@ -262,7 +262,7 @@ export function WorkspaceCategoryArchive({workspaceId,workspaceName,canExport,ca
           <span>覆盖同名条目（预计覆盖 {preview.overwriteCount} 条，保留原 ID，
             版本自动递增）。确认有效期 15 分钟；若其他用户修改了相关条目，
             系统会撤销整批导入并提示重新预览。</span>
-        </label> 
+        </label>}
       </fieldset>
       {strategy==='overwrite'&&<p className="mt-3 text-caption leading-relaxed text-ink-muted">
         覆盖将以归档内容更新同名条目。操作前建议保留目标世界观的整库备份；
