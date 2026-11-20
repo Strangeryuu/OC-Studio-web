@@ -23,6 +23,7 @@ const source='11111111-1111-4111-8111-111111111111'
 const target='22222222-2222-4222-8222-222222222222'
 const other='33333333-3333-4333-8333-333333333333'
 const imported='44444444-4444-4444-8444-444444444444'
+const overwrittenWorld='66666666-6666-4666-8666-666666666666'
 const userId='owner'
 async function insert(workspaceId:string,kind:string,title:string,content:Record<string,unknown>) {
   const r=await state.db!.query<{id:string;local_id:string}>(
@@ -44,13 +45,14 @@ function char(name:string,folder:string,extra:Record<string,unknown>={}):Record<
 
 describe('PostgreSQL category archives use one atomic scope and ID mapping',()=>{
   beforeAll(async()=>{
+    process.env.BETTER_AUTH_SECRET ??= 'ocstudio-category-import-integration-test-only-secret'
     state.db=new PGlite()
     await state.db.exec('CREATE TABLE "user"(id TEXT PRIMARY KEY,name TEXT NOT NULL,email TEXT NOT NULL,role TEXT DEFAULT \'user\',banned BOOLEAN NOT NULL DEFAULT false)')
     for(const file of readdirSync('cloud/migrations').filter(f=>f.endsWith('.sql')).sort())
       await state.db.exec(readFileSync('cloud/migrations/'+file,'utf8'))
     await state.db.query('INSERT INTO "user"(id,name,email) VALUES($1,$2,$3)',
       [userId,'owner','owner@example.test'])
-    for(const id of [source,target,other,imported]) {
+    for(const id of [source,target,other,imported,overwrittenWorld]) {
       await state.db.query('INSERT INTO workspaces(id,owner_id,name) VALUES($1,$2,$3)',
         [id,userId,'Test World'])
     }
@@ -67,7 +69,7 @@ describe('PostgreSQL category archives use one atomic scope and ID mapping',()=>
     expect(file.records.map(r=>r.title).sort()).toEqual(['雾之国','友人','主角'].sort())
     expect(file.records.some(r=>r.title==='私有事件')).toBe(false)
     expect(file.assets).toHaveLength(0)
-    const preview=await previewCategoryImport(target,file)
+    const preview=await previewCategoryImport(target,userId,file)
     expect(preview).toMatchObject({selected:1,context:2,total:3,duplicates:0})
     const result=await importCategoryArchive(target,userId,file,'skip')
     expect(result).toMatchObject({added:3,skipped:0,media:0})
@@ -92,7 +94,7 @@ describe('PostgreSQL category archives use one atomic scope and ID mapping',()=>
   })
   it('skips duplicates without modifying target, and maps other references to retained rows',async()=>{
     const file=await exportCategoryArchive(source,'原始世界',{kind:'character',folder:'主角组'})
-    const pre=await previewCategoryImport(target,file)
+    const pre=await previewCategoryImport(target,userId,file)
     expect(pre.duplicates).toBe(3)
     const before=await rows(target)
     const outcome=await importCategoryArchive(target,userId,file,'skip')
@@ -143,7 +145,7 @@ describe('PostgreSQL category archives use one atomic scope and ID mapping',()=>
     }
     const parsed=convertOcEditorCategory(native)!
     expect(parsed.records).toHaveLength(3)
-    const pre=await previewCategoryImport(imported,native)
+    const pre=await previewCategoryImport(imported,userId,native)
     expect(pre).toMatchObject({sourceFormat:'oc-editor-ocav',selected:1,total:3,duplicates:0,
       relations:1,unresolved:0})
     const result=await importCategoryArchive(imported,userId,native,'skip')
@@ -176,7 +178,7 @@ describe('PostgreSQL category archives use one atomic scope and ID mapping',()=>
         context:{tags:[]},folders:[],refs:[{type:'character',id:1,name:'星河'}]},
       relations:[],
     }
-    const pre=await previewCategoryImport(imported,native)
+    const pre=await previewCategoryImport(imported,userId,native)
     expect(pre).toMatchObject({sourceFormat:'oc-editor-ocav',linked:1,unresolved:0})
     const result=await importCategoryArchive(imported,userId,native,'skip')
     expect(result.added).toBe(1)
@@ -200,7 +202,7 @@ describe('PostgreSQL category archives use one atomic scope and ID mapping',()=>
           ],scopedEdges:[{source:'item-a',target:'item-b',label:'镶嵌'}],
         }]},relations:[],
     }
-    const pre=await previewCategoryImport(imported,file)
+    const pre=await previewCategoryImport(imported,userId,file)
     expect(pre).toMatchObject({selected:2,context:0,sourceFormat:'oc-editor-ocav'})
     const result=await importCategoryArchive(imported,userId,file,'skip')
     expect(result.added).toBe(2)
@@ -213,6 +215,59 @@ describe('PostgreSQL category archives use one atomic scope and ID mapping',()=>
     expect((ring.content.relations as {targetId:number;relation:string}[])[0]).toMatchObject({
       targetId:Number(stone.rows[0].local_id),relation:'镶嵌',
     })
+  })
+  it('overwrites matching rows in place only with a signed snapshot and increments versions',async()=>{
+    const file=await exportCategoryArchive(source,'版本化来源',{kind:'character',folder:'主角组'})
+    for(const record of file.records){
+      const old={...record.content,...(record.kind==='character'?{bio:'覆盖前的独立编辑'}:{})}
+      await insert(overwrittenWorld,record.kind,record.title,old)
+    }
+    const baseline=await state.db!.query<{id:string;local_id:string;title:string;version:number}>(
+      'SELECT id,local_id::text,title,version FROM entities WHERE workspace_id=$1 ORDER BY local_id',
+      [overwrittenWorld])
+    const pre=await previewCategoryImport(overwrittenWorld,userId,file)
+    expect(pre).toMatchObject({duplicates:3,overwriteCount:3,total:3})
+    expect(typeof pre.previewToken).toBe('string')
+    await expect(importCategoryArchive(overwrittenWorld,userId,file,'overwrite'))
+      .rejects.toThrow('CATEGORY_PREVIEW_INVALID')
+    const result=await importCategoryArchive(overwrittenWorld,userId,file,'overwrite',pre.previewToken)
+    expect(result).toMatchObject({added:0,overwritten:3,skipped:0,renamed:0})
+    const after=await state.db!.query<{id:string;local_id:string;title:string;version:number}>(
+      'SELECT id,local_id::text,title,version FROM entities WHERE workspace_id=$1 ORDER BY local_id',
+      [overwrittenWorld])
+    expect(after.rows.map(row=>[row.id,row.local_id]))
+      .toEqual(baseline.rows.map(row=>[row.id,row.local_id]))
+    expect(after.rows.every((row,i)=>row.version===baseline.rows[i].version+1)).toBe(true)
+    const entries=await rows(overwrittenWorld)
+    expect(entries.find(row=>row.title==='主角')!.content.bio).toBe('')
+    const friendLocal=Number(after.rows.find(row=>row.title==='友人')!.local_id)
+    expect((entries.find(row=>row.title==='主角')!.content.relatedCharacters as
+      {characterId:number}[])[0].characterId).toBe(friendLocal)
+  })
+  it('rejects a stale target-version preview without partially overwriting any entry',async()=>{
+    const file=await exportCategoryArchive(source,'版本化来源',{kind:'character',folder:'主角组'})
+    const pre=await previewCategoryImport(overwrittenWorld,userId,file)
+    await state.db!.query(
+      "UPDATE entities SET content=jsonb_set(content,'{bio}','\"其他用户编辑\"'::jsonb),"+
+      "version=version+1 WHERE workspace_id=$1 AND title='主角'",
+      [overwrittenWorld])
+    const before=await rows(overwrittenWorld)
+    await expect(importCategoryArchive(overwrittenWorld,userId,file,'overwrite',pre.previewToken))
+      .rejects.toThrow('CATEGORY_PREVIEW_STALE')
+    expect(await rows(overwrittenWorld)).toEqual(before)
+  })
+  it('binds the overwrite ticket to the exact archive, world and operator',async()=>{
+    const file=await exportCategoryArchive(source,'版本化来源',{kind:'character',folder:'主角组'})
+    const pre=await previewCategoryImport(overwrittenWorld,userId,file)
+    const tampered={...file,sourceName:'被更改的归档'}
+    await expect(importCategoryArchive(overwrittenWorld,userId,tampered,'overwrite',pre.previewToken))
+      .rejects.toThrow('CATEGORY_PREVIEW_STALE')
+    await expect(importCategoryArchive(other,userId,file,'overwrite',pre.previewToken))
+      .rejects.toThrow('CATEGORY_PREVIEW_INVALID')
+    await expect(importCategoryArchive(overwrittenWorld,'wrong-operator',file,'overwrite',pre.previewToken))
+      .rejects.toThrow('CATEGORY_PREVIEW_INVALID')
+    const result=await importCategoryArchive(overwrittenWorld,userId,file,'overwrite',pre.previewToken)
+    expect(result.overwritten).toBe(3)
   })
   it('rolls back all inserts and imported tags on an unresolved foreign reference',async()=>{
     const before=await rows(target)
