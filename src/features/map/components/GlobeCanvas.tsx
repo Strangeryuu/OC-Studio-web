@@ -158,7 +158,7 @@ const CUBE_FACES: Array<{ origin: [number, number, number]; right: [number, numb
  * 六个 cube face，每个 face 切 tiles² 个瓦片；每个瓦片独立采样。
  * level 0/1/2 分别对应每面 1/2/4 个瓦片，等效 48/96/192 段。
  */
-function buildMesh(image: ImageData, layers: MapLayers | null, level = 1): MeshData {
+export function buildGlobeMesh(image: ImageData, layers: MapLayers | null, level = 1): MeshData {
   const tiles = 2 ** level
   const segments = 24
   const tileVertices = (segments + 1) * (segments + 1)
@@ -283,7 +283,7 @@ export function GlobeCanvas({ image, layers }: GlobeCanvasProps) {
       draw()
       return
     }
-    const mesh = buildMesh(image, layers, lodRef.current)
+    const mesh = buildGlobeMesh(image, layers, lodRef.current)
     gl.bindBuffer(gl.ARRAY_BUFFER, info.buffers.position)
     gl.bufferData(gl.ARRAY_BUFFER, mesh.positions, gl.STATIC_DRAW)
     gl.bindBuffer(gl.ARRAY_BUFFER, info.buffers.normal)
