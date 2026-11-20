@@ -692,7 +692,7 @@ export function WorkspaceMaps(props: Props) {
         points={profile?.points??[]} lengthKm={profile?.lengthKm??0}
         loading={profileBusy} progress={profileProgress} error={profileError}
         onClose={()=>{profileRequest.current+=1;setProfile(null);setProfileError(null);setProfileLine(null);
-          setProfilePicking(false);setProfileStart(null);setProfileBusy(false)}}/>
+          setProfilePicking(false);setProfileStart(null);setProfileBusy(false)}}/>}
       {canvasMenu && edit && canModify && <MediaContextMenu at={canvasMenu.at}
         onClose={() => setCanvasMenu(null)} items={[
           ...(canvasMenu.target ? [
