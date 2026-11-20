@@ -218,7 +218,7 @@ export async function previewCategoryImport(workspaceId:string,raw:unknown) {
     [workspaceId])
   const {duplicates}=chooseTarget(archive,existing.rows)
   const linked=resolveExternalRefs(archive,existing.rows)
-  const primary=selectCategoryRecords(archive.records,archive.selection).length
+  const primary=archive.primarySourceIds?.length??selectCategoryRecords(archive.records,archive.selection).length
   return {
     sourceName:archive.sourceName,kind:archive.selection.kind,
     selected:primary,
@@ -260,7 +260,11 @@ export async function importCategoryArchive(
     for(const row of archive.records) {
       const key=recordKey(row.kind,row.title,row.content)
       const target=lookup.get(key)?.[0]
-      if(target&&strategy==='skip') {
+      // OC-editor context records link to an existing target by name,
+      // regardless of how the user handles conflicts for primary items.
+      const isContext=archive.sourceFormat==='oc-editor-ocav'&&
+        !!archive.primarySourceIds&&!archive.primarySourceIds.includes(row.sourceId)
+      if(target&&(strategy==='skip'||isContext)) {
         maps.local.set(row.kind+':'+row.localId,Number(target.local_id))
         maps.uuid.set(row.sourceId,target.id)
         skipped++;continue

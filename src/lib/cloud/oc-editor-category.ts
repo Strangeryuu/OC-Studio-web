@@ -376,6 +376,10 @@ export function convertOcEditorCategory(value:unknown):CategoryArchive|null {
   const converted:CategoryArchive={
     format:CATEGORY_FORMAT,version:1,sourceName,exportedAt:sourceDate,
     selection,records:normalized,assets,tags,externalRefs,
+    primarySourceIds:sections?normalized.map(row=>row.sourceId):items.map(item=>{
+      if(!numeric(item.id))throwCode('OC_EDITOR_BAD_ID')
+      return syntheticUuid(kindCode[primaryKind],item.id)
+    }),
     sourceFormat:'oc-editor-ocav',nativeRelations:relations.length,
   }
   if(!parseCategoryArchive(converted))throwCode('OC_EDITOR_INVALID')

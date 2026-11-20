@@ -37,6 +37,8 @@ export interface CategoryArchive {
   tags: CategoryTag[]
   /** OC-editor link-only references are resolved by kind and name in the target workspace. */
   externalRefs?: CategoryExternalRef[]
+  /** Explicit primary row identities; context may have the same kind. */
+  primarySourceIds?: string[]
   sourceFormat?: 'oc-editor-ocav'
   nativeRelations?: number
 }
@@ -136,6 +138,16 @@ export function parseCategoryArchive(input: unknown): CategoryArchive | null {
     tags.push({id:tag.id.toLowerCase(),name:tag.name.trim(),color:tag.color})
   }
   if (!selectCategoryRecords(records,selection).length) return null
+  let primarySourceIds:string[]|undefined
+  if(input.primarySourceIds!==undefined){
+    if(!Array.isArray(input.primarySourceIds)||input.primarySourceIds.length===0||
+      input.primarySourceIds.length>500||input.primarySourceIds.some(id=>typeof id!=='string'||!isUuid(id)))return null
+    const ids=input.primarySourceIds.map(id=>(id as string).toLowerCase())
+    if(new Set(ids).size!==ids.length)return null
+    if(ids.some(id=>!records.some(row=>row.sourceId===id&&row.kind===selection.kind)))
+      return null
+    primarySourceIds=ids
+  }
   if(input.sourceFormat!==undefined&&input.sourceFormat!=='oc-editor-ocav')return null
   if(input.nativeRelations!==undefined&&(!Number.isSafeInteger(input.nativeRelations)||
       (input.nativeRelations as number)<0||(input.nativeRelations as number)>1000))return null
@@ -156,7 +168,8 @@ export function parseCategoryArchive(input: unknown): CategoryArchive | null {
     exportedAt:input.exportedAt,selection,records,assets,tags,
     ...(input.sourceFormat===undefined?{}:{sourceFormat:'oc-editor-ocav'}),
     ...(input.nativeRelations===undefined?{}:{nativeRelations:input.nativeRelations as number}),
-    ...(input.externalRefs===undefined?{}:{externalRefs})}
+    ...(input.externalRefs===undefined?{}:{externalRefs}),
+    ...(primarySourceIds===undefined?{}:{primarySourceIds})}
 }
 
 export function recordKey(kind: CategoryKind, title: string, content: Record<string,unknown>): string {
