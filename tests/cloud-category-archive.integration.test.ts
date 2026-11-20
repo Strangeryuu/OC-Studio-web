@@ -83,6 +83,9 @@ describe('PostgreSQL category archives use one atomic scope and ID mapping',()=>
     expect((lead.content.relatedCharacters as {characterId:number}[])[0].characterId)
       .toBe(Number(allyId.rows[0].local_id))
     expect(resident).toBeDefined();expect(ally).toBeDefined()
+    const folders=await state.db!.query<{setting_value:string[]}>(
+      "SELECT setting_value FROM workspace_settings WHERE workspace_id=$1 AND setting_key='character-folders'",[target])
+    expect(folders.rows[0].setting_value.sort()).toEqual(['主角组','配角'].sort())
     expect(await rows(other)).toHaveLength(0)
   })
   it('skips duplicates without modifying target, and maps other references to retained rows',async()=>{
