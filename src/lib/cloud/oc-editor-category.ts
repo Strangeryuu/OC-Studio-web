@@ -140,7 +140,7 @@ export function convertOcEditorCategory(value:unknown):CategoryArchive|null {
     const id=syntheticUuid(7,tag.id)
     tagIds.set(tag.id,id)
     tags.push({id,name:tag.name,color:typeof tag.color==='string'&&
-      /^#[0-9a-f]{6}$/i.test(tag.color)?tag.color:'#64748b'})
+      /^#[0-9a-f]{6}$/i.test(tag.color)?tag.color:('#'+'64748b')})
   }
 
   const normalized:CategoryRecord[]=[]
