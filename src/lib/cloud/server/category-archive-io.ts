@@ -14,7 +14,7 @@ import { worldLinksAllowed } from '@/lib/cloud/server/world-links'
 import { cloudMapAllowed } from '@/lib/cloud/map-fields'
 import { cloudNovelAllowed } from '@/lib/cloud/novel-fields'
 import { CATEGORY_FORMAT, collectCategoryClosure, collectArchiveMedia,
-  parseCategoryArchive, recordKey, type CategoryRecord, type CategoryArchive,
+  parseCategoryArchive, recordKey, remapCategoryDocumentRefs, type CategoryRecord, type CategoryArchive,
   type CategorySelection, type CategoryStrategy } from '@/lib/cloud/category-archive'
 import type { PoolClient } from 'pg'
 
@@ -267,7 +267,7 @@ export async function importCategoryArchive(
       maps.media.set(asset.id,inserted.rows[0].id)
     }
     for(const item of incoming) {
-      const content=cleanForImport(item.row.kind,item.row.content)
+      const content=remapCategoryDocumentRefs(cleanForImport(item.row.kind,item.row.content),maps.local)
       const adjusted=remapPortableContent(item.row.kind,content,maps)
       const primary=item.row.kind==='character'||item.row.kind==='country'?'name':'title'
       adjusted[primary]=item.title

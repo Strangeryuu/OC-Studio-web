@@ -206,7 +206,9 @@ export function remapPortableContent(kind:string,content:Record<string,unknown>,
         else if(name==='characterId')output[name]=local('character',item)
         else if(name==='targetId')output[name]=local(
           parent==='relatedCharacters'?'character':parent==='relatedNotes'?'worldEntry':
-          kind==='event'?'event':'worldEntry',item)
+          obj.targetType==='world'||obj.targetType==='worldEntry'?'worldEntry':
+          obj.targetType==='character'?'character':obj.targetType==='country'?'country':
+          obj.targetType==='event'?'event':kind==='event'?'event':'worldEntry',item)
         else output[name]=replace(item,name,key)
       }
       return output
