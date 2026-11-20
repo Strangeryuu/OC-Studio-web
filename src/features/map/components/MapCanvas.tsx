@@ -94,6 +94,11 @@ export interface MapCanvasProps {
   draft?: AnnotationDraft | null
   /** 画线时点一下（归一化坐标） */
   onDraftPoint?: (anchor: MapAnchor) => void
+  /** Cloud generated-map profile selection uses the same normalized 2D coordinates. */
+  profilePicking?: boolean
+  profileStart?: MapAnchor | null
+  profileLine?: {start:MapAnchor;end:MapAnchor} | null
+  onProfilePoint?: (anchor:MapAnchor) => void
   /** 空白处右键：由宿主决定开什么菜单（画国界 / 画道路 / 删除标注） */
   onCanvasContextMenu?: (anchor: MapAnchor, at: { x: number; y: number }) => void
 }
@@ -124,6 +129,10 @@ export function MapCanvas({
   annotations = [],
   draft = null,
   onDraftPoint,
+  profilePicking = false,
+  profileStart = null,
+  profileLine = null,
+  onProfilePoint,
   onCanvasContextMenu,
 }: MapCanvasProps) {
   const { isMobile } = useDevice()
@@ -351,17 +360,35 @@ export function MapCanvas({
         />
 
         {/* 画线时把点击收在这一层：不冒泡到画布，免得一边加点一边平移 */}
-        {draft ? (
+        {draft || profilePicking ? (
           <div
-            className="absolute inset-0 z-10 cursor-crosshair"
+            className="absolute inset-0 z-10 cursor-crosshair touch-none"
             onPointerDown={(event) => event.stopPropagation()}
             onContextMenu={(event) => event.preventDefault()}
             onClick={(event) => {
               const anchor = pointFromClient(event.clientX, event.clientY)
-              if (anchor) onDraftPoint?.(anchor)
+              if (anchor) {
+                if (profilePicking) onProfilePoint?.(anchor)
+                else onDraftPoint?.(anchor)
+              }
             }}
           />
         ) : null}
+
+        {(profileStart || profileLine) && <svg
+          className="pointer-events-none absolute inset-0 z-[11] h-full w-full text-ink"
+          viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          {profileLine&&<line
+            x1={profileLine.start.x*100} y1={profileLine.start.y*100}
+            x2={profileLine.end.x*100} y2={profileLine.end.y*100}
+            stroke="currentColor" strokeWidth={0.45}
+            strokeDasharray="1 0.5"/>}
+          <circle cx={(profileStart??profileLine!.start).x*100}
+            cy={(profileStart??profileLine!.start).y*100}
+            r={0.8} fill="currentColor"/>
+          {profileLine&&<circle cx={profileLine.end.x*100}
+            cy={profileLine.end.y*100} r={0.8} fill="currentColor"/>}
+        </svg>}
 
         {points.map((point) => {
           const key = anchorKey(point)
