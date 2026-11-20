@@ -3,12 +3,14 @@ import { useState } from 'react'
 import { Download, Upload, DatabaseBackup } from 'lucide-react'
 import { BTN_PRIMARY, BTN_QUIET } from '@/lib/ui-tokens'
 import { WorkspaceCategoryArchive } from './WorkspaceCategoryArchive'
+import { detectArchiveType } from '@/lib/cloud/oc-editor-category'
 
 export function WorkspaceBackup({workspaceId,workspaceName,canExport,canImport,onImported}:{
   workspaceId:string;workspaceName:string;canExport:boolean;canImport:boolean;
   onImported:()=>Promise<void>
 }){
   const [busy,setBusy]=useState(false)
+  const [incomingCategory,setIncomingCategory]=useState<File|undefined>()
   const [error,setError]=useState<string|null>(null)
   const [report,setReport]=useState<string|null>(null)
   async function exportFile(){
@@ -38,11 +40,28 @@ export function WorkspaceBackup({workspaceId,workspaceName,canExport,canImport,o
     if(file.size>60*1024*1024){
       setError('文件超过 60 MB，请拆分图片或使用其他备份工具');return
     }
-    if(!window.confirm('导入将写入当前世界观。仅空资料库支持恢复，已有数据会被保护。继续？'))return
+    let rawText:string
+    let parsed:unknown
+    try{
+      rawText=await file.text()
+      parsed=JSON.parse(rawText) as unknown
+    }catch{setError('备份文件不是有效的 JSON 格式');return}
+    const format=detectArchiveType(parsed)
+    if(format==='oc-editor'||format==='web-category'){
+      setError(null)
+      setIncomingCategory(file)
+      setReport('已识别分类归档，正在下方显示内容预览和重复处理选项。')
+      return
+    }
+    if(format!=='oc-studio-full'){
+      setError('无法识别备份格式，请确认导出来源和文件完整性')
+      return
+    }
+    if(!window.confirm('识别为 OC Studio 整库备份，将恢复到当前世界观。现有数据会受到保护，目标资料库需要为空。继续？'))return
     setBusy(true);setError(null);setReport(null)
     try{
       const response=await fetch('/api/workspaces/'+workspaceId+'/backup',{
-        method:'POST',headers:{'Content-Type':'application/json'},body:await file.text(),
+        method:'POST',headers:{'Content-Type':'application/json'},body:rawText,
       })
       const result:{error?:string;restored?:number;media?:number;tags?:number;
         source?:string;warning?:string}=await response.json().catch(()=>({}))
@@ -77,6 +96,7 @@ export function WorkspaceBackup({workspaceId,workspaceName,canExport,canImport,o
         支持 OC Studio 原版 v1 备份及含 Cloud 数据段的备份。
         恢复时会重新映射实体 ID 与私有媒体地址。为了保护现有数据，目标世界观须为空。
         导入的历史版本会保留内容和顺序，操作者归档到本次导入账号。
+        选择 OC-editor 或 Web 分类文件时会自动打开下方增量导入预览。
       </p>
       {canImport?<label className={BTN_QUIET+' cursor-pointer'}>
         <Upload size={15}/>选择 .ocbak 文件
@@ -86,7 +106,8 @@ export function WorkspaceBackup({workspaceId,workspaceName,canExport,canImport,o
       </label>:<p className="text-caption text-ink-faint">仅世界观所有者或管理员可执行恢复。</p>}
     </div>
     <WorkspaceCategoryArchive workspaceId={workspaceId} workspaceName={workspaceName}
-      canExport={canExport} canImport={canImport} onImported={onImported}/>
+      canExport={canExport} canImport={canImport} onImported={onImported}
+      incomingFile={incomingCategory}/>
     {error&&<p role="alert" className="text-ui text-error">{error}</p>}
     {report&&<p role="status" className="text-ui text-ink-muted">{report}</p>}
   </section>
