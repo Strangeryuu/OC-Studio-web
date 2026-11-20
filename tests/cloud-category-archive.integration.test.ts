@@ -16,11 +16,13 @@ vi.mock('@/lib/cloud/server/media-store',()=>({
 }))
 
 import { exportCategoryArchive, previewCategoryImport, importCategoryArchive } from '@/lib/cloud/server/category-archive-io'
+import { convertOcEditorCategory } from '@/lib/cloud/oc-editor-category'
 import type { CategoryArchive } from '@/lib/cloud/category-archive'
 
 const source='11111111-1111-4111-8111-111111111111'
 const target='22222222-2222-4222-8222-222222222222'
 const other='33333333-3333-4333-8333-333333333333'
+const imported='44444444-4444-4444-8444-444444444444'
 const userId='owner'
 async function insert(workspaceId:string,kind:string,title:string,content:Record<string,unknown>) {
   const r=await state.db!.query<{id:string;local_id:string}>(
@@ -48,7 +50,7 @@ describe('PostgreSQL category archives use one atomic scope and ID mapping',()=>
       await state.db.exec(readFileSync('cloud/migrations/'+file,'utf8'))
     await state.db.query('INSERT INTO "user"(id,name,email) VALUES($1,$2,$3)',
       [userId,'owner','owner@example.test'])
-    for(const id of [source,target,other]) {
+    for(const id of [source,target,other,imported]) {
       await state.db.query('INSERT INTO workspaces(id,owner_id,name) VALUES($1,$2,$3)',
         [id,userId,'Test World'])
     }
@@ -119,6 +121,98 @@ describe('PostgreSQL category archives use one atomic scope and ID mapping',()=>
       expect.objectContaining({name:'神器',template:'entry',enabled:true}),
     ]))
     expect((await rows(other)).map(row=>row.title)).toContain('魔法剑')
+  })
+  it('imports an unmodified OC-editor native character archive with multi-edge context and groups',async()=>{
+    const native={
+      format:'oc-editor-ocav',version:1,kind:'character',exportedAt:'2026-11-20T05:00:00Z',
+      world:{name:'原版编辑器'},
+      payload:{
+        table:'characters',contextMode:'create',
+        items:[{id:1,name:'星河',bio:'长篇背景',aliases:[],countryId:3,
+          folderId:'main-group',avatarUrl:'',relatedCharacters:[{
+            characterId:2,name:'日影',relation:'盟友',
+          }],tags:[7]}],
+        context:{characters:[{id:2,name:'日影',bio:'配角',avatarUrl:'',relatedCharacters:[]}],
+          countries:[{id:3,name:'苍穹国',system:'王国',flagUrl:''}],events:[],worldEntries:[],
+          tags:[{id:7,name:'联盟',color:'#123abc'}]},
+        folders:[{id:'main-group',name:'核心角色'}],
+        refs:[{type:'character',id:1,name:'星河'}],
+      },
+      relations:[{sourceType:'character',sourceId:1,targetType:'character',targetId:2,
+        kind:'character',label:'誓约',directed:false,color:'#445566',arrow:'both'}],
+    }
+    const parsed=convertOcEditorCategory(native)!
+    expect(parsed.records).toHaveLength(3)
+    const pre=await previewCategoryImport(imported,native)
+    expect(pre).toMatchObject({sourceFormat:'oc-editor-ocav',selected:1,total:3,duplicates:0,
+      relations:1,unresolved:0})
+    const result=await importCategoryArchive(imported,userId,native,'skip')
+    expect(result).toMatchObject({added:3,skipped:0})
+    const now=await rows(imported)
+    const lead=now.find(row=>row.title==='星河')!
+    const countryId=await state.db!.query<{local_id:string}>(
+      "SELECT local_id::text FROM entities WHERE workspace_id=$1 AND title='苍穹国'",[imported])
+    expect(lead.content.countryId).toBe(Number(countryId.rows[0].local_id))
+    const otherId=await state.db!.query<{local_id:string}>(
+      "SELECT local_id::text FROM entities WHERE workspace_id=$1 AND title='日影'",[imported])
+    expect((lead.content.relatedCharacters as {characterId:number;relation:string}[])
+      .filter(edge=>edge.characterId===Number(otherId.rows[0].local_id))
+      .map(edge=>edge.relation).sort()).toEqual(['盟友','誓约'])
+    expect(lead.content.folder).toBe('核心角色')
+    expect((lead.content.cloudTagIds as string[])).toHaveLength(1)
+    const folder=await state.db!.query<{setting_value:string[]}>(
+      "SELECT setting_value FROM workspace_settings WHERE workspace_id=$1 AND setting_key='character-folders'",[imported])
+    expect(folder.rows[0].setting_value).toContain('核心角色')
+    const repeated=await importCategoryArchive(imported,userId,native,'skip')
+    expect(repeated).toMatchObject({added:0,skipped:3})
+  })
+  it('resolves link-only OC-editor refs inside the target without copying unrelated entities',async()=>{
+    const native={
+      format:'oc-editor-ocav',version:1,kind:'world-entry',
+      exportedAt:'2026-11-20T06:00:00Z',world:{name:'笔记来源'},
+      payload:{table:'worldEntries',contextMode:'link-only',
+        items:[{id:77,title:'誓约史',category:'史书',content:'古老契约',
+          references:[{targetType:'character',targetId:1}]}],
+        context:{tags:[]},folders:[],refs:[{type:'character',id:1,name:'星河'}]},
+      relations:[],
+    }
+    const pre=await previewCategoryImport(imported,native)
+    expect(pre).toMatchObject({sourceFormat:'oc-editor-ocav',linked:1,unresolved:0})
+    const result=await importCategoryArchive(imported,userId,native,'skip')
+    expect(result.added).toBe(1)
+    const entry=(await rows(imported)).find(row=>row.title==='誓约史')!
+    const id=await state.db!.query<{local_id:string}>(
+      "SELECT local_id::text FROM entities WHERE workspace_id=$1 AND title='星河'",[imported])
+    expect(entry.content.references).toEqual([{
+      targetType:'character',targetId:Number(id.rows[0].local_id),
+    }])
+    expect((await rows(imported)).filter(row=>row.kind==='character')).toHaveLength(2)
+  })
+  it('converts custom-section scoped edges into visible categorized Web world entries',async()=>{
+    const file={
+      format:'oc-editor-ocav',version:1,kind:'custom-section',exportedAt:'2026-11-20T07:00:00Z',
+      world:{name:'自定义分类世界'},
+      payload:{table:'customSections',contextMode:'link-only',context:{tags:[]},
+        folders:[],refs:[],items:[{
+          id:'custom-001',name:'古物',entries:[
+            {id:'item-a',name:'戒指',note:'魔法戒指',gallery:[]},
+            {id:'item-b',name:'魔法石',note:'神秘力量',gallery:[]},
+          ],scopedEdges:[{source:'item-a',target:'item-b',label:'镶嵌'}],
+        }]},relations:[],
+    }
+    const pre=await previewCategoryImport(imported,file)
+    expect(pre).toMatchObject({selected:2,context:0,sourceFormat:'oc-editor-ocav'})
+    const result=await importCategoryArchive(imported,userId,file,'skip')
+    expect(result.added).toBe(2)
+    const found=await rows(imported)
+    expect(found.filter(x=>x.kind==='worldEntry'&&x.content.category==='古物').map(x=>x.title))
+      .toEqual(['戒指','魔法石'])
+    const ring=found.find(x=>x.title==='戒指')!
+    const stone=await state.db!.query<{local_id:string}>(
+      "SELECT local_id::text FROM entities WHERE workspace_id=$1 AND title='魔法石'",[imported])
+    expect((ring.content.relations as {targetId:number;relation:string}[])[0]).toMatchObject({
+      targetId:Number(stone.rows[0].local_id),relation:'镶嵌',
+    })
   })
   it('rolls back all inserts and imported tags on an unresolved foreign reference',async()=>{
     const before=await rows(target)
