@@ -5,6 +5,7 @@
 // separate manual device acceptance checks.
 const { chromium } = require('playwright')
 const assert = require('node:assert/strict')
+const { readFileSync } = require('node:fs')
 const BASE = 'http://localhost:3000'
 const PASSWORD = 'CI_only_SecurePass_456789'
 let browser
@@ -243,6 +244,25 @@ async function run() {
   assert(html && html.includes('CI Touch Alpha'), 'Static site export omitted the cloud workspace character')
   await cloudExport.getByRole('button', { name: '返回' }).click()
   await cloudExport.waitFor({ state: 'hidden' })
+  // Category archive uses a separate incremental protocol. A real browser
+  // verifies file contents and duplicate-preview UX without mutating live data.
+  await openSection(desktopPage, worldId, '备份')
+  await desktopPage.getByText('分类归档 · 跨世界观迁移').waitFor({ timeout: 15000 })
+  const categoryDownloadReady = desktopPage.waitForEvent('download', { timeout: 30000 })
+  await desktopPage.getByRole('button', { name: '下载分类 .ocbak' }).click()
+  const categoryDownload = await categoryDownloadReady
+  const archivePath = await categoryDownload.path()
+  assert(archivePath, 'Category archive download path is missing')
+  const archive = JSON.parse(readFileSync(archivePath, 'utf8'))
+  assert.equal(archive.format, 'oc-studio-web-category-v1')
+  assert(archive.records.some(row => row.kind === 'character' && row.title === 'CI Touch Alpha'))
+  assert(!archive.records.some(row => row.kind === 'event' && row.title === 'CI Time Milestone'),
+    'Category export included an unrelated event')
+  await desktopPage.getByLabel('选择分类归档').setInputFiles(archivePath)
+  await desktopPage.getByText('确认导入内容').waitFor({ timeout: 20000 })
+  assert(await desktopPage.getByText(/目标同名条目/).count(),
+    'Category preview did not show duplicate detection')
+  await desktopPage.getByRole('button', { name: '取消' }).click()
   process.stdout.write('Chromium browser acceptance passed: cloud original export tabs and scoped previews; desktop timeline export; stable avatar/editor submenus; mobile touch drag; two-device layout version conflict.\\n')
 }
 run().catch(async error => {
