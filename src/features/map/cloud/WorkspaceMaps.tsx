@@ -7,9 +7,12 @@ import { MapSwitcher } from '@/features/map/components/MapSwitcher'
 import { AnnotationColorMenu } from '@/features/map/components/AnnotationColorMenu'
 import { MediaContextMenu } from '@/components/shared/MediaContextMenu'
 import { MediaActionButton } from '@/components/shared/MediaActionButton'
-import { Palette, Trash2, PenLine, Route } from 'lucide-react'
+import { Palette, Trash2, PenLine, Route, Globe2, Activity, Map as MapIcon } from 'lucide-react'
 import { MAP_VIEWS, type MapViewRenderer } from '@/features/map/save-generated'
-import { renderMapView } from '@/features/map/render-view'
+import { renderMapProfile, renderMapView } from '@/features/map/render-view'
+import { canProjectMapAsGlobe } from '@/features/map/globe-data'
+import { ProfileDrawer } from '@/features/map/components/ProfileDrawer'
+import type { ProfilePoint } from '@/plugins/map-generator'
 import { archiveFileName, archiveImageToBlob, blobToArchiveImage, parseMapArchive,
   scaleAnnotations, serializeMapArchive, type MapArchive } from '@/features/map/archive'
 import { saveBlobAs, exportMapImage } from '@/features/map/export'
@@ -32,6 +35,10 @@ import { BTN_PRIMARY, BTN_QUIET } from '@/lib/ui-tokens'
 
 const MapGeneratorPanel = dynamic(
   () => import('@/features/map/MapGeneratorPanel').then(module => module.MapGeneratorPanel),
+  { ssr: false },
+)
+const CloudGlobeView = dynamic(
+  () => import('@/features/map/components/CloudGlobeView').then(module => module.CloudGlobeView),
   { ssr: false },
 )
 
@@ -100,6 +107,15 @@ export function WorkspaceMaps(props: Props) {
   const [showDetails, setShowDetails] = useState(false)
   const [generatorOpen, setGeneratorOpen] = useState(false)
   const [generatorBusy, setGeneratorBusy] = useState(false)
+  const [displayMode, setDisplayMode] = useState<'flat'|'globe'>('flat')
+  const [profilePicking, setProfilePicking] = useState(false)
+  const [profileStart, setProfileStart] = useState<MapAnchor|null>(null)
+  const [profileLine, setProfileLine] = useState<{start:MapAnchor;end:MapAnchor}|null>(null)
+  const [profile, setProfile] = useState<{points:ProfilePoint[];lengthKm:number}|null>(null)
+  const [profileBusy, setProfileBusy] = useState(false)
+  const [profileProgress, setProfileProgress] = useState<{stage:string;value:number}|null>(null)
+  const [profileError, setProfileError] = useState<string|null>(null)
+  const profileRequest = useRef(0)
   const [archiveWarning, setArchiveWarning] = useState<string | null>(null)
   const [edit, setEdit] = useState(false)
   const [shownLayers, setShownLayers] = useState<MapLayerKind[]>(DEFAULT_MAP_LAYERS.map(item => item.kind))
@@ -126,6 +142,61 @@ export function WorkspaceMaps(props: Props) {
       mapId: activeName })), [pins, activeName, shownLayers, draftAnchor])
   const annotations = useMemo(() => parseAnnotations(map?.annotations), [map?.annotations])
   const canModify = canEdit && !disabled && !saving
+  const globeEligible = Boolean(map?.image) && canProjectMapAsGlobe(map?.width,map?.height)
+  const hasGeneratedTerrain = map?.seed !== undefined && Boolean(map?.params)
+
+  function resetAdvancedView() {
+    profileRequest.current += 1
+    setDisplayMode('flat')
+    setProfilePicking(false)
+    setProfileStart(null)
+    setProfileLine(null)
+    setProfile(null)
+    setProfileError(null)
+    setProfileBusy(false)
+    setProfileProgress(null)
+  }
+
+  function takeProfilePoint(anchor:MapAnchor) {
+    if(!map || !hasGeneratedTerrain || !profilePicking || profileBusy)return
+    if(!profileStart){
+      setProfileStart(anchor)
+      return
+    }
+    const start=profileStart
+    setProfileStart(null)
+    setProfilePicking(false)
+    setProfileLine({start,end:anchor})
+    setProfile(null)
+    setProfileError(null)
+    setProfileBusy(true)
+    const request=++profileRequest.current
+    try{
+      const params=JSON.parse(map.params!) as WorldMapParams
+      void renderMapProfile({
+        seed:map.seed!,params,
+        line:{ax:start.x,ay:start.y,bx:anchor.x,by:anchor.y},
+        onProgress:(stage,value)=>{
+          if(profileRequest.current===request)setProfileProgress({stage,value})
+        },
+      }).then(result=>{
+        if(profileRequest.current===request){
+          setProfile({points:result.points,lengthKm:result.lengthKm})
+        }
+      }).catch(cause=>{
+        if(profileRequest.current===request)setProfileError(
+          cause instanceof Error?cause.message:'地形剖面采样失败')
+      }).finally(()=>{
+        if(profileRequest.current===request){
+          setProfileBusy(false)
+          setProfileProgress(null)
+        }
+      })
+    }catch(cause){
+      setProfileError(cause instanceof Error?cause.message:'地图参数无效')
+      setProfileBusy(false)
+    }
+  }
 
   useEffect(() => registerPendingSave(() => {
     if (generatorBusy && writing.current === null) throw new Error('地图生成结果仍在处理中')
@@ -268,6 +339,7 @@ export function WorkspaceMaps(props: Props) {
       setActiveId(created.entity.id)
       setName('')
       setDraft(null)
+      resetAdvancedView()
     }, { title })
   }
 
@@ -419,6 +491,7 @@ export function WorkspaceMaps(props: Props) {
       setActiveId(created.entity.id)
       setArchiveWarning(warnings.length ? warnings.join('；') : null)
       setSwitcherOpen(false)
+      resetAdvancedView()
     }, { importedFile: file.name }, true).catch(() => undefined)
   }
 
@@ -458,7 +531,7 @@ export function WorkspaceMaps(props: Props) {
           <MapSwitcher maps={maps.map(toMap)} activeId={map?.id ?? null}
             anchorCount={item => pins.filter(pin => pin.mapId === item.name && pin.position).length}
             canRename={canEdit} canDelete={props.canDelete} canCreate={canEdit} allowDeleteLast
-            onSelect={id => { setActiveId(id); setDraftAnchor(null); setCanvasMenu(null); setPaintMenu(null); setSwitcherOpen(false); setShowDetails(false); setError(null) }}
+            onSelect={id => { setActiveId(id); resetAdvancedView(); setDraftAnchor(null); setCanvasMenu(null); setPaintMenu(null); setSwitcherOpen(false); setShowDetails(false); setError(null) }}
             onRename={(id, title) => void manageMap('PATCH', id, title)}
             onDelete={id => void manageMap('DELETE', id)}
             onCreate={() => { setSwitcherOpen(false); document.getElementById('new-map-name')?.focus() }}
@@ -544,16 +617,40 @@ export function WorkspaceMaps(props: Props) {
           onClick={removeAnnotation}>删除标注</button>
       </div>}
       <div className="flex flex-wrap items-center gap-2 text-ui">
-        {DEFAULT_MAP_LAYERS.map(layer => <label key={layer.kind} className="flex items-center gap-1">
+        <button type="button" className={BTN_QUIET} aria-label="平面地图"
+          aria-pressed={displayMode==='flat'}
+          onClick={()=>{setDisplayMode('flat')}}><MapIcon size={15}/>平面</button>
+        <button type="button" className={BTN_QUIET} aria-label="3D 地球"
+          aria-pressed={displayMode==='globe'}
+          title={globeEligible?'使用私有底图生成球面投影':'需要约 2:1 的世界地图底图'}
+          disabled={!globeEligible||generatorOpen||profilePicking||edit||profileBusy}
+          onClick={()=>{setDisplayMode('globe');setProfileLine(null);setProfile(null)}}>
+          <Globe2 size={15}/>3D 地球
+        </button>
+        <button type="button" className={BTN_QUIET}
+          aria-label="取地形剖面"
+          disabled={!hasGeneratedTerrain||!map.image||displayMode==='globe'||generatorOpen||edit||profileBusy}
+          title={hasGeneratedTerrain?'从地图上选择两个点计算高程剖面':'请先使用地图生成器生成地图'}
+          onClick={()=>{
+            if(profilePicking){setProfilePicking(false);setProfileStart(null)}
+            else {setProfilePicking(true);setProfileStart(null);setProfileLine(null);
+              setProfile(null);setProfileError(null)}
+          }}>
+          <Activity size={15}/>{profilePicking?'取消取样':'地形剖面'}
+        </button>
+        {displayMode==='flat'&&DEFAULT_MAP_LAYERS.map(layer => <label key={layer.kind} className="flex items-center gap-1">
           <input type="checkbox" checked={shownLayers.includes(layer.kind)}
             onChange={event => setShownLayers(current => event.target.checked ? [...current,layer.kind]
               : current.filter(item => item !== layer.kind))} />{MAP_LAYER_LABELS[layer.kind]}
         </label>)}
-        <button type="button" className={BTN_QUIET} onClick={viewport.zoomOut}>缩小</button>
-        <button type="button" className={BTN_QUIET} onClick={viewport.reset}>复位</button>
-        <button type="button" className={BTN_QUIET} onClick={viewport.zoomIn}>放大</button>
+        {displayMode==='flat'&&<button type="button" className={BTN_QUIET} onClick={viewport.zoomOut}>缩小</button>}
+        {displayMode==='flat'&&<button type="button" className={BTN_QUIET} onClick={viewport.reset}>复位</button>}
+        {displayMode==='flat'&&<button type="button" className={BTN_QUIET} onClick={viewport.zoomIn}>放大</button>}
         {saving && <span aria-live="polite">正在保存…</span>}
       </div>
+      {profilePicking&&<p role="status" className="text-caption text-ink-muted">
+        {profileStart?'选择剖面的终点（手机端可直接点按）':'点击地图上的两个点，绘制地形高程剖面'}
+      </p>}
       {draft && <div className="flex flex-wrap items-center gap-2 text-ui">
         <span>正在绘制{draft.kind === 'border' ? '国界' : '道路'}：{draft.points.length} 个点</span>
         <button type="button" className={BTN_PRIMARY}
@@ -572,7 +669,10 @@ export function WorkspaceMaps(props: Props) {
           onBusyChange={setGeneratorBusy} onUseAsBackground={generateBackground} />
       </div>}
       <div className={`h-[60vh] min-h-80 overflow-hidden rounded-panel border border-line ${generatorOpen ? 'hidden' : ''}`}>
-        <MapCanvas map={map} viewport={viewport} points={shown} allLayersOff={shownLayers.length === 0}
+        {!generatorOpen&&displayMode==='globe'&&map.image
+          ? <CloudGlobeView key={map.id+':'+map.image}
+              imageUrl={map.image} seed={map.seed} paramsJson={map.params}/>
+          : <MapCanvas map={map} viewport={viewport} points={shown} allLayersOff={shownLayers.length === 0}
           onMoveAnchor={(point, anchor) => setDraftAnchor({ key: mapKey(point.kind, point.id), anchor })}
           onCommitAnchor={(point, anchor) => updatePin(point.kind, point.id, anchor)}
           onRemoveAnchor={point => updatePin(point.kind, point.id, null)}
@@ -584,8 +684,15 @@ export function WorkspaceMaps(props: Props) {
           annotations={annotations} draft={edit && canModify ? draft : null}
           onDraftPoint={anchor => setDraft(current => current ? { ...current, points: [...current.points, anchor] } : null)}
           onCanvasContextMenu={(anchor, at) => { if (edit && canModify && draft === null) setCanvasMenu({ anchor, at, target: annotationAt(annotations, anchor) }) }}
-          bleed />
+          profilePicking={profilePicking} profileStart={profileStart} profileLine={profileLine}
+          onProfilePoint={takeProfilePoint}
+          bleed />}
       </div>
+      {(profile || profileBusy || profileError) && !generatorOpen && displayMode==='flat' && <ProfileDrawer
+        points={profile?.points??[]} lengthKm={profile?.lengthKm??0}
+        loading={profileBusy} progress={profileProgress} error={profileError}
+        onClose={()=>{profileRequest.current+=1;setProfile(null);setProfileError(null);setProfileLine(null);
+          setProfilePicking(false);setProfileStart(null);setProfileBusy(false)}}/>
       {canvasMenu && edit && canModify && <MediaContextMenu at={canvasMenu.at}
         onClose={() => setCanvasMenu(null)} items={[
           ...(canvasMenu.target ? [
