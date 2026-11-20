@@ -287,6 +287,30 @@ export async function importCategoryArchive(
         "WHERE id=$3 AND workspace_id=$4",
         [item.title,JSON.stringify(doc.data),item.id,workspaceId])
     }
+    // Register imported character folders so they remain renameable and
+    // selectable via the cloud catalog, without resetting existing folders.
+    const newFolders=[...new Set(incoming.filter(item=>item.row.kind==='character')
+      .map(item=>item.row.content.folder).filter(
+        (name):name is string=>typeof name==='string'&&name.trim()===name&&
+          name.length>0&&name.length<=60))]
+    if(newFolders.length) {
+      const found=await client.query<{setting_value:unknown}>(
+        "SELECT setting_value FROM workspace_settings "+
+        "WHERE workspace_id=$1 AND setting_key='character-folders' FOR UPDATE",[workspaceId])
+      const rawFolders=found.rows[0]?.setting_value??[]
+      if(!Array.isArray(rawFolders)||!rawFolders.every(name=>typeof name==='string'&&name.trim()))
+        fail('CATEGORY_FOLDER_INVALID')
+      const merged=[...new Set([...rawFolders as string[],...newFolders])]
+      if(merged.length>200)fail('CATEGORY_FOLDER_LIMIT')
+      if(merged.length!==rawFolders.length) {
+        await client.query(
+          "INSERT INTO workspace_settings(workspace_id,setting_key,setting_value,version) "+
+          "VALUES($1,'character-folders',$2::jsonb,1) "+
+          "ON CONFLICT(workspace_id,setting_key) DO UPDATE SET "+
+          "setting_value=EXCLUDED.setting_value,version=workspace_settings.version+1,updated_at=now()",
+          [workspaceId,JSON.stringify(merged)])
+      }
+    }
     // Keep imported custom-section notes visible in the target sidebar.
     // Any new category uses the built-in entry template; an existing target
     // category and its chosen template are always preserved.
