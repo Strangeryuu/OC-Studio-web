@@ -23,7 +23,7 @@ type SourceRow = {id:string;local_id:string;kind:string;title:string;content:Rec
 type TargetRow = {id:string;local_id:string;kind:string;title:string;content:Record<string,unknown>;version:number}
 type MediaRow = {id:string;mime_type:string;storage_key:string}
 type TagRow = {id:string;name:string;color:string}
-const fail=(code:string):never=>{throw new Error(code)}
+function fail(code:string):never { throw new Error(code) }
 function isOriginalKind(kind:string):kind is CategoryRecord['kind'] {
   return kind==='character'||kind==='event'||kind==='country'||kind==='worldEntry'
 }
