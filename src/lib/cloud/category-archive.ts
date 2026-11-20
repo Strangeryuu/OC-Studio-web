@@ -25,6 +25,7 @@ export interface CategoryRecord {
 }
 export interface CategoryAsset { id: string; mime: string; base64: string }
 export interface CategoryTag { id: string; name: string; color: string }
+export interface CategoryExternalRef {kind: CategoryKind; localId: number; name: string}
 export interface CategoryArchive {
   format: typeof CATEGORY_FORMAT
   version: 1
@@ -34,6 +35,10 @@ export interface CategoryArchive {
   records: CategoryRecord[]
   assets: CategoryAsset[]
   tags: CategoryTag[]
+  /** OC-editor link-only references are resolved by kind and name in the target workspace. */
+  externalRefs?: CategoryExternalRef[]
+  sourceFormat?: 'oc-editor-ocav'
+  nativeRelations?: number
 }
 const kinds = new Set<CategoryKind>(['character','event','country','worldEntry'])
 const imageMimes = new Set(['image/png','image/jpeg','image/gif','image/webp'])
@@ -131,8 +136,27 @@ export function parseCategoryArchive(input: unknown): CategoryArchive | null {
     tags.push({id:tag.id.toLowerCase(),name:tag.name.trim(),color:tag.color})
   }
   if (!selectCategoryRecords(records,selection).length) return null
+  if(input.sourceFormat!==undefined&&input.sourceFormat!=='oc-editor-ocav')return null
+  if(input.nativeRelations!==undefined&&(!Number.isSafeInteger(input.nativeRelations)||
+      (input.nativeRelations as number)<0||(input.nativeRelations as number)>1000))return null
+  const externalRefs:CategoryExternalRef[]=[]
+  const seenRefs=new Set<string>()
+  if(input.externalRefs!==undefined){
+    if(!Array.isArray(input.externalRefs)||input.externalRefs.length>500)return null
+    for(const ref of input.externalRefs){
+      if(!obj(ref)||!kinds.has(ref.kind as CategoryKind)||!goodId(ref.localId)||
+          typeof ref.name!=='string'||!ref.name.trim()||ref.name.length>200)return null
+      const key=ref.kind+':'+ref.localId
+      if(seenRefs.has(key)||seen.has(key))return null
+      seenRefs.add(key)
+      externalRefs.push({kind:ref.kind as CategoryKind,localId:ref.localId,name:ref.name.trim()})
+    }
+  }
   return {format:CATEGORY_FORMAT,version:1,sourceName:input.sourceName,
-    exportedAt:input.exportedAt,selection,records,assets,tags}
+    exportedAt:input.exportedAt,selection,records,assets,tags,
+    ...(input.sourceFormat===undefined?{}:{sourceFormat:'oc-editor-ocav'}),
+    ...(input.nativeRelations===undefined?{}:{nativeRelations:input.nativeRelations as number}),
+    ...(input.externalRefs===undefined?{}:{externalRefs})}
 }
 
 export function recordKey(kind: CategoryKind, title: string, content: Record<string,unknown>): string {
