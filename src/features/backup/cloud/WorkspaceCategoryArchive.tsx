@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Archive, FileUp, FolderDown, ShieldCheck } from 'lucide-react'
 import { BTN_PRIMARY, BTN_QUIET, INPUT_LINE } from '@/lib/ui-tokens'
-import { parseCategoryArchive, type CategoryArchive, type CategoryKind,
+import { type CategoryArchive, type CategoryKind,
   type CategoryStrategy } from '@/lib/cloud/category-archive'
+import { parseSupportedCategory } from '@/lib/cloud/oc-editor-category'
 
 type Scopes={
   counts:Record<CategoryKind,number>
@@ -14,6 +15,7 @@ type Scopes={
 type Preview={
   sourceName:string;kind:CategoryKind;selected:number;total:number
   context:number;media:number;duplicates:number;addable:number
+  sourceFormat:'oc-editor-ocav'|'web-category';relations:number;linked:number;unresolved:number
 }
 const KINDS:{value:CategoryKind;label:string}[]=[
   {value:'character',label:'角色'},
@@ -38,6 +40,27 @@ const ERROR_MESSAGES:Record<string,string>={
   CATEGORY_FOLDER_LIMIT:'目标角色分组数量已达上限',
   CATEGORY_TAG_INVALID:'标签关联无效，请先检查源世界观标签',
   CATEGORY_OPERATION_FAILED:'操作未完成，数据未写入，请检查日志后重试',
+  CATEGORY_LINK_TARGET_MISSING:'尚有引用对象缺失，请先将所需角色、事件或国家导入当前世界观',
+  OC_EDITOR_INVALID:'OC-editor 分类文件结构无效',
+  OC_EDITOR_EMPTY:'OC-editor 分类文件内没有条目',
+  OC_EDITOR_BAD_ID:'源文件的条目 ID 不符合要求',
+  OC_EDITOR_MIXED_KINDS:'源文件包含不一致的角色、事件、国家或词条类型',
+  OC_EDITOR_BAD_REFERENCE:'源文件的关联对象引用无效',
+  OC_EDITOR_REF_NAME_MISSING:'关联目标缺少可供匹配的名称',
+  OC_EDITOR_IMAGE_FORMAT:'图片需要内嵌为 PNG、JPEG、GIF 或 WebP',
+  OC_EDITOR_TOO_LARGE:'OC-editor 文件素材或条目数量超过限制',
+  OC_EDITOR_INVALID_SECTION:'OC-editor 自定义分类结构异常',
+  OC_EDITOR_INVALID_DOCUMENT:'OC-editor 的正文 JSON 内容格式异常',
+  OC_EDITOR_INVALID_TAG:'OC-editor 标签信息不完整',
+  OC_EDITOR_INVALID_REF:'OC-editor 引用信息不完整',
+  OC_EDITOR_INVALID_RELATION:'OC-editor 独立关系格式异常',
+  OC_EDITOR_RELATION_MISSING:'关系图中存在缺失的关联对象',
+  OC_EDITOR_UNSUPPORTED_RELATION:'此归档含暂不支持的关系结构，为保护数据完整性已停止导入',
+  OC_EDITOR_UNRECOGNIZED_KIND:'无法识别 OC-editor 文件所属资料类型',
+  OC_EDITOR_INVALID_CONTEXT:'OC-editor 文件包含不符合声明模式的关联资料',
+  OC_EDITOR_INVALID_FOLDER:'OC-editor 角色分组名称或标识无效',
+  OC_EDITOR_INVALID_CATEGORY:'源分类名称无效或与小说、地图专属分类冲突',
+  OC_EDITOR_DUPLICATE_ID:'源文件内存在重复的条目 ID',
 }
 function message(error:unknown) {
   const code=error instanceof Error?error.message:String(error)
@@ -59,10 +82,12 @@ function saveArchive(blob:Blob,name:string) {
   window.setTimeout(()=>URL.revokeObjectURL(url),60000)
 }
 
-export function WorkspaceCategoryArchive({workspaceId,workspaceName,canExport,canImport,onImported}:{
+export function WorkspaceCategoryArchive({workspaceId,workspaceName,canExport,canImport,onImported,incomingFile}:{
   workspaceId:string;workspaceName:string;canExport:boolean;canImport:boolean
   onImported:()=>Promise<void>
+  incomingFile?:File
 }) {
+  const preparing=useRef(false)
   const [scope,setScope]=useState<Scopes|null>(null)
   const [kind,setKind]=useState<CategoryKind>('character')
   const [filter,setFilter]=useState('')
@@ -105,15 +130,16 @@ export function WorkspaceCategoryArchive({workspaceId,workspaceName,canExport,ca
     } catch(cause){setError(message(cause))}
     finally{setBusy(false)}
   }
-  const prepareImport=async(file:File|undefined)=>{
-    if(!file||!canImport||busy)return
+  const prepareImport=useCallback(async(file:File|undefined)=>{
+    if(!file||!canImport||preparing.current)return
+    preparing.current=true
     setError('');setResult('');setPending(null);setPreview(null)
     if(file.size>40_000_000) {
       setError('分类文件大小超过 40 MB，请缩小导出范围');return
     }
     setBusy(true)
     try {
-      const archive=parseCategoryArchive(JSON.parse(await file.text()) as unknown)
+      const archive=parseSupportedCategory(JSON.parse(await file.text()) as unknown)
       if(!archive)throw new Error('CATEGORY_INVALID')
       const info=await readJson<Preview>(await fetch(base,{
         method:'POST',headers:{'Content-Type':'application/json'},
@@ -121,8 +147,9 @@ export function WorkspaceCategoryArchive({workspaceId,workspaceName,canExport,ca
       }))
       setPending(archive);setPreview(info);setStrategy('skip');setAcknowledged(false)
     } catch(cause){setError(message(cause))}
-    finally{setBusy(false)}
-  }
+    finally{setBusy(false);preparing.current=false}
+  },[base,canImport])
+  useEffect(()=>{if(incomingFile)void prepareImport(incomingFile)},[incomingFile,prepareImport])
   const applyImport=async()=>{
     if(!pending||!preview||!acknowledged||!canImport||busy)return
     setBusy(true);setError('');setResult('')
@@ -147,8 +174,8 @@ export function WorkspaceCategoryArchive({workspaceId,workspaceName,canExport,ca
       <div>
         <h2 className="text-reading font-semibold">分类归档 · 跨世界观迁移</h2>
         <p className="mt-1 text-caption leading-relaxed text-ink-muted">
-          借鉴 OC-editor 分类备份操作方式，导出角色、事件、国家及世界词条。
-          关联对象会一起打包，导入时重新分配 ID。当前支持 OC Studio Web 分类格式。
+          支持导入 OC-editor 原生分类文件和 OC Studio Web 分类文件。
+          分类关联、标签和图片会在当前世界观重新映射。
         </p>
       </div>
     </div>
@@ -196,9 +223,12 @@ export function WorkspaceCategoryArchive({workspaceId,workspaceName,canExport,ca
         <h3 className="text-ui font-semibold">确认导入内容</h3>
       </div>
       <p className="mt-2 text-caption text-ink-muted">
-        来源：{preview.sourceName||'未知世界观'}。
+        来源：{preview.sourceName||'未知世界观'}（{preview.sourceFormat==='oc-editor-ocav'?'OC-editor':'OC Studio Web'}）。
         主要条目 {preview.selected} 条，关联对象 {preview.context} 条，
         图片 {preview.media} 张，目标同名条目 {preview.duplicates} 条。
+        {preview.relations>0?' 独立关系 '+preview.relations+' 条。':''}
+        {preview.linked>0?' 名称关联 '+preview.linked+' 条。':''}
+        {preview.unresolved>0?' 尚缺关联对象 '+preview.unresolved+' 条，请先导入对应条目。':''}
       </p>
       <fieldset className="mt-3 flex flex-col gap-2 text-caption">
         <legend className="mb-2 font-medium">重复条目处理方式</legend>
@@ -218,7 +248,7 @@ export function WorkspaceCategoryArchive({workspaceId,workspaceName,canExport,ca
       </label>
       <div className="mt-4 flex flex-wrap gap-2">
         <button type="button" className={BTN_PRIMARY}
-          disabled={!acknowledged||busy} onClick={()=>void applyImport()}>
+          disabled={!acknowledged||busy||preview.unresolved>0} onClick={()=>void applyImport()}>
           {busy?'导入中…':'确认导入'}
         </button>
         <button type="button" className={BTN_QUIET} disabled={busy}
