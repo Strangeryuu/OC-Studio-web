@@ -375,30 +375,39 @@ export async function importCategoryArchive(
           [workspaceId,JSON.stringify(merged)])
       }
     }
-    // Keep imported custom-section notes visible in the target sidebar.
-    // Any new category uses the built-in entry template; an existing target
-    // category and its chosen template are always preserved.
-    const category=archive.selection.kind==='worldEntry' ? archive.selection.category?.trim() : undefined
-    if(category && !isReservedCategoryName(category) &&
-       incoming.some(item=>item.row.kind==='worldEntry' && item.row.content.category===category)) {
-      const current=await client.query<{setting_value:unknown;version:number}>(
-        "SELECT setting_value,version FROM workspace_settings "+
+    // Preserve all imported worldEntry category navigation, including generic
+    // OC-editor 'concept' entries and custom-section names. Never replace an
+    // existing destination template or mutate reserved novel/map categories.
+    const incomingCategories=[...new Set(incoming.filter(item=>item.row.kind==='worldEntry')
+      .map(item=>item.row.content.category)
+      .filter((name):name is string=>typeof name==='string'&&
+        name.trim().length>0&&name.length<=100&&!isReservedCategoryName(name)))]
+    if(incomingCategories.length) {
+      const saved=await client.query<{setting_value:unknown}>(
+        "SELECT setting_value FROM workspace_settings "+
         "WHERE workspace_id=$1 AND setting_key='customization' FOR UPDATE",[workspaceId])
-      const config=current.rows.length?readWorkspaceCustomization(current.rows[0].setting_value):
+      const config=saved.rows.length?readWorkspaceCustomization(saved.rows[0].setting_value):
         defaultWorkspaceCustomization()
       if(!config)fail('CATEGORY_CUSTOMIZATION_INVALID')
-      if(!config.categories.some(item=>item.name.toLocaleLowerCase('zh-CN')===
-          category.toLocaleLowerCase('zh-CN'))) {
-        const next={...config,categories:[...config.categories,{
+      const categories=[...config.categories]
+      const known=new Set(categories.map(item=>item.name.toLocaleLowerCase('zh-CN')))
+      let order=Math.max(0,...categories.map(item=>item.order))
+      for(const category of incomingCategories) {
+        if(known.has(category.toLocaleLowerCase('zh-CN')))continue
+        known.add(category.toLocaleLowerCase('zh-CN'))
+        categories.push({
           id:'cat-'+randomUUID(),name:category,template:'entry',icon:'book' as const,
-          order:Math.max(0,...config.categories.map(item=>item.order))+1,enabled:true,
-        }]}
+          order:++order,enabled:true,
+        })
+      }
+      if(categories.length>config.categories.length) {
+        const next={...config,categories}
         if(!readWorkspaceCustomization(next))fail('CATEGORY_CUSTOMIZATION_LIMIT')
         await client.query(
           "INSERT INTO workspace_settings(workspace_id,setting_key,setting_value,version) "+
-          "VALUES($1,'customization',$2::jsonb,1) ON CONFLICT(workspace_id,setting_key) "+
-          "DO UPDATE SET setting_value=EXCLUDED.setting_value, "+
-          "version=workspace_settings.version+1,updated_at=now()",
+          "VALUES($1,'customization',$2::jsonb,1) "+
+          "ON CONFLICT(workspace_id,setting_key) DO UPDATE SET "+
+          "setting_value=EXCLUDED.setting_value,version=workspace_settings.version+1,updated_at=now()",
           [workspaceId,JSON.stringify(next)])
       }
     }
