@@ -18,7 +18,7 @@ function errorCode(cause:unknown):string {
     BACKUP_MEDIA_MISSING:'CATEGORY_MEDIA_MISSING',
     BACKUP_TAG_MISSING:'CATEGORY_TAG_INVALID',
   }
-  return mapping[code]??(/^CATEGORY_[A-Z_]+$/.test(code)?code:'CATEGORY_OPERATION_FAILED')
+  return mapping[code]??(/^(CATEGORY|OC_EDITOR)_[A-Z_]+$/.test(code)?code:'CATEGORY_OPERATION_FAILED')
 }
 async function boundedBody(request:Request):Promise<unknown> {
   if(Number(request.headers.get('content-length')??0)>MAX_BYTES)throw new Error('CATEGORY_TOO_LARGE')

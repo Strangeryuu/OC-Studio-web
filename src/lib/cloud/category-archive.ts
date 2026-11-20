@@ -61,7 +61,7 @@ export function readCategorySelection(input: unknown): CategorySelection | null 
 /** Images in exported cloud archives must be private assets, never external URLs. */
 export function categoryMediaLinksSafe(data:Record<string,unknown>):boolean {
   const slots=new Set([
-    'avatarUrl','headerUrl','flagUrl','cover','avatar','image','mapImage',
+    'avatarUrl','qAvatarUrl','headerUrl','flagUrl','cover','avatar','image','mapImage',
     'novelCover','coverUrl','animationUrl',
   ])
   const allowed=(value:unknown):boolean=>
