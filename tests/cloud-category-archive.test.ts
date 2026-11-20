@@ -49,6 +49,14 @@ describe('selective cloud category archive',()=>{
     expect(parseCategoryArchive({...example,records:[rows[0],rows[0]]})).toBeNull()
     expect(parseCategoryArchive({...example,records:[{...rows[0],sourceId:'bad'}]})).toBeNull()
     expect(parseCategoryArchive({...example,assets:[{id:ids[0],mime:'text/html',base64:'PGh0bWw+'}]})).toBeNull()
+    expect(parseCategoryArchive({...example,records:[{...rows[0],content:{
+      ...rows[0].content,avatarUrl:'https://attacker.example/avatar.png',
+    }},...rows.slice(1)]})).toBeNull()
+    expect(parseCategoryArchive({...example,records:[{...rows[0],content:{
+      ...rows[0].content,document:JSON.stringify({type:'doc',content:[
+        {type:'imageBlock',attrs:{src:'https://attacker.example/pixel.png'}},
+      ]}),
+    }},...rows.slice(1)]})).toBeNull()
     expect(readCategorySelection({kind:'country',folder:'主角'})).toBeNull()
     expect(readCategorySelection({kind:'worldEntry',category:'自定义'})).toEqual({
       kind:'worldEntry',category:'自定义',
