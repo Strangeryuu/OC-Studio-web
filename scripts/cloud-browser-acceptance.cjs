@@ -210,7 +210,35 @@ async function run() {
   await desktopPage.screenshot({ path: '/tmp/ocstudio-browser-timeline-export.png' })
   await panel.getByRole('button', { name: '返回时间线' }).click()
   await panel.waitFor({ state: 'hidden' })
-  process.stdout.write('Chromium browser acceptance passed: desktop timeline export; stable avatar/editor submenus; mobile touch drag; two-device layout version conflict.\n')
+
+  // The original poster/site/document panels are now reused with authorized
+  // cloud snapshots. Check the actual workspace button, tab scope and data.
+  await openSection(desktopPage, worldId, '角色')
+  await desktopPage.getByRole('button', { name: '导出中心', exact: true }).click()
+  const cloudExport = desktopPage.getByRole('dialog', { name: '导出中心' })
+  await cloudExport.waitFor({ timeout: 20000 })
+  for (const tab of ['海报', '网站', '文档']) {
+    assert.equal(await cloudExport.getByRole('tab', { name: tab, exact: true }).count(), 1,
+      'Cloud export should include original ' + tab + ' tab')
+  }
+  assert.equal(await cloudExport.getByRole('tab', { name: '备份' }).count(), 0,
+    'Cloud export must exclude the local Dexie-only backup panel')
+  await cloudExport.getByRole('tab', { name: '文档' }).click()
+  const documentPanel = cloudExport.getByRole('tabpanel', { name: '文档' })
+  await documentPanel.getByText('CI Touch Alpha').first().waitFor({ timeout: 15000 })
+  await cloudExport.getByRole('tab', { name: '网站' }).click()
+  const websitePanel = cloudExport.getByRole('tabpanel', { name: '网站' })
+  const iframe = websitePanel.getByTitle('静态站预览')
+  await iframe.waitFor({ timeout: 15000 })
+  await desktopPage.waitForFunction(() => {
+    const frame = document.querySelector('iframe[title="静态站预览"]')
+    return frame && (frame.getAttribute('srcdoc') || '').includes('CI Touch Alpha')
+  }, { timeout: 15000 })
+  const html = await iframe.getAttribute('srcdoc')
+  assert(html && html.includes('CI Touch Alpha'), 'Static site export omitted the cloud workspace character')
+  await cloudExport.getByRole('button', { name: '返回' }).click()
+  await cloudExport.waitFor({ state: 'hidden' })
+  process.stdout.write('Chromium browser acceptance passed: cloud original export tabs and scoped previews; desktop timeline export; stable avatar/editor submenus; mobile touch drag; two-device layout version conflict.\\n')
 }
 run().catch(async error => {
   process.stderr.write('Browser acceptance failed: ' + (error.stack || error) + '\n')
