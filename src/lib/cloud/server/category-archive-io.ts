@@ -16,7 +16,7 @@ import { worldLinksAllowed } from '@/lib/cloud/server/world-links'
 import { cloudMapAllowed } from '@/lib/cloud/map-fields'
 import { cloudNovelAllowed } from '@/lib/cloud/novel-fields'
 import { CATEGORY_FORMAT, collectCategoryClosure, collectArchiveMedia,
-  parseCategoryArchive, recordKey, remapCategoryDocumentRefs, type CategoryRecord, type CategoryArchive,
+  parseCategoryArchive, recordKey, selectCategoryRecords, remapCategoryDocumentRefs, type CategoryRecord, type CategoryArchive,
   type CategorySelection, type CategoryStrategy } from '@/lib/cloud/category-archive'
 import type { PoolClient } from 'pg'
 
@@ -162,10 +162,11 @@ export async function previewCategoryImport(workspaceId:string,raw:unknown) {
     "WHERE workspace_id=$1 AND deleted_at IS NULL ORDER BY local_id",
     [workspaceId])
   const {duplicates}=chooseTarget(archive,existing.rows)
+  const primary=selectCategoryRecords(archive.records,archive.selection).length
   return {
     sourceName:archive.sourceName,kind:archive.selection.kind,
-    selected:archive.records.filter(row=>row.kind===archive.selection.kind).length,
-    total:archive.records.length,context:archive.records.filter(row=>row.kind!==archive.selection.kind).length,
+    selected:primary,
+    total:archive.records.length,context:archive.records.length-primary,
     media:archive.assets.length,duplicates,addable:archive.records.length-duplicates,
   }
 }

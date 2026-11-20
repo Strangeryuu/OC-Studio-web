@@ -66,7 +66,7 @@ describe('PostgreSQL category archives use one atomic scope and ID mapping',()=>
     expect(file.records.some(r=>r.title==='私有事件')).toBe(false)
     expect(file.assets).toHaveLength(0)
     const preview=await previewCategoryImport(target,file)
-    expect(preview).toMatchObject({selected:2,total:3,duplicates:0})
+    expect(preview).toMatchObject({selected:1,context:2,total:3,duplicates:0})
     const result=await importCategoryArchive(target,userId,file,'skip')
     expect(result).toMatchObject({added:3,skipped:0,media:0})
     const after=await rows(target)
