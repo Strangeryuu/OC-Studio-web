@@ -396,15 +396,27 @@ export async function importCategoryArchive(
       const categories=[...config.categories]
       const known=new Set(categories.map(item=>item.name.toLocaleLowerCase('zh-CN')))
       let order=Math.max(0,...categories.map(item=>item.order))
+      let changed=false
       for(const category of incomingCategories) {
-        if(known.has(category.toLocaleLowerCase('zh-CN')))continue
-        known.add(category.toLocaleLowerCase('zh-CN'))
+        const normalized=category.toLocaleLowerCase('zh-CN')
+        if(known.has(normalized)) {
+          // OC-editor's weapon/pet presets map to Web's built-in categories.
+          const index=categories.findIndex(item=>
+            item.name.toLocaleLowerCase('zh-CN')===normalized)
+          if(index>=0&&categories[index].builtin&&!categories[index].enabled){
+            categories[index]={...categories[index],enabled:true}
+            changed=true
+          }
+          continue
+        }
+        known.add(normalized)
         categories.push({
           id:'cat-'+randomUUID(),name:category,template:'entry',icon:'book' as const,
           order:++order,enabled:true,
         })
+        changed=true
       }
-      if(categories.length>config.categories.length) {
+      if(changed) {
         const next={...config,categories}
         if(!readWorkspaceCustomization(next))fail('CATEGORY_CUSTOMIZATION_LIMIT')
         await client.query(
